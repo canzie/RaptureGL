@@ -15,7 +15,7 @@ namespace Rapture
 
 	public:
 		Mesh(std::string filepath);
-
+        //Mesh(std::string filepath, bool useGLTF2=false);
 		Mesh() = default;
 		~Mesh();
 

@@ -29,8 +29,13 @@ namespace Rapture {
 		{
             
 			mesh = new Mesh(fname);
-            GE_CORE_INFO("Loading mesh: {0}, submesh count: {1}", fname, mesh->getSubMeshes().size());
+            GE_CORE_INFO("Loading mesh with glTF Loader: {0}, submesh count: {1}", fname, mesh->getSubMeshes().size());
 		}
+        MeshComponent(std::string fname, bool useGLTF2)
+        {
+            //mesh = new Mesh(fname, useGLTF2);
+            GE_CORE_INFO("Loading mesh with glTF2 Loader: {0}, submesh count: {1}", fname, mesh->getSubMeshes().size());
+        }
 
 
 		MeshComponent() 
@@ -90,6 +95,109 @@ namespace Rapture {
 		~MaterialComponent() 
 		{
 			// No need to manually delete the material as it's now managed by shared_ptr
+		}
+		
+		// Methods to modify material properties after creation
+		
+		// Set base color (works for both PBR and Solid materials)
+		void setBaseColor(const glm::vec3& color)
+		{
+			if (material)
+			{
+				// For PBR materials, the parameter name is typically "baseColor"
+				if (material->getType() == MaterialType::PBR)
+				{
+					material->setVec3("baseColor", color);
+				}
+				// For solid materials, it might be called "color"
+				else if (material->getType() == MaterialType::SOLID)
+				{
+					material->setVec3("color", color);
+				}
+			}
+		}
+		
+		// Set roughness (PBR materials only)
+		void setRoughness(float roughness)
+		{
+			if (material && material->getType() == MaterialType::PBR)
+			{
+				material->setFloat("roughness", roughness);
+			}
+		}
+		
+		// Set metallic value (PBR materials only)
+		void setMetallic(float metallic)
+		{
+			if (material && material->getType() == MaterialType::PBR)
+			{
+				material->setFloat("metallic", metallic);
+			}
+		}
+		
+		// Set specular value (PBR materials only)
+		void setSpecular(float specular)
+		{
+			if (material && material->getType() == MaterialType::PBR)
+			{
+				material->setFloat("specular", specular);
+			}
+		}
+		
+		// Additional helper to change all PBR properties at once
+		void setPBRProperties(const glm::vec3& baseColor, float roughness, float metallic, float specular)
+		{
+			if (material && material->getType() == MaterialType::PBR)
+			{
+				material->setVec3("baseColor", baseColor);
+				material->setFloat("roughness", roughness);
+				material->setFloat("metallic", metallic);
+				material->setFloat("specular", specular);
+			}
+		}
+		
+		// Get current material properties
+		glm::vec3 getBaseColor() const
+		{
+			if (material)
+			{
+				if (material->getType() == MaterialType::PBR && material->hasParameter("baseColor"))
+				{
+					return material->getParameter("baseColor").asVec3();
+				}
+				else if (material->getType() == MaterialType::SOLID && material->hasParameter("color"))
+				{
+					return material->getParameter("color").asVec3();
+				}
+			}
+			return glm::vec3(0.0f);
+		}
+		
+		float getRoughness() const
+		{
+			if (material && material->getType() == MaterialType::PBR && material->hasParameter("roughness"))
+			{
+				return material->getParameter("roughness").asFloat();
+			}
+			return 0.0f;
+		}
+		
+		float getMetallic() const
+		{
+			if (material && material->getType() == MaterialType::PBR && material->hasParameter("metallic"))
+			{
+				return material->getParameter("metallic").asFloat();
+			}
+			return 0.0f;
+		}
+		
+		float getSpecular() const
+		{
+			if (material && material->getType() == MaterialType::PBR && material->hasParameter("specular"))
+			{
+				return material->getParameter("specular").asFloat();
+			}
+			return 0.0f;
 		}
 	};
 

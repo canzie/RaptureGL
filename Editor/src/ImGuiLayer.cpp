@@ -371,6 +371,85 @@ void ImGuiLayer::onUpdate(float ts)
                 ImGui::EndGroup();
             }
             
+            // Edit Material component if it exists
+            // Direct check for MaterialComponent
+            auto materialView = registry.view<Rapture::MaterialComponent>();
+            bool hasMaterial = materialView.contains(selectedEntity);
+            
+            if (hasMaterial && ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                auto& materialComp = registry.get<Rapture::MaterialComponent>(selectedEntity);
+                
+                // Display material name
+                ImGui::Text("Material: %s", materialComp.materialName.c_str());
+                
+                // Edit base color for any material type
+                glm::vec3 baseColor = materialComp.getBaseColor();
+                if (ImGui::ColorEdit3("Base Color", glm::value_ptr(baseColor)))
+                {
+                    materialComp.setBaseColor(baseColor);
+                }
+                
+                // Only show these properties for PBR materials
+                if (materialComp.material && materialComp.material->getType() == Rapture::MaterialType::PBR)
+                {
+                    // Edit roughness
+                    float roughness = materialComp.getRoughness();
+                    if (ImGui::SliderFloat("Roughness", &roughness, 0.0f, 1.0f))
+                    {
+                        materialComp.setRoughness(roughness);
+                    }
+                    
+                    // Edit metallic
+                    float metallic = materialComp.getMetallic();
+                    if (ImGui::SliderFloat("Metallic", &metallic, 0.0f, 1.0f))
+                    {
+                        materialComp.setMetallic(metallic);
+                    }
+                    
+                    // Edit specular
+                    float specular = materialComp.getSpecular();
+                    if (ImGui::SliderFloat("Specular", &specular, 0.0f, 1.0f))
+                    {
+                        materialComp.setSpecular(specular);
+                    }
+                }
+                
+                // Material switcher
+                if (ImGui::Button("Change Material Type"))
+                {
+                    ImGui::OpenPopup("material_type_popup");
+                }
+                
+                if (ImGui::BeginPopup("material_type_popup"))
+                {
+                    if (ImGui::MenuItem("Default PBR"))
+                    {
+                        materialComp = Rapture::MaterialComponent();
+                    }
+                    
+                    if (ImGui::MenuItem("Solid Color"))
+                    {
+                        materialComp = Rapture::MaterialComponent(materialComp.getBaseColor());
+                    }
+                    
+                    if (ImGui::MenuItem("Custom PBR"))
+                    {
+                        // Use current values if possible, or defaults
+                        glm::vec3 color = materialComp.getBaseColor();
+                        float roughness = materialComp.material->getType() == Rapture::MaterialType::PBR ? 
+                                        materialComp.getRoughness() : 0.5f;
+                        float metallic = materialComp.material->getType() == Rapture::MaterialType::PBR ? 
+                                        materialComp.getMetallic() : 0.0f;
+                        float specular = materialComp.material->getType() == Rapture::MaterialType::PBR ? 
+                                        materialComp.getSpecular() : 0.5f;
+                        
+                        materialComp = Rapture::MaterialComponent(color, roughness, metallic, specular);
+                    }
+                    
+                    ImGui::EndPopup();
+                }
+            }
 
         }
         else

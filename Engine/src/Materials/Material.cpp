@@ -227,6 +227,15 @@ namespace Rapture
 			return;
 		}
 	
+		// Update uniform data from parameters
+		if (hasParameter("baseColor"))
+			m_uniformData.base_color = getParameter("baseColor").asVec3();
+		if (hasParameter("roughness")) 
+			m_uniformData.roughness = getParameter("roughness").asFloat();
+		if (hasParameter("metallic"))
+			m_uniformData.metallic = getParameter("metallic").asFloat();
+		if (hasParameter("specular"))
+			m_uniformData.specular = getParameter("specular").asFloat();
 		
 		// Explicitly bind UBO to binding point before updating
 		glBindBufferBase(GL_UNIFORM_BUFFER, PBR_BINDING_POINT_IDX, m_uniformBuffer->getRendererID());
@@ -313,6 +322,17 @@ namespace Rapture
 			return;
 		}
 		
+		// Update uniform data from parameters
+		if (hasParameter("flux"))
+			m_uniformData.flux = getParameter("flux").asFloat();
+		if (hasParameter("diffuseColor"))
+			m_uniformData.diffuseColor = getParameter("diffuseColor").asVec4();
+		if (hasParameter("specularColor"))
+			m_uniformData.specularColor = getParameter("specularColor").asVec4();
+		if (hasParameter("ambientLight"))
+			m_uniformData.ambientLight = getParameter("ambientLight").asVec4();
+		if (hasParameter("shininess"))
+			m_uniformData.shininess = getParameter("shininess").asFloat();
 		
 		// Explicitly bind UBO to binding point before updating
 		glBindBufferBase(GL_UNIFORM_BUFFER, PHONG_BINDING_POINT_IDX, m_uniformBuffer->getRendererID());
@@ -384,6 +404,11 @@ namespace Rapture
 			return;
 		}
 		
+		// Update uniform data from parameters
+		if (hasParameter("color")) {
+			glm::vec3 color = getParameter("color").asVec3();
+			m_uniformData.color = glm::vec4(color, 1.0f);
+		}
 		
 		// Explicitly bind UBO to binding point before updating
 		glBindBufferBase(GL_UNIFORM_BUFFER, SOLID_BINDING_POINT_IDX, m_uniformBuffer->getRendererID());

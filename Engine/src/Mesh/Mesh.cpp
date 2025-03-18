@@ -7,6 +7,7 @@
 
 
 #include "../File Loaders/glTF/glTFLoader.h"
+//#include "../File Loaders/glTF/glTF2Loader.h"
 #include "../Logger/Log.h"
 
 namespace Rapture
@@ -18,7 +19,11 @@ namespace Rapture
 
 		m_VAO.reset(new VertexArray());
 
-		glTFLoader::loadMesh(filepath, this);
+		//if (useGLTF2) {
+		//	glTF2Loader::loadMesh(filepath, this);
+		//} else {
+			glTFLoader::loadMesh(filepath, this);
+		//}
 
 	}
 
