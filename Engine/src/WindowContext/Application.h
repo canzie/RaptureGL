@@ -23,11 +23,15 @@ namespace Rapture {
 		bool onWindowContextResize(WindowResizeEvent& e);
 
 		void pushLayer(Layer* layer);
+		void pushOverlay(Layer* overlay);
 
 		static Application& getInstance() { return *s_instance; }
 		WindowContext& getWindowContext() { return *m_window; }
 
 		std::string getDebugName() { return m_debugName; }
+
+		// Get the layer stack 
+		const LayerStack& getLayerStack() const { return m_layerStack; }
 
 	protected:
 		std::string m_debugName;

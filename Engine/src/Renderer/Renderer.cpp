@@ -18,7 +18,6 @@ namespace Rapture
 
 	void Renderer::sumbitScene(const std::shared_ptr<Scene> s)
 	{
-
 		auto& reg = s->getRegistry();
 		auto meshes = reg.view<TransformComponent, MeshComponent>();
 		auto cams = reg.view<CameraControllerComponent>();
@@ -34,19 +33,23 @@ namespace Rapture
 		{
 			Entity mesh(ent, s.get());
 
-			//std::shared_ptr<VertexArray> vao = mesh.getComponent<MeshComponent>().mesh->GetVAO();
 			Mesh* meshe = mesh.getComponent<MeshComponent>().mesh;
 
 			MaterialComponent& mat = mesh.getComponent<MaterialComponent>();
 			TransformComponent t_comp = mesh.getComponent<TransformComponent>();
-			Shader* shdr = mat.metalMat->getShader();
-
-			meshe->getVAO()->bind();
-			shdr->bind();
-			mat.metalMat->bindData();
-
-			// 
 			
+			// Update to use the new material component
+			auto& material = mat.material;
+			if (!material) {
+				GE_CORE_WARN("Entity has no valid material assigned");
+				continue;
+			}
+			
+			// Bind the mesh VAO and material
+			meshe->getVAO()->bind();
+			material->bind();  // This will trigger bindData() to upload all material properties
+            
+			// Create transformation matrices
 			glm::mat4 rot_mat = glm::rotate(t_comp.rotation.x, glm::vec3(1.0f, 0.0f, 0.0f))*
 								glm::rotate(t_comp.rotation.y, glm::vec3(0.0f, 1.0f, 0.0f))*
 								glm::rotate(t_comp.rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
@@ -56,31 +59,30 @@ namespace Rapture
 			glm::mat4 tran_mat = glm::translate(t_comp.translation);
 			glm::mat4 model_mat = tran_mat * rot_mat * scale_mat;
 
-
-			//shdr->setUniformMat4f("u_model", model_mat);
+			// Set shader uniforms
+			Shader* shdr = material->getShader();
+            
 			auto popper = controller_comp.translation;
 			popper.z = -popper.z;
-			shdr->setUniformVec3f("u_camPos", popper);
 
+			shdr->setVec3("u_camPos", popper);
 			
 			glm::mat4 goober;
-
-
 			auto ibo = meshe->getVAO()->getIndexBuffer();
 
 			for (auto& submesh : meshe->getSubMeshes())
 			{
-
 				goober = model_mat * submesh->getTransform();
-				shdr->setUniformMat4f("u_model", goober);
+				shdr->setMat4("u_model", goober);
+
 				OpenGLRendererAPI::drawIndexed(submesh->getIndexCount(), ibo->getIndexType(), submesh->getOffset());
-				
 			}
-
-
 			
+			// Unbind material after rendering this entity
+			material->unbind();
+            
+            // Unbind VAO too for clean state management
+            meshe->getVAO()->unbind();
 		}
-
 	}
-
 }

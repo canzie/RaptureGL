@@ -1,20 +1,35 @@
 #pragma once
 
+#include <memory>
 #include "Layers/Layer.h"
-#include "Scenes/Components/Components.h"
-#include "Renderer/Framebuffer.h"
+#include "Scenes/Scene.h"
 #include "CameraController.h"
+#include "Renderer/Framebuffer.h"
 
 class TestLayer : public Rapture::Layer
 {
 public:
-	virtual void onAttach() override;
-	virtual void onDetach() override;
+	TestLayer()
+		: Layer("Test Layer")
+	{
+		m_activeScene = std::make_shared<Rapture::Scene>();
+	}
 
-	virtual void onUpdate(float ts) override;
-	virtual void onEvent(Rapture::Event& event) override;
+	void onAttach() override;
+	void onDetach() override;
+
+	void onUpdate(float ts) override;
+	void onEvent(Rapture::Event& event) override;
+    
+    // Getter for the framebuffer to use in ImGui viewport
+    std::shared_ptr<Rapture::Framebuffer> getFramebuffer() const { return m_framebuffer; }
+    std::shared_ptr<Rapture::Scene> getActiveScene() const { return m_activeScene; }
 
 private:
-	std::shared_ptr<Rapture::Framebuffer> m_framebuffer = std::make_shared<Rapture::Framebuffer>();
-	std::shared_ptr<Rapture::Scene> m_activeScene = std::make_shared<Rapture::Scene>();
+	std::shared_ptr<Rapture::Scene> m_activeScene;
+    std::shared_ptr<Rapture::Framebuffer> m_framebuffer;
+    
+    // FPS counter variables
+    int m_fpsCounter = 0;
+    float m_fpsTimer = 0.0f;
 };

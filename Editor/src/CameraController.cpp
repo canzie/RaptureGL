@@ -7,8 +7,8 @@
 Rapture::Entity CameraController::s_cameraEntity;
 float CameraController::s_lastMouseX = 0.0f;
 float CameraController::s_lastMouseY = 0.0f;
-float CameraController::s_mouseSensitivity = 5.0f;
-float CameraController::s_moveSpeed = 0.1f;
+float CameraController::s_mouseSensitivity = 0.2f;
+float CameraController::s_moveSpeed = 5.0f;  // Units per second instead of per frame
 bool CameraController::s_isMouseLocked = true;
 
 void CameraController::init(Rapture::Entity cameraEntity)
@@ -52,15 +52,26 @@ void CameraController::onWindowClicked()
 
 void CameraController::update(float ts)
 {
-    handleMouseInput(ts);
-    handleKeyboardInput(ts);
+    // Ensure time is in seconds
+    float deltaTime = ts;
+    if (deltaTime > 0.1f) { // Likely in milliseconds
+        deltaTime *= 0.001f; // Convert to seconds
+    }
+    
+    // Clamp delta time to avoid huge jumps when framerate drops very low
+    if (deltaTime > 0.1f) {
+        deltaTime = 0.1f;
+    }
+    
+    handleMouseInput(deltaTime);
+    handleKeyboardInput(deltaTime);
     
     // Update camera view matrix
     auto& controller_comp = s_cameraEntity.getComponent<Rapture::CameraControllerComponent>();
     controller_comp.camera.updateViewMatrix(controller_comp.translation, controller_comp.cameraFront);
 }
 
-void CameraController::handleMouseInput(float ts)
+void CameraController::handleMouseInput(float deltaTime)
 {
     // Only process mouse movement when mouse is locked
     if (!s_isMouseLocked)
@@ -74,7 +85,8 @@ void CameraController::handleMouseInput(float ts)
     s_lastMouseX = pos.first;
     s_lastMouseY = pos.second;
 
-    float sensitivity = s_mouseSensitivity * (ts/1000.0f);
+    // Mouse sensitivity is now in degrees per second
+    float sensitivity = s_mouseSensitivity;
     xoffset *= sensitivity;
     yoffset *= sensitivity;
 
@@ -95,45 +107,48 @@ void CameraController::handleMouseInput(float ts)
     controller_comp.cameraFront = glm::normalize(front);
 }
 
-void CameraController::handleKeyboardInput(float ts)
+void CameraController::handleKeyboardInput(float deltaTime)
 {
     auto& controller_comp = s_cameraEntity.getComponent<Rapture::CameraControllerComponent>();
     
     // Calculate right vector for strafing
-    glm::vec3 right = glm::vec3(controller_comp.cameraFront.z, 0.0f, -controller_comp.cameraFront.x);
+    glm::vec3 right = glm::normalize(glm::vec3(controller_comp.cameraFront.z, 0.0f, -controller_comp.cameraFront.x));
 
     // Only allow movement when mouse is locked
     if (s_isMouseLocked)
     {
+        // Calculate actual movement distance based on speed and delta time
+        float moveDistance = s_moveSpeed * deltaTime;
+        
         // Handle movement keys - using separate if statements allows for diagonal movement
         if (Rapture::Input::isKeyPressed(KeyBindings::getKeyForAction(KeyAction::MoveLeft)))
         {
-            controller_comp.translation += s_moveSpeed * (glm::vec3(1.0f) * right);
+            controller_comp.translation += moveDistance * right;
         }
         
         if (Rapture::Input::isKeyPressed(KeyBindings::getKeyForAction(KeyAction::MoveRight)))
         {
-            controller_comp.translation -= s_moveSpeed * (glm::vec3(1.0f) * right);
+            controller_comp.translation -= moveDistance * right;
         }
         
         if (Rapture::Input::isKeyPressed(KeyBindings::getKeyForAction(KeyAction::MoveForward)))
         {
-            controller_comp.translation += s_moveSpeed * (glm::vec3(1.0f) * controller_comp.cameraFront);
+            controller_comp.translation += moveDistance * controller_comp.cameraFront;
         }
         
         if (Rapture::Input::isKeyPressed(KeyBindings::getKeyForAction(KeyAction::MoveBackward)))
         {
-            controller_comp.translation -= s_moveSpeed * (glm::vec3(1.0f) * controller_comp.cameraFront);
+            controller_comp.translation -= moveDistance * controller_comp.cameraFront;
         }
         
         if (Rapture::Input::isKeyPressed(KeyBindings::getKeyForAction(KeyAction::MoveUp)))
         {
-            controller_comp.translation.y += s_moveSpeed;
+            controller_comp.translation.y += moveDistance;
         }
         
         if (Rapture::Input::isKeyPressed(KeyBindings::getKeyForAction(KeyAction::MoveDown)))
         {
-            controller_comp.translation.y -= s_moveSpeed;
+            controller_comp.translation.y -= moveDistance;
         }
     }
     

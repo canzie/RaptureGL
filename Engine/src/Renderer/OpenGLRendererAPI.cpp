@@ -1,6 +1,8 @@
 #include "OpenGLRendererAPI.h"
 
 #include <glad/glad.h>
+#include "../Logger/Log.h"
+
 
 namespace Rapture {
 
@@ -14,8 +16,9 @@ namespace Rapture {
 	{
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glEnable(GL_DEPTH_TEST);
+		glDepthFunc(GL_LESS);  // Make sure depth test is using GL_LESS function
+		glDepthMask(GL_TRUE);  // Ensure depth writing is enabled
 		//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-
 	}
 	/*
 	void OpenGLRendererAPI::setViewport(unsigned int x, unsigned int y, unsigned int width, unsigned int height)

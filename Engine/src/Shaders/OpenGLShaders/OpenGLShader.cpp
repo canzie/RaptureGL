@@ -4,13 +4,16 @@
 #include "../../Logger/Log.h"
 #include "../OpenGLUniforms/UniformBindingPointIndices.h"
 
+#include "../../Textures/Texture.h"
+#include <fstream>
+#include <sstream>
+#include <regex>
+
 #ifdef _WIN32
 #include <Windows.h>
 #else
 #include <unistd.h>
 #endif
-
-#include <fstream>
 
 namespace Rapture {
 
@@ -75,37 +78,98 @@ OpenGLShader::OpenGLShader(std::string vertex_source, std::string fragment_sourc
 		GLsizei length; // name length
 
 	glGetProgramiv(m_programID, GL_ACTIVE_UNIFORM_BLOCKS, &count);
+	GE_CORE_INFO("Shader '{0}' has {1} uniform blocks", m_name, count);
+	
 	for (i = 0; i < count; i++)
 	{
+		GLint blockSize = 0;
+		glGetActiveUniformBlockiv(m_programID, (GLuint)i, GL_UNIFORM_BLOCK_DATA_SIZE, &blockSize);
 		glGetActiveUniformBlockiv(m_programID, (GLuint)i, GL_UNIFORM_BLOCK_NAME_LENGTH, &length);
 		glGetActiveUniformBlockName(m_programID, (GLuint)i, length, NULL, name);
-		GE_CORE_TRACE("Uniform Block({0}) : {1}", i, name);
+		GE_CORE_INFO("  Uniform Block({0}): '{1}' (size: {2} bytes)", i, name, blockSize);
 
-			std::string s(name);
-			if (s == "BaseTransformMats")
-				glUniformBlockBinding(m_programID, (GLuint)i, BASE_BINDING_POINT_IDX);
-			else if (s == "Phong")
-				glUniformBlockBinding(m_programID, (GLuint)i, PHONG_BINDING_POINT_IDX);
-			else if (s == "PBR")
-				glUniformBlockBinding(m_programID, (GLuint)i, PBR_BINDING_POINT_IDX);
-			else if (s == "SOLID")
-				glUniformBlockBinding(m_programID, (GLuint)i, SOLID_BINDING_POINT_IDX);
+		std::string blockName(name);
+		GLuint bindingPoint = 0;
+		
+		// Map block names to binding points
+		if (blockName == "BaseTransformMats") {
+			bindingPoint = BASE_BINDING_POINT_IDX;
 		}
+		else if (blockName == "PBR") {
+			bindingPoint = PBR_BINDING_POINT_IDX;
+		}
+		else if (blockName == "Phong") {
+			bindingPoint = PHONG_BINDING_POINT_IDX;
+		}
+		else if (blockName == "SOLID") {
+			bindingPoint = SOLID_BINDING_POINT_IDX;
+		}
+		else {
+			GE_CORE_WARN("    Unknown uniform block '{0}' - using default binding 0", blockName);
+		}
+		
+		// Get the block index and current binding
+		GLuint blockIndex = glGetUniformBlockIndex(m_programID, name);
+		GLint currentBinding = 0;
+		glGetActiveUniformBlockiv(m_programID, blockIndex, GL_UNIFORM_BLOCK_BINDING, &currentBinding);
+		
+		// Set the binding point if it's different from current
+		if (currentBinding != bindingPoint) {
+			glUniformBlockBinding(m_programID, blockIndex, bindingPoint);
+			GE_CORE_INFO("    Bound block '{0}' to binding point {1} (was {2})", 
+				blockName, bindingPoint, currentBinding);
+		}
+		else {
+			GE_CORE_INFO("    Block '{0}' already bound to point {1}", blockName, bindingPoint);
+		}
+		
+		// Validate that binding worked
+		glGetActiveUniformBlockiv(m_programID, blockIndex, GL_UNIFORM_BLOCK_BINDING, &currentBinding);
+		if (currentBinding != bindingPoint) {
+			GE_CORE_ERROR("    FAILED to bind block '{0}' to point {1}, still at {2}", 
+				blockName, bindingPoint, currentBinding);
+		}
+	}
 
-		GE_CORE_TRACE("Created Shader: {0}", m_programID);
+	GE_CORE_INFO("Created Shader: {0}", m_programID);
 
 	}
 
-	OpenGLShader::~OpenGLShader()
+OpenGLShader::~OpenGLShader()
 	{
 		GE_CORE_TRACE("Deleting Shader: {0}", m_programID);
 		glDeleteProgram(m_programID);
 	}
 
-    bool OpenGLShader::compile() {
+bool OpenGLShader::compile(const std::string& variantName) {
+
+    const ShaderVariant* variant = nullptr;
+    
+    if (!variantName.empty()) {
+
+        // Find the requested variant
+        for (const auto& v : m_variants) {
+            if (v.name == variantName) {
+                variant = &v;
+                break;
+            }
+        }
+        
+        if (!variant) {
+            GE_CORE_ERROR("OpenGLShader::compileVariant: Variant '{0}' not found, compiling default variant", variantName);
+        }
+        
+        GE_CORE_INFO("Compiling shader variant '{0}' for shader '{1}'", variantName, m_name);
+    }
+
         for (auto& [type, source] : m_sources) {
-            //std::string processed = OpenGLShaderCompiler::preprocessShader(source);
             std::string processed = source;
+            
+            if (variant) {
+                processed = processSource(source, *variant);
+            }
+    
+            //std::string processed = source;
 
             // 2. Compile individual shaders
             if (!compileShader(type, processed)) {
@@ -129,104 +193,33 @@ void OpenGLShader::bind()
 	glUseProgram(m_programID);
 }
 
-	void OpenGLShader::unBind()
+void OpenGLShader::unBind()
 	{
 		glUseProgram(0);
 	}
 
-    
-	void OpenGLShader::setUniformMat4f(const std::string& name, glm::mat4& matrix)
-	{
-		
-		int loc = glGetUniformLocation(m_programID, name.c_str());
-		if (loc == -1)
-		{
-			GE_CORE_WARN("Uniform location not found, {0}", name);
-			return;
-		}
+// deprecated
+void OpenGLShader::setUniformMat4f(const std::string& name, glm::mat4& matrix)
+{
+    setMat4(name, matrix);
+}
 
-		glUniformMatrix4fv(loc, 1, GL_FALSE, &matrix[0][0]);
-		
+// deprecated
+void OpenGLShader::setUniform1f(const std::string& name, float val)
+	{
+        setFloat(name, val);
 	}
 
-	void OpenGLShader::setUniform1f(const std::string& name, float val)
-	{
-		int loc = glGetUniformLocation(m_programID, name.c_str());
-		if (loc == -1)
-		{
-			GE_CORE_WARN("Uniform location not found, {0}", name);
-			return;
-		}
-
-		glUniform1f(loc, val);
-	}
-
-	void OpenGLShader::setUniformVec3f(const std::string& name, glm::vec3& vector)
-	{
-		int loc = glGetUniformLocation(m_programID, name.c_str());
-		if (loc == -1)
-		{
-			GE_CORE_WARN("Uniform location not found, {0}", name);
-			return;
-		}
-
-		glUniform3fv(loc, 1, &vector[0]);
-	}
+// deprecated
+void OpenGLShader::setUniformVec3f(const std::string& name, glm::vec3& vector)
+{
+    setVec3(name, vector);
+}
 
 
-	void OpenGLShader::setUniform(const std::string& name, const void* data)
-	{
-		if (!data) return;
-		
-		// Get uniform location
-		GLint location = glGetUniformLocation(m_programID, name.c_str());
-		if (location == -1) {
-			GE_CORE_WARN("Uniform '{0}' not found in shader", name);
-			return;
-		}
-		
-		// Get uniform type from reflection data or assume based on parameter
-		// For simplicity, we'll use RTTI or parameter type hints in a real implementation
-		// Here we'll just demonstrate for float, vec3, and mat4 as examples
-		
-		// Determine type from uniform name convention (simple approach)
-		if (name.find("mat4") != std::string::npos) {
-			glUniformMatrix4fv(location, 1, GL_FALSE, static_cast<const float*>(data));
-		}
-		else if (name.find("vec3") != std::string::npos) {
-			glUniform3fv(location, 1, static_cast<const float*>(data));
-		}
-		else {
-			// Default to float
-			glUniform1f(location, *static_cast<const float*>(data));
-		}
-	}
 
-	void OpenGLShader::setUniformArray(const std::string& name, const void* data, size_t count)
-	{
-		if (!data || count == 0) return;
-		
-		// Get uniform location
-		GLint location = glGetUniformLocation(m_programID, name.c_str());
-		if (location == -1) {
-			GE_CORE_WARN("Uniform array '{0}' not found in shader", name);
-			return;
-		}
-		
-		// Determine type from uniform name convention (simple approach)
-		if (name.find("mat4") != std::string::npos) {
-			glUniformMatrix4fv(location, count, GL_FALSE, static_cast<const float*>(data));
-		}
-		else if (name.find("vec3") != std::string::npos) {
-			glUniform3fv(location, count, static_cast<const float*>(data));
-		}
-		else {
-			// Default to float
-			glUniform1fv(location, count, static_cast<const float*>(data));
-		}
-	}
 
-	bool OpenGLShader::reload()
+bool OpenGLShader::reload()
 	{
 		// Get shader sources from files again
 		// This assumes shader sources are stored in files and parsed via parseShader
@@ -246,20 +239,49 @@ void OpenGLShader::bind()
 		return compile();
 	}
 
-	void OpenGLShader::addVariant(const ShaderVariant& variant)
-	{
-		// Store the variant for future use
-		// This is a simplified implementation that doesn't modify the shader
-		// In a full implementation, we would apply the variant's defines to shader source
-		GE_CORE_INFO("Added shader variant '{0}'", variant.name);
-	}
+    void OpenGLShader::addVariant(const ShaderVariant& variant)
+    {
+        // Check if variant with this name already exists
+        for (const auto& existingVariant : m_variants) {
+            if (existingVariant.name == variant.name) {
+                GE_CORE_WARN("OpenGLShader::addVariant: Variant '{0}' already exists. Overwriting.", variant.name);
+                return;
+            }
+        }
+        
+        GE_CORE_INFO("Added shader variant '{0}' to shader '{1}'", variant.name, m_name);
+        m_variants.push_back(variant);
+    }
 
-	void OpenGLShader::removeVariant(const std::string& name)
-	{
-		// Remove the variant from storage
-		// This is a simplified implementation
-		GE_CORE_INFO("Removed shader variant '{0}'", name);
-	}
+    void OpenGLShader::removeVariant(const std::string& name)
+    {
+        for (auto it = m_variants.begin(); it != m_variants.end(); ++it) {
+            if (it->name == name) {
+                GE_CORE_INFO("Removed shader variant '{0}' from shader '{1}'", name, m_name);
+                m_variants.erase(it);
+                return;
+            }
+        }
+        
+        GE_CORE_WARN("OpenGLShader::removeVariant: Variant '{0}' not found", name);
+    }
+
+    std::string OpenGLShader::processSource(const std::string& source, const ShaderVariant& variant)
+    {
+        // Simple preprocessor for shader variants
+        std::stringstream ss;
+        
+        // Add defines for this variant
+        for (const auto& define : variant.defines) {
+            ss << "#define " << define << std::endl;
+        }
+        
+        // Add the original source
+        ss << source;
+        
+        return ss.str();
+    }
+
 
 	const std::vector<UniformInfo>& OpenGLShader::getUniforms() const
 	{
@@ -394,6 +416,102 @@ bool OpenGLShader::linkProgram() {
         }
     }
 
+void OpenGLShader::validateShaderProgram()
+{
+    glValidateProgram(m_programID);
+    GLint status;
+    glGetProgramiv(m_programID, GL_VALIDATE_STATUS, &status);
+    if (status == GL_FALSE) {
+        GLint length;
+        glGetProgramiv(m_programID, GL_INFO_LOG_LENGTH, &length);
+        std::vector<char> log(length);
+        glGetProgramInfoLog(m_programID, length, &length, log.data());
+        GE_CORE_ERROR("Program validation failed: {0}", log.data());
+    }
+}
+
+
+void OpenGLShader::setFloat(const std::string& name, float value)
+{
+    glUniform1f(getUniformLocation(name), value);
+}
+
+void OpenGLShader::setInt(const std::string& name, int value)
+{
+    glUniform1i(getUniformLocation(name), value);
+}
+
+void OpenGLShader::setBool(const std::string& name, bool value)
+{
+    glUniform1i(getUniformLocation(name), static_cast<int>(value));
+}
+
+void OpenGLShader::setVec2(const std::string& name, const glm::vec2& value)
+{
+    glUniform2f(getUniformLocation(name), value.x, value.y);
+}
+
+void OpenGLShader::setVec3(const std::string& name, const glm::vec3& value)
+{
+    glUniform3f(getUniformLocation(name), value.x, value.y, value.z);
+}
+
+
+void OpenGLShader::setVec4(const std::string& name, const glm::vec4& value)
+{
+    glUniform4f(getUniformLocation(name), value.x, value.y, value.z, value.w);
+}
+
+void OpenGLShader::setMat3(const std::string& name, const glm::mat3& value)
+{
+    glUniformMatrix3fv(getUniformLocation(name), 1, GL_FALSE, &value[0][0]);
+}
+
+void OpenGLShader::setMat4(const std::string& name, const glm::mat4& value)
+{
+    glUniformMatrix4fv(getUniformLocation(name), 1, GL_FALSE, &value[0][0]);
+    
+}
+
+
+void OpenGLShader::setTexture(const std::string& name, std::shared_ptr<Texture2D> texture, uint32_t slot)
+{
+    if (!texture) {
+        GE_CORE_WARN("OpenGLShader::setTexture: Texture is null for uniform '{0}'", name);
+        return;
+    }
+    
+    if (slot >= 32) {
+        GE_CORE_ERROR("OpenGLShader::setTexture: Texture slot {0} out of range (max 31)", slot);
+        return;
+    }
+    
+    glActiveTexture(GL_TEXTURE0 + slot);
+    texture->bind();
+    setInt(name, slot);
+    m_textureSlots[slot] = texture->getRendererID();
+}
+
+int OpenGLShader::getUniformLocation(const std::string& name)
+{
+    // Check if the uniform location is already cached
+    auto it = m_uniformLocationCache.find(name);
+    if (it != m_uniformLocationCache.end()) {
+        return it->second;
+    }
+    
+    // If not cached, query OpenGL for the location
+    int location = glGetUniformLocation(m_programID, name.c_str());
+    if (location == -1) {
+        GE_CORE_WARN("Uniform '{0}' not found in shader '{1}'", name, m_name);
+    }
+    
+    // Cache the location for future use
+    m_uniformLocationCache[name] = location;
+    return location;
+}
+
+
 GLenum ShaderTypeToGL(ShaderType type)
 {
 	switch (type)
@@ -445,6 +563,7 @@ UniformType GLToUniformType(GLenum type)
 		default: return UniformType::FLOAT;
 	}
 }
+
 
 }
 

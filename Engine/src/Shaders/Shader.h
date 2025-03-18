@@ -8,6 +8,8 @@
 
 namespace Rapture {
 
+    class Texture2D;
+
     enum class ShaderType {
         VERTEX,
         FRAGMENT,
@@ -58,23 +60,21 @@ namespace Rapture {
 	class Shader {
 	
 	public:
-
 		Shader(std::string name)
 			:m_name(name) { }
 
+        virtual ~Shader() = default;
+
 		virtual void bind() = 0;
-		virtual void unBind() = 0;
+        virtual void unBind() = 0;
 
         // Shader compilation and management
-        virtual bool compile() = 0;
+        virtual bool compile(const std::string& variantName = "") = 0;
         virtual bool reload() = 0;
         virtual void addVariant(const ShaderVariant& variant) = 0;
         virtual void removeVariant(const std::string& name) = 0;
         
-        // Uniform management
-        virtual void setUniform(const std::string& name, const void* data) = 0;
-        virtual void setUniformArray(const std::string& name, const void* data, size_t count) = 0;
-        
+
         // Shader introspection
         virtual const std::vector<UniformInfo>& getUniforms() const = 0;
         virtual const std::vector<UniformInfo>& getSamplers() const = 0;
@@ -83,12 +83,26 @@ namespace Rapture {
         virtual std::shared_ptr<Shader> loadFromCache(const std::string& name) = 0;
         virtual void saveToCache() const = 0;
 
+        // Enhanced uniform setters for materials
+        virtual void setFloat(const std::string& name, float value) = 0;
+        virtual void setInt(const std::string& name, int value) = 0;
+        virtual void setBool(const std::string& name, bool value) = 0;
+        virtual void setVec2(const std::string& name, const glm::vec2& value) = 0;
+        virtual void setVec3(const std::string& name, const glm::vec3& value) = 0;
+        virtual void setVec4(const std::string& name, const glm::vec4& value) = 0;
+        virtual void setMat3(const std::string& name, const glm::mat3& value) = 0;
+        virtual void setMat4(const std::string& name, const glm::mat4& value) = 0;
+        virtual void setTexture(const std::string& name, std::shared_ptr<Texture2D> texture, uint32_t slot = 0) = 0;
 
-		virtual void setUniformMat4f(const std::string& name, glm::mat4& matrix)=0;
+        // Legacy setters (kept for compatibility)
+		virtual void setUniformMat4f(const std::string& name, glm::mat4& matrix) = 0;
 		virtual void setUniformVec3f(const std::string& name, glm::vec3& vector) = 0;
 		virtual void setUniform1f(const std::string& name, float val) = 0;
 
-		//virtual std::map<std::string, float> getShaderUniforms()=0;
+        virtual void validateShaderProgram() = 0;
+
+        // Get the name of this shader
+        const std::string& getName() const { return m_name; }
 
 	protected:
         std::string m_name;
@@ -96,9 +110,8 @@ namespace Rapture {
         std::vector<ShaderVariant> m_variants;
         std::vector<UniformInfo> m_uniforms;
         std::vector<UniformInfo> m_samplers;
-        ShaderStatus m_status;
-        uint32_t m_programID;
-
+        ShaderStatus m_status = ShaderStatus::UNCOMPILED;
+        uint32_t m_programID = 0;
 	};
 
 }

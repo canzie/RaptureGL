@@ -223,6 +223,25 @@ else()
     endif()
 endif()
 
+# ==================== yaml-cpp ====================
+# Only look in Engine/vendor for libraries
+set(YAML_CPP_DIR "${CMAKE_SOURCE_DIR}/Engine/vendor/yaml-cpp")
+message(STATUS "Looking for yaml-cpp at ${YAML_CPP_DIR}")
+
+# Configure yaml-cpp build options
+set(YAML_CPP_BUILD_CONTRIB ON CACHE BOOL "Enable yaml-cpp contrib in library" FORCE)
+set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "Enable parse tools" FORCE)
+set(YAML_BUILD_SHARED_LIBS OFF CACHE BOOL "Build yaml-cpp shared library" FORCE)
+set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "Enable yaml-cpp tests" FORCE)
+set(YAML_CPP_INSTALL OFF CACHE BOOL "Enable generation of yaml-cpp install targets" FORCE)
+
+if(EXISTS "${YAML_CPP_DIR}/CMakeLists.txt")
+    message(STATUS "Building yaml-cpp from source")
+    add_subdirectory(${YAML_CPP_DIR} yaml-cpp EXCLUDE_FROM_ALL)
+else()
+    message(FATAL_ERROR "yaml-cpp not found in ${YAML_CPP_DIR}")
+endif()
+
 # ==================== Link all libraries to vendor_libraries ====================
 target_link_libraries(vendor_libraries INTERFACE
     glad
@@ -232,6 +251,7 @@ target_link_libraries(vendor_libraries INTERFACE
     entt
     spdlog
     stb_image
+    yaml-cpp
     ${OPENGL_LIBRARIES}
 )
 
@@ -249,5 +269,5 @@ target_include_directories(vendor_libraries INTERFACE
     ${ENTT_DIR}/include
     ${SPDLOG_DIR}/include
     ${STB_IMAGE_DIR}
-    ${OPENGL_INCLUDE_DIR}
+    ${YAML_CPP_DIR}/include
 ) 

@@ -50,7 +50,10 @@ namespace Rapture {
 			GE_CORE_CRITICAL("Glad failed to initialize");
 		}
 		glfwSetWindowUserPointer(m_window, &m_context_data);
-		glfwSwapInterval(1);
+		
+		// Disable VSync by setting swap interval to 0
+		glfwSwapInterval(0);
+		GE_CORE_INFO("VSync disabled - uncapped framerate");
 
 		setGLFWCallbacks();
 

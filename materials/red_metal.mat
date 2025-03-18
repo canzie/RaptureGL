@@ -1,0 +1,41 @@
+# Rapture Engine Material File
+name: RedMetal
+type: PBR
+shader: Standard
+
+# Properties
+properties:
+  baseColor: [1.0, 0.0, 0.0]
+  roughness: 0.5
+  metallic: 1.0
+  specular: 0.6
+  emissive: [0.0, 0.0, 0.0]
+  emissiveStrength: 0.0
+  opacity: 1.0
+  
+# Textures
+textures:
+  albedoMap: ""
+  normalMap: ""
+  roughnessMap: ""
+  metallicMap: ""
+  aoMap: ""
+  emissiveMap: ""
+  
+# Shader variants
+variants:
+  - name: ForwardPass
+    defines:
+      - FORWARD_PASS
+      - USE_PBR
+  - name: ShadowPass
+    defines:
+      - SHADOW_PASS
+      - DEPTH_ONLY
+      
+# Render states
+renderStates:
+  cullMode: Back
+  depthTest: true
+  depthWrite: true
+  blendMode: Opaque 

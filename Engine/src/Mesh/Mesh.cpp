@@ -7,7 +7,7 @@
 
 
 #include "../File Loaders/glTF/glTFLoader.h"
-#include "../logger/Log.h"
+#include "../Logger/Log.h"
 
 namespace Rapture
 {

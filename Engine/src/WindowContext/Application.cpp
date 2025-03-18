@@ -93,5 +93,11 @@ namespace Rapture {
 		layer->onAttach();
 	}
 
+	void Application::pushOverlay(Layer* overlay)
+	{
+		m_layerStack.pushOverlay(overlay);
+		overlay->onAttach();
+	}
+
 }
 

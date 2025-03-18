@@ -1,6 +1,7 @@
 #include "WindowContext/Application.h"
 #include "Logger/Log.h"
 #include "TestLayer.h"
+#include "ImGuiLayer.h"
 #include "AppEntryPoint.h"
 
 // The main Editor application class
@@ -14,6 +15,9 @@ public:
         
         // Push main editor layer
         pushLayer(new TestLayer());
+        
+        // Push ImGui layer as an overlay so it renders on top
+        pushOverlay(new Rapture::ImGuiLayer());
     }
     
     ~EditorApp() {

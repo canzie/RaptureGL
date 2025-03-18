@@ -77,6 +77,7 @@ namespace Rapture {
 				}
 			}
 			GE_CORE_ERROR("shit not found dude: {0}", name);
+            return buffer_attribs[0];
 		}
 
 		bool operator==(const BufferLayout& other)
@@ -121,6 +122,7 @@ namespace Rapture {
 
 		const std::shared_ptr<IndexBuffer>& getIndexBuffer() const { return m_indexBuffer; };
 		const std::shared_ptr<VertexBuffer>& getVertexBuffer() const { return m_vertexBuffer; };
+
 
 	private:
 
