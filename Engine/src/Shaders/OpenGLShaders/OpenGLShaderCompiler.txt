@@ -1,0 +1,20 @@
+
+/*
+
+namespace Rapture {
+
+class OpenGLShaderCompiler {
+    public:
+        static bool compileShader(const Shader& shader) {}
+        static std::string preprocessShader(const std::string& source);
+        static bool validateShader(const std::string& source);
+        
+    private:
+        static std::string processIncludes(const std::string& source);
+        static std::string processDefines(const std::string& source, 
+        const std::vector<std::string>& defines);
+        static std::string optimizeShader(const std::string& source);
+    };
+}
+
+*/

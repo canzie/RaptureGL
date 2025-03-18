@@ -3,6 +3,7 @@
 #include "Layers/Layer.h"
 #include "Scenes/Components/Components.h"
 #include "Renderer/Framebuffer.h"
+#include "CameraController.h"
 
 class TestLayer : public Rapture::Layer
 {
@@ -16,7 +17,4 @@ public:
 private:
 	std::shared_ptr<Rapture::Framebuffer> m_framebuffer = std::make_shared<Rapture::Framebuffer>();
 	std::shared_ptr<Rapture::Scene> m_activeScene = std::make_shared<Rapture::Scene>();
-
-	float lastX, lastY = 0;
-
 };

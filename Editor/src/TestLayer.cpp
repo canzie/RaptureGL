@@ -2,12 +2,15 @@
 #include "Scenes/Entity.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/OpenGLRendererAPI.h"
-#include "logger/Log.h"
+#include "Logger/Log.h"
 #include "Input/Input.h"
+#include "Events/MouseEvents.h"
+#include "Input/KeyBindings.h"
 
 void TestLayer::onAttach()
 {
-	
+	// Initialize keybindings from config file
+	KeyBindings::init("keybindings.cfg");
 
 	Rapture::Entity cube = m_activeScene->createEntity("cube ent");
 	cube.addComponent<Rapture::MeshComponent>("adamhead.gltf");
@@ -30,6 +33,12 @@ void TestLayer::onAttach()
 	Rapture::Entity camera_controller = m_activeScene->createEntity("Camera Controller");
 	camera_controller.addComponent<Rapture::CameraControllerComponent>(60.0f, 1920.0f / 1080.0f, 0.1f, 1000.0f);
 	
+	// Initialize the camera controller
+	CameraController::init(camera_controller);
+	
+	// Initialize with current mouse position
+	auto pos = Rapture::Input::getMousePos();
+	CameraController::setMousePosition(pos.first, pos.second);
 }
 
 void TestLayer::onDetach()
@@ -50,93 +59,30 @@ void TestLayer::onUpdate(float ts)
 		//mesh.getComponent<Rapture::TransformComponent>().rotation.y += 1.0f * ts / 1000.0f;
 	}
 
+	// Update the camera controller
+	CameraController::update(ts);
 
-	auto cams = reg.view<Rapture::CameraControllerComponent>();
-	Rapture::Entity camera_ent(cams.front(), m_activeScene.get());
-
-	Rapture::CameraControllerComponent& controller_comp = camera_ent.getComponent<Rapture::CameraControllerComponent>();
-
-
-	auto pos = Rapture::Input::getMousePos();
-
-	float xoffset = pos.first - lastX;
-	float yoffset = lastY - pos.second;
-	lastX = pos.first;
-	lastY = pos.second;
-
-	float sensitivity = 5.0f * (ts/1000.0f);
-	xoffset *= sensitivity;
-	yoffset *= sensitivity;
-
-	controller_comp.yaw += xoffset;
-	controller_comp.pitch += yoffset;
-
-	if (controller_comp.pitch > 89.0f)
-		controller_comp.pitch = 89.0f;
-	if (controller_comp.pitch < -89.0f)
-		controller_comp.pitch = -89.0f;
-
-	glm::vec3 front;
-	front.x = cos(glm::radians(controller_comp.yaw)) * cos(glm::radians(controller_comp.pitch));
-	front.y = sin(glm::radians(controller_comp.pitch));
-	front.z = sin(glm::radians(controller_comp.yaw)) * cos(glm::radians(controller_comp.pitch));
-	controller_comp.cameraFront = glm::normalize(front);
-
-	glm::vec3 rot = glm::vec3(controller_comp.cameraFront.z, 0.0f, -controller_comp.cameraFront.x);
-
-	if (Rapture::Input::isKeyPressed(65))// Dd
-	{
-		controller_comp.translation += 0.1f*(glm::vec3(1.0f) * rot);
-	}
-	else if (Rapture::Input::isKeyPressed(68)) // Aa
-	{
-		controller_comp.translation -= 0.1f*(glm::vec3(1.0f) * rot);
-	}
-	else if (Rapture::Input::isKeyPressed(87)) // Ww
-	{
-		controller_comp.translation += 0.1f*(glm::vec3(1.0f) * controller_comp.cameraFront);
-	}
-	else if (Rapture::Input::isKeyPressed(83)) // Ss
-	{
-		controller_comp.translation -= 0.1f*(glm::vec3(1.0f) * controller_comp.cameraFront);
-	}
-	else if (Rapture::Input::isKeyPressed(32)) // Space
-	{
-		controller_comp.translation.y += 0.1f;
-	}
-	else if (Rapture::Input::isKeyPressed(340)) // Shift
-	{
-		controller_comp.translation.y -= 0.1f;
-	}
-	else if (Rapture::Input::isKeyPressed(256)) // esc
-	{
-		Rapture::Input::disableMouseCursor();
-	}
-	else if (Rapture::Input::isKeyPressed(49)) // 1
-	{
-		Rapture::Input::enableMouseCursor();
-	}
-
-
-	controller_comp.camera.updateViewMatrix(controller_comp.translation, controller_comp.cameraFront);
-
-	
 	//m_framebuffer->bind();
 
 	Rapture::OpenGLRendererAPI::setClearColor({ 0.2f, 0.2f, 0.2f, 1.0f });
 	Rapture::OpenGLRendererAPI::clear();
 
-
-
-
 	Rapture::Renderer::sumbitScene(m_activeScene);
 
 	//m_framebuffer->unBind();
-
-
 }
 
 void TestLayer::onEvent(Rapture::Event& event)
 {
-
+    // Handle mouse button pressed events
+    if (event.getEventType() == Rapture::EventType::MouseBtnPressed)
+    {
+        Rapture::MouseButtonPressedEvent& mouseEvent = static_cast<Rapture::MouseButtonPressedEvent&>(event);
+        
+        // Mouse button 0 is usually left mouse button
+        if (mouseEvent.getMouseButton() == 0)
+        {
+            CameraController::onWindowClicked();
+        }
+    }
 }
