@@ -1,5 +1,5 @@
 #include "../Scenes/Entity.h"
-#include "../Shaders/UniformBuffer.h"
+#include "../Buffers/OpenGLBuffers/UniformBuffers/OpenGLUniformBuffer.h"
 #include <memory>
 
 namespace Rapture
@@ -14,7 +14,7 @@ namespace Rapture
 		static void sumbitScene(const std::shared_ptr<Scene> s);
 
 	private:
-		static UniformBuffer* s_cameraUBO;
+		static std::shared_ptr<UniformBuffer> s_cameraUBO;
 
 	};
 

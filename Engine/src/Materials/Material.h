@@ -5,9 +5,10 @@
 #include <string>
 #include <unordered_map>
 #include <glm/glm.hpp>
-#include "../Shaders/UniformBuffer.h"
 #include "MaterialUniformLayouts.h"
 #include "MaterialParameter.h"
+#include "../Buffers/Buffers.h"
+#include "../Buffers/OpenGLBuffers/UniformBuffers/OpenGLUniformBuffer.h"
 
 namespace Rapture {
 
@@ -45,8 +46,8 @@ class Material : public std::enable_shared_from_this<Material> {
         Shader* getShader() const { return m_shader; }
         
         // Uniform buffer management
-        void setUniformBuffer(UniformBuffer* uniformBuffer);
-        UniformBuffer* getUniformBuffer() const { return m_uniformBuffer; }
+        void setUniformBuffer(std::shared_ptr<UniformBuffer> uniformBuffer);
+        std::shared_ptr<UniformBuffer> getUniformBuffer() const { return m_uniformBuffer; }
         
         // Feature flags
         void setFlag(MaterialFlagBitLocations flag, bool enabled);
@@ -83,7 +84,7 @@ class Material : public std::enable_shared_from_this<Material> {
         std::string m_name;
         MaterialType m_type;
         Shader* m_shader = nullptr;
-        UniformBuffer* m_uniformBuffer = nullptr;
+        std::shared_ptr<UniformBuffer> m_uniformBuffer = nullptr;
         char m_renderFlags = 0;
         MaterialParameterMap m_parameters;
 };

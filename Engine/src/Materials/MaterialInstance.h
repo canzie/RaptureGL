@@ -2,10 +2,10 @@
 
 #include "Material.h"
 #include "MaterialParameter.h"
-#include "../Shaders/UniformBuffer.h"
 #include <unordered_map>
 #include <string>
 #include <memory>
+#include "../Buffers/OpenGLBuffers/UniformBuffers/OpenGLUniformBuffer.h"
 
 namespace Rapture {
 
@@ -21,7 +21,7 @@ public:
     const std::string& getName() const { return m_name; }
     
     // Get instance-specific uniform buffer
-    UniformBuffer* getUniformBuffer() const { return m_uniformBuffer; }
+    std::shared_ptr<UniformBuffer> getUniformBuffer() const { return m_uniformBuffer; }
 
     // Parameter setting
     void setFloat(const std::string& name, float value);
@@ -57,7 +57,7 @@ private:
     std::string m_name;
     std::shared_ptr<Material> m_baseMaterial;
     MaterialParameterMap m_parameterOverrides;
-    UniformBuffer* m_uniformBuffer = nullptr;
+    std::shared_ptr<UniformBuffer> m_uniformBuffer = nullptr;
 };
 
 } // namespace Rapture 

@@ -7,7 +7,7 @@ layout(location = 2) in vec3 aTexCoord0;
 
 precision highp float;
 
-layout (std140) uniform BaseTransformMats
+layout (std140, binding=0) uniform BaseTransformMats
 {
 	mat4 u_proj;
 	mat4 u_view;

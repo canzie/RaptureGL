@@ -56,7 +56,7 @@ namespace Rapture {
 		std::ifstream gltf_file(DIRNAME + filepath); // read .glTF file
 		if (!gltf_file)
 		{
-			GE_CORE_WARN("Couldn't load glTF file");
+			GE_CORE_WARN("GLTFLoader::loadMesh: Couldn't load glTF file");
 			return;
 		}
 
@@ -69,7 +69,7 @@ namespace Rapture {
 		std::ifstream binary_file(DIRNAME + bufferURI, std::ios::binary); // read .bin file
 		if (!binary_file)
 		{
-			GE_CORE_ERROR("Couldn't load binary file");
+			GE_CORE_ERROR("GLTFLoader::loadMesh: Couldn't load binary file");
 			return;
 		}
 		binary_file.unsetf(std::ios::skipws); // Stop eating new lines in binary mode
@@ -118,8 +118,8 @@ namespace Rapture {
 
 
 
-		GE_CORE_TRACE("IndexBuffer Size: {}", getIndexBufferLength());
-		GE_CORE_TRACE("VertexBuffer Size: {}", getVertexBufferLength());
+		GE_CORE_TRACE("GLTFLoader::loadMesh: IndexBuffer Size: {}", getIndexBufferLength());
+		GE_CORE_TRACE("GLTFLoader::loadMesh: VertexBuffer Size: {}", getVertexBufferLength());
 
 		
 		// load the vertex attributes
@@ -167,7 +167,7 @@ namespace Rapture {
 	// appends the correct data to the input vectors(vertex en index buffers)
 	void glTFLoader::loadMeshData(json& meshJSON, std::shared_ptr<SubMesh> submesh)
 	{
-		GE_CORE_INFO("loading Primitive: {0}", meshJSON.value("name", "Untitled"));
+		GE_CORE_INFO("GLTFLoader::loadMeshData: loading Primitive: {0}", meshJSON.value("name", "Untitled"));
 
 		submesh->m_name = meshJSON.value("name", "No Name");
 		

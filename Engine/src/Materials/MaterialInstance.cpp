@@ -16,20 +16,13 @@ MaterialInstance::MaterialInstance(const std::shared_ptr<Material>& material, co
     
     // Create a new uniform buffer for this instance if the base material has one
     if (material->getUniformBuffer()) {
-        uint32_t size = material->getUniformBuffer()->getSize();
-        uint32_t binding = material->getUniformBuffer()->getBindingPoint();
-        
-        m_uniformBuffer = UniformBuffer::create(size, binding);
-        
-        // Copy initial data from base material
-        const void* initialData = material->getUniformBuffer()->getData();
-        if (initialData) {
-            m_uniformBuffer->updateAllBufferData(initialData);
-            GE_CORE_INFO("  Copied initial uniform data from base material");
-        }
+
+
+        m_uniformBuffer = std::make_shared<UniformBuffer>(*material->getUniformBuffer());
+
         
         GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
-            m_uniformBuffer->getRendererID(), size, binding);
+            m_uniformBuffer->getID(), m_uniformBuffer->getSize(), m_uniformBuffer->getBindingPoint());
     }
 }
 
@@ -126,11 +119,11 @@ void MaterialInstance::bind()
     if (m_uniformBuffer) {
         uint32_t bindingPoint = m_uniformBuffer->getBindingPoint();
         GE_CORE_INFO("  Binding UBO {0} to binding point {1}", 
-            m_uniformBuffer->getRendererID(), bindingPoint);
+            m_uniformBuffer->getID(), bindingPoint);
         
         // Explicitly bind to the right binding point
-        glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, m_uniformBuffer->getRendererID());
-        
+        m_uniformBuffer->bindBase(bindingPoint);
+
         // Update the buffer with our overrides
         updateUniformBufferFromOverrides();
         
@@ -208,7 +201,7 @@ void MaterialInstance::updateUniformBufferFromOverrides()
                 if (param.getType() == MaterialParameterType::VEC3) {
                     const glm::vec3& color = param.asVec3();
                     // We need to update just the base_color field in the PBR uniform
-                    m_uniformBuffer->updateBufferData(0, sizeof(glm::vec3), &color);
+                    m_uniformBuffer->setData(&color, sizeof(glm::vec3));
                     GE_CORE_INFO("  Updated PBR base_color: ({0},{1},{2})", 
                         color.x, color.y, color.z);
                 }
@@ -220,8 +213,7 @@ void MaterialInstance::updateUniformBufferFromOverrides()
                 if (param.getType() == MaterialParameterType::FLOAT) {
                     float value = param.asFloat();
                     // Roughness is at offset sizeof(glm::vec3)
-                    m_uniformBuffer->updateBufferData(
-                        sizeof(glm::vec3), sizeof(float), &value);
+                    m_uniformBuffer->setData(&value, sizeof(float));
                     GE_CORE_INFO("  Updated PBR roughness: {0}", value);
                 }
             }
@@ -247,7 +239,7 @@ void MaterialInstance::updateUniformBufferFromOverrides()
                     }
                     
                     // Update the color in the uniform buffer
-                    m_uniformBuffer->updateBufferData(0, sizeof(glm::vec4), &color);
+                    m_uniformBuffer->setData(&color, sizeof(glm::vec4));
                     GE_CORE_INFO("  Updated SOLID color: ({0},{1},{2},{3})", 
                         color.x, color.y, color.z, color.w);
                 }

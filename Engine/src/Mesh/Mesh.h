@@ -28,6 +28,9 @@ namespace Rapture
 		std::vector<std::shared_ptr<SubMesh>>& getSubMeshes() { return m_meshes; }
 		std::shared_ptr<SubMesh> addSubMesh();
 
+		// Create a simple cube mesh for testing
+		static std::shared_ptr<Mesh> createCube(float size = 1.0f);
+
 	private:
 		std::vector<std::shared_ptr<SubMesh>> m_meshes;
 		std::shared_ptr<VertexArray> m_VAO;

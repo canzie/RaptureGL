@@ -2,7 +2,6 @@
 #include "../Shaders/OpenGLUniforms/UniformBindingPointIndices.h"
 #include "../logger/Log.h"
 #include "../Shaders/OpenGLShaders/OpenGLShader.h"
-#include "../Shaders/OpenGLUniforms/OpenGLUniformBuffer.h"
 #include "MaterialInstance.h"
 #include "../Logger/Log.h"
 #include "../Textures/Texture.h"
@@ -52,7 +51,7 @@ namespace Rapture
 		m_shader = shader;
 	}
 
-	void Material::setUniformBuffer(UniformBuffer* uniformBuffer)
+	void Material::setUniformBuffer(std::shared_ptr<UniformBuffer> uniformBuffer)
 	{
 		m_uniformBuffer = uniformBuffer;
 	}
@@ -157,36 +156,7 @@ namespace Rapture
 	}
 
 	MetalMaterial::MetalMaterial()
-		: Material(MaterialType::PBR, "Metal_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
-	{
-		GE_CORE_INFO("Creating Metal Material: {0}", m_name);
-		
-		if (!s_shader) {
-			GE_CORE_ERROR("Metal shader not initialized! Use MaterialLibrary::init() first.");
-			return;
-		}
-		
-		setShader(s_shader);
-		
-		// Create our uniform buffer
-		m_uniformBuffer = new OpenGLUniformBuffer(sizeof(m_uniformData), PBR_BINDING_POINT_IDX);
-		GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
-			m_uniformBuffer->getRendererID(), 
-			sizeof(m_uniformData), 
-			PBR_BINDING_POINT_IDX);
-		
-		// Default PBR values
-		m_uniformData.base_color = glm::vec3(0.5f, 0.5f, 0.5f);
-		m_uniformData.roughness = 0.5f;
-		m_uniformData.metallic = 1.0f;
-		m_uniformData.specular = 0.5f;
-		
-		// Also store as parameters for serialization/deserialization
-		setVec3("baseColor", m_uniformData.base_color);
-		setFloat("roughness", m_uniformData.roughness);
-		setFloat("metallic", m_uniformData.metallic);
-		setFloat("specular", m_uniformData.specular);
-	}
+		: MetalMaterial(glm::vec3(0.5f, 0.5f, 0.5f), 0.5f, 1.0f, 0.5f) { }
 
 	MetalMaterial::MetalMaterial(glm::vec3 base_color, float roughness, float metallic, float specular)
 		: Material(MaterialType::PBR, "Metal_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
@@ -201,10 +171,14 @@ namespace Rapture
 		
 		setShader(s_shader);
 		
-		// Create our uniform buffer
-		m_uniformBuffer = new OpenGLUniformBuffer(sizeof(m_uniformData), PBR_BINDING_POINT_IDX);
-		GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
-			m_uniformBuffer->getRendererID(), 
+		m_uniformBuffer = std::make_shared<UniformBuffer>(
+            sizeof(m_uniformData), 
+            BufferUsage::Dynamic, 
+            &m_uniformData,
+            PBR_BINDING_POINT_IDX);
+		
+        GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
+			m_uniformBuffer->getID(), 
 			sizeof(m_uniformData), 
 			PBR_BINDING_POINT_IDX);
 		
@@ -238,50 +212,21 @@ namespace Rapture
 			m_uniformData.specular = getParameter("specular").asFloat();
 		
 		// Explicitly bind UBO to binding point before updating
-		glBindBufferBase(GL_UNIFORM_BUFFER, PBR_BINDING_POINT_IDX, m_uniformBuffer->getRendererID());
+		m_uniformBuffer->bindBase(PBR_BINDING_POINT_IDX);
 		
 		// Now update the data
-		m_uniformBuffer->updateAllBufferData(&m_uniformData);
+		m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
 		
 		// Force flush to ensure data is sent to GPU
-		glBindBuffer(GL_UNIFORM_BUFFER, m_uniformBuffer->getRendererID());
-		glFlush();
+		m_uniformBuffer->flush();
 	}
 
+    // default constructor
 	PhongMaterial::PhongMaterial()
-		: Material(MaterialType::PHONG, "Phong_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
-	{
-		GE_CORE_INFO("Creating Phong Material: {0}", m_name);
-		
-		if (!s_shader) {
-			GE_CORE_ERROR("Phong shader not initialized! Use MaterialLibrary::init() first.");
-			return;
-		}
-		
-		setShader(s_shader);
-		
-		// Create our uniform buffer
-		m_uniformBuffer = new OpenGLUniformBuffer(sizeof(m_uniformData), PHONG_BINDING_POINT_IDX);
-		GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
-			m_uniformBuffer->getRendererID(), 
-			sizeof(m_uniformData), 
-			PHONG_BINDING_POINT_IDX);
-		
-		// Default values
-		m_uniformData.flux = 1.0f;
-		m_uniformData.diffuseColor = glm::vec4(0.7f, 0.7f, 0.7f, 1.0f);
-		m_uniformData.specularColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-		m_uniformData.ambientLight = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
-		m_uniformData.shininess = 32.0f;
-		
-		// Also store as parameters for serialization/deserialization
-		setFloat("flux", m_uniformData.flux);
-		setVec4("diffuseColor", m_uniformData.diffuseColor);
-		setVec4("specularColor", m_uniformData.specularColor);
-		setVec4("ambientLight", m_uniformData.ambientLight);
-		setFloat("shininess", m_uniformData.shininess);
-	}
+		: PhongMaterial(1.0f, glm::vec4(0.7f, 0.7f, 0.7f, 1.0f), glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), glm::vec4(0.1f, 0.1f, 0.1f, 1.0f), 32.0f) 
+        { }
 
+	// constructor with parameters
 	PhongMaterial::PhongMaterial(float flux, glm::vec4 diffuseColor, glm::vec4 specularColor, glm::vec4 ambientLight, float shininess)
 		: Material(MaterialType::PHONG, "Phong_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
 	{
@@ -295,9 +240,14 @@ namespace Rapture
 		setShader(s_shader);
 		
 		// Create our uniform buffer
-		m_uniformBuffer = new OpenGLUniformBuffer(sizeof(m_uniformData), PHONG_BINDING_POINT_IDX);
+		m_uniformBuffer = std::make_shared<UniformBuffer>(
+            sizeof(m_uniformData), 
+            BufferUsage::Dynamic, 
+            &m_uniformData, 
+            PHONG_BINDING_POINT_IDX);
+		
 		GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
-			m_uniformBuffer->getRendererID(), 
+			m_uniformBuffer->getID(), 
 			sizeof(m_uniformData), 
 			PHONG_BINDING_POINT_IDX);
 		
@@ -335,42 +285,20 @@ namespace Rapture
 			m_uniformData.shininess = getParameter("shininess").asFloat();
 		
 		// Explicitly bind UBO to binding point before updating
-		glBindBufferBase(GL_UNIFORM_BUFFER, PHONG_BINDING_POINT_IDX, m_uniformBuffer->getRendererID());
+		m_uniformBuffer->bindBase(PHONG_BINDING_POINT_IDX);
 		
 		// Now update the data
-		m_uniformBuffer->updateAllBufferData(&m_uniformData);
+		m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
 		
 		// Force flush to ensure data is sent to GPU
-		glBindBuffer(GL_UNIFORM_BUFFER, m_uniformBuffer->getRendererID());
-		glFlush();
+		m_uniformBuffer->flush();
 	}
 
+	// default constructor
 	SolidMaterial::SolidMaterial()
-		: Material(MaterialType::SOLID, "Solid_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
-	{
-		GE_CORE_INFO("Creating Solid Material: {0}", m_name);
-		
-		if (!s_shader) {
-			GE_CORE_ERROR("Solid shader not initialized! Use MaterialLibrary::init() first.");
-			return;
-		}
-		
-		setShader(s_shader);
-		
-		// Create our uniform buffer
-		m_uniformBuffer = new OpenGLUniformBuffer(sizeof(m_uniformData), SOLID_BINDING_POINT_IDX);
-		GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
-			m_uniformBuffer->getRendererID(), 
-			sizeof(m_uniformData), 
-			SOLID_BINDING_POINT_IDX);
-		
-		// Default to white
-		m_uniformData.color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-		
-		// Also store as parameters
-		setVec4("color", m_uniformData.color);
-	}
+		: SolidMaterial(glm::vec3(1.0f, 0.0f, 1.0f)) { }
 
+	// constructor with parameters
 	SolidMaterial::SolidMaterial(glm::vec3 base_color)
 		: Material(MaterialType::SOLID, "Solid_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
 	{
@@ -385,9 +313,14 @@ namespace Rapture
 		setShader(s_shader);
 		
 		// Create our uniform buffer
-		m_uniformBuffer = new OpenGLUniformBuffer(sizeof(m_uniformData), SOLID_BINDING_POINT_IDX);
+		m_uniformBuffer = std::make_shared<UniformBuffer>(
+            sizeof(m_uniformData), 
+            BufferUsage::Dynamic, 
+            &m_uniformData, 
+            SOLID_BINDING_POINT_IDX);
+		
 		GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
-			m_uniformBuffer->getRendererID(), 
+			m_uniformBuffer->getID(), 
 			sizeof(m_uniformData), 
 			SOLID_BINDING_POINT_IDX);
 		
@@ -411,13 +344,12 @@ namespace Rapture
 		}
 		
 		// Explicitly bind UBO to binding point before updating
-		glBindBufferBase(GL_UNIFORM_BUFFER, SOLID_BINDING_POINT_IDX, m_uniformBuffer->getRendererID());
+		m_uniformBuffer->bindBase(SOLID_BINDING_POINT_IDX);
 		
 		// Now update the data
-		m_uniformBuffer->updateAllBufferData(&m_uniformData);
+		m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
 		
 		// Force flush to ensure data is sent to GPU
-		glBindBuffer(GL_UNIFORM_BUFFER, m_uniformBuffer->getRendererID());
-		glFlush();
+		m_uniformBuffer->flush();
 	}
 }

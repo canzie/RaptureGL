@@ -23,24 +23,43 @@ namespace Rapture {
 
 	struct MeshComponent
 	{
-		Mesh* mesh;
+		std::shared_ptr<Mesh> mesh;
 		
 		MeshComponent(std::string fname)
 		{
-            
-			mesh = new Mesh(fname);
+			mesh = std::make_shared<Mesh>(fname);
             GE_CORE_INFO("Loading mesh with glTF Loader: {0}, submesh count: {1}", fname, mesh->getSubMeshes().size());
 		}
+        
         MeshComponent(std::string fname, bool useGLTF2)
         {
-            //mesh = new Mesh(fname, useGLTF2);
+            // TODO: Implement glTF2 loading
+            mesh = std::make_shared<Mesh>(fname);
             GE_CORE_INFO("Loading mesh with glTF2 Loader: {0}, submesh count: {1}", fname, mesh->getSubMeshes().size());
         }
-
+        
+        // Constructor that takes a mesh shared_ptr
+        MeshComponent(const std::shared_ptr<Mesh>& existingMesh) 
+        {
+            mesh = existingMesh;
+            GE_CORE_INFO("Created MeshComponent with existing mesh, submesh count: {0}", 
+                mesh ? mesh->getSubMeshes().size() : 0);
+        }
+        
+        // Constructor that takes a raw mesh pointer (for backward compatibility)
+        MeshComponent(Mesh* existingMesh) 
+        {
+            if (existingMesh) {
+                mesh = std::shared_ptr<Mesh>(existingMesh, [](Mesh*){});  // Non-owning shared_ptr
+                GE_CORE_WARN("Created MeshComponent with raw pointer, consider using shared_ptr instead");
+            }
+            GE_CORE_INFO("Created MeshComponent with existing mesh, submesh count: {0}", 
+                mesh ? mesh->getSubMeshes().size() : 0);
+        }
 
 		MeshComponent() 
 		{
-			mesh = new Mesh("Cube.gltf");
+			mesh = std::make_shared<Mesh>("Cube.gltf");
 		}
 	};
 

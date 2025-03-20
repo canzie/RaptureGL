@@ -1,7 +1,6 @@
 #include "MaterialLibrary.h"
 #include "MaterialInstance.h"
 #include "../Shaders/OpenGLShaders/OpenGLShader.h"
-#include "../Shaders/OpenGLUniforms/OpenGLUniformBuffer.h"
 #include "../Logger/Log.h"
 
 namespace Rapture {

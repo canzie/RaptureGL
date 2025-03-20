@@ -102,3 +102,6 @@ logs/
 *~
 *.bak
 *.swp 
+
+#Extra
+TODO.md

@@ -5,6 +5,7 @@
 #include "Scenes/Scene.h"
 #include "CameraController.h"
 #include "Renderer/Framebuffer.h"
+#include "Mesh/Mesh.h"
 
 class TestLayer : public Rapture::Layer
 {
@@ -28,6 +29,7 @@ public:
 private:
 	std::shared_ptr<Rapture::Scene> m_activeScene;
     std::shared_ptr<Rapture::Framebuffer> m_framebuffer;
+    std::shared_ptr<Rapture::Mesh> m_testCube;  // Store the test cube to keep it alive
     
     // FPS counter variables
     int m_fpsCounter = 0;

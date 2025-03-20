@@ -2,84 +2,62 @@
 
 #include <vector>
 #include <glm/glm.hpp>
-
 #include <utility>
-
+#include <memory>
 #include "../logger/Log.h"
-
-
 #include "../DataTypes.h"
+#include "../RendererAPI.h"
 
 namespace Rapture {
+ 
 
-
-
-	class VertexBuffer
-	{
-	public:
-		VertexBuffer(std::vector<unsigned char>& vertices);
-		VertexBuffer(unsigned long long buffer_length);
-
-		~VertexBuffer();
-
-		void bind();
-		void unBind();
-
-		//void setLayout(const BufferLayout& layout) { m_layout = layout; }
-		//const BufferLayout& getLayout() const { return m_layout; }
-
-		//unsigned int getVertexCount() const { return m_count; }
-		void addSubData(std::vector<unsigned char>& binary_data);
-		void pushData2Buffer(std::vector < std::vector<std::pair<size_t, size_t>>> premature_buffer_layout);
-
-		unsigned int getID__DEBUG() const { return m_bufferID; }
-
-	private:
-		// stores the contents that still need to be pushed to the buffer. (by calling pushData2Buffer())
-		std::vector<unsigned char> m_premature_buffer_data;
-
-		// 0: [0->x, y->z, u->v] | 1: [x->y], [...], ...
-
-
-		//unsigned int m_count;
-		unsigned int m_bufferID;
-		unsigned long long m_max_buffer_length;
-		unsigned int long long m_idx_last_element;
-		//BufferLayout m_layout;
-
+	enum class BufferUsage {
+		Static,     // Data is set once and used many times
+		Dynamic,    // Data is changed occasionally and used many times
+		Stream      // Data is changed frequently and used many times
 	};
 
-
-
-	class IndexBuffer 
-	{
-	public:
-		IndexBuffer(std::vector<unsigned char>& indices, unsigned int comp_count);
-		IndexBuffer(unsigned long long buffer_length, unsigned int comp_count);
-
-		~IndexBuffer();
-
-		void bind();
-		void unBind();
-
-		unsigned int getIndexCount() const { return m_count; }
-		unsigned int getIndexType() const { return m_componentType; }
-
-		void addSubIndices(std::vector<unsigned char>& indices);
-
-		unsigned int getID__DEBUG() const { return m_bufferID; }
-
-	private:
-		// total amoutn of elements in the buffer
-		unsigned int m_count;
-		// type of the contents stored in the buffer as GLenum
-		unsigned int m_componentType;
-		unsigned long long m_max_buffer_length;
-		unsigned int long long m_idx_last_element;
-		unsigned int m_bufferID;
-
-
-
+	enum class BufferType {
+		Vertex,
+		Index,
+		Uniform,
+		ShaderStorage
 	};
+
+	// Wrapper for checking OpenGL capabilities
+	class GLCapabilities {
+	public:
+		static bool hasDSA();
+		static bool hasBufferStorage();
+		static bool hasDebugMarkers();
+	private:
+		static bool s_initialized;
+		static bool s_hasDSA;
+		static bool s_hasBufferStorage;
+		static bool s_hasDebugMarkers;
+		static void initialize();
+	};
+
+	// Buffer base class
+	class Buffer {
+	public:
+		virtual ~Buffer() = default;
+		
+		virtual void bind() = 0;
+		virtual void unbind() = 0;
+		
+		virtual void setDebugLabel(const std::string& label) = 0;
+		virtual unsigned int getID() const = 0;
+		
+        static std::shared_ptr<Buffer> Create(BufferType type, size_t size, BufferUsage usage, const void* data);
+
+		
+        
+            
+	};
+
+	
+
+
 
 }

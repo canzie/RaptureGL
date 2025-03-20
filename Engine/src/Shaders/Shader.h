@@ -104,6 +104,15 @@ namespace Rapture {
         // Get the name of this shader
         const std::string& getName() const { return m_name; }
 
+        // Get the shader program ID
+        virtual unsigned int getProgramID() const = 0;
+        
+        // Get the shader status
+        ShaderStatus getStatus() const { return m_status; }
+        
+        // Check if the shader is valid
+        bool isValid() const { return m_status == ShaderStatus::COMPILED; }
+
 	protected:
         std::string m_name;
         std::map<ShaderType, std::string> m_sources;

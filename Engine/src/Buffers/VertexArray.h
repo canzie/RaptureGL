@@ -3,9 +3,13 @@
 #include <memory>
 #include "Buffers.h"
 
+#include "OpenGLBuffers/VertexBuffers/OpenGLVertexBuffer.h"
+#include "OpenGLBuffers/IndexBuffers/OpenGLIndexBuffer.h"
+
 
 namespace Rapture {
 
+	// Legacy code kept for reference
 	/*
 	class VertexArray
 	{
@@ -33,41 +37,40 @@ namespace Rapture {
 	};
 	*/
 
-
-	struct BufferLayoutElement
-	{
-		std::string name;
-		unsigned int componentType; // GL_FLOAT, GL_INT, ... 
-		std::string type; // SCALAR, VEC2, VEC3, VEC4, ...
-		unsigned int stride;
-		size_t offset;
-
-	};
+    struct BufferLayoutElement {
+        std::string name;          // Name of the element (e.g., "POSITION", "NORMAL", "TEXCOORD")
+        unsigned int componentType; // Data type (GL_FLOAT, GL_INT, etc.)
+        std::string type;          // Component structure (SCALAR, VEC2, VEC3, VEC4, etc.)
+        unsigned int stride;       // Bytes between consecutive vertices
+        size_t offset;             // Byte offset within the vertex
+    };
 
 	struct BufferAttribute
 	{
 		std::string name;
 		unsigned int componentType; // GL_FLOAT, GL_INT, ... 
 		std::string type; // SCALAR, VEC2, VEC3, VEC4, ...
-		//unsigned int stride;
 		size_t offset;
 
-		bool operator==(const BufferAttribute& other)
+		bool operator==(const BufferAttribute& other) const
 		{
-			(other.name == name &&
+			return (other.name == name &&
 				other.offset == offset &&
 				other.componentType == componentType &&
-				other.type == type  
-				//other.stride == stride
-				);
+				other.type == type);
 		}
 
+		bool operator!=(const BufferAttribute& other) const
+		{
+			return !(*this == other);
+		}
 	};
+
 	struct BufferLayout
 	{
 		std::vector<BufferAttribute> buffer_attribs;
 
-		BufferAttribute& getAttribute(std::string name)
+		BufferAttribute& getAttribute(const std::string& name)
 		{
 			for (int i = 0; i < buffer_attribs.size(); i++)
 			{
@@ -76,11 +79,11 @@ namespace Rapture {
 					return buffer_attribs[i];
 				}
 			}
-			GE_CORE_ERROR("shit not found dude: {0}", name);
+			GE_CORE_ERROR("Attribute not found: {0}", name);
             return buffer_attribs[0];
 		}
 
-		bool operator==(const BufferLayout& other)
+		bool operator==(const BufferLayout& other) const
 		{
 			if (other.buffer_attribs.size() != buffer_attribs.size()) return false;
 			for (int i = 0; i < buffer_attribs.size(); i++)
@@ -90,7 +93,7 @@ namespace Rapture {
 			return true;
 		}
 
-		void print_buffer_layout()
+		void print_buffer_layout() const
 		{
 			for (int i = 0; i < buffer_attribs.size(); i++)
 			{
@@ -99,12 +102,9 @@ namespace Rapture {
 		}
 	};
 
-
-
 	class VertexArray
 	{
 	public:
-
 		VertexArray();
 		~VertexArray();
 
@@ -112,28 +112,30 @@ namespace Rapture {
 		void unbind() const;
 
 		void setAttribLayout(BufferAttribute& el);
-		void setBufferLayout(BufferLayout el);
-
+		void setBufferLayout(const BufferLayout& el);
+        BufferLayout& getBufferLayout() { return m_buffer_layout; }
+		
+		// Modern vertex buffer management
+		void setVertexBuffer(const std::shared_ptr<VertexBuffer>& vertexBuffer);
+		void setIndexBuffer(const std::shared_ptr<IndexBuffer>& indexBuffer);
+		
+		// Legacy methods for compatibility
 		void setVertexBuffer(std::vector<unsigned char>& vertices);
 		void setVertexBuffer(unsigned long long buffer_length);
-
 		void setIndexBuffer(unsigned long long buffer_length, unsigned int comp_count);
-		//void addIndexBufferData(std::vector<unsigned char>& indices);
 
-		const std::shared_ptr<IndexBuffer>& getIndexBuffer() const { return m_indexBuffer; };
-		const std::shared_ptr<VertexBuffer>& getVertexBuffer() const { return m_vertexBuffer; };
-
+		// Accessors
+		const std::shared_ptr<IndexBuffer>& getIndexBuffer() const { return m_indexBuffer; }
+		const std::shared_ptr<VertexBuffer>& getVertexBuffer() const { return m_vertexBuffer; }
+		
+		// Debug utilities
+		void setDebugLabel(const std::string& label);
+		unsigned int getID() const { return m_rendererId; }
 
 	private:
-
-		unsigned int m_bufferID;
+		unsigned int m_rendererId;
 		BufferLayout m_buffer_layout;
 		std::shared_ptr<VertexBuffer> m_vertexBuffer;
 		std::shared_ptr<IndexBuffer> m_indexBuffer;
-
 	};
-
-
-
-
 }

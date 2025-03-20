@@ -35,7 +35,7 @@ std::string parseShader(std::string filepath)
 
 		if (!stream)
 		{
-			GE_CORE_ERROR("Shader file parse error: {0}", fullPath);
+			GE_CORE_ERROR("ShaderParser: Shader file parse error: {0}", fullPath);
 		}
 
 		char c = stream.get();
@@ -54,7 +54,7 @@ OpenGLShader::OpenGLShader(std::string vertex_source, std::string fragment_sourc
 {
     std::string vertexShaderSource = parseShader(vertex_source);
     if (vertexShaderSource.empty()) {
-        GE_CORE_CRITICAL("Vertex shader source is empty after parsing: {0}", vertex_source);
+        GE_CORE_CRITICAL("OpenGLShader: Vertex shader source is empty after parsing: {0}", vertex_source);
         m_status = ShaderStatus::SHADER_ERROR;
         return;
     }
@@ -63,7 +63,7 @@ OpenGLShader::OpenGLShader(std::string vertex_source, std::string fragment_sourc
         std::string fragmentShaderSource = parseShader(fragment_source);
         if (fragmentShaderSource.empty()) {
             m_status = ShaderStatus::SHADER_ERROR;
-            GE_CORE_CRITICAL("Fragment shader source is empty after parsing: {0}", fragment_source);
+            GE_CORE_CRITICAL("OpenGLShader: Fragment shader source is empty after parsing: {0}", fragment_source);
             return;
         }
         m_sources[ShaderType::FRAGMENT] = fragmentShaderSource;
@@ -78,7 +78,7 @@ OpenGLShader::OpenGLShader(std::string vertex_source, std::string fragment_sourc
 		GLsizei length; // name length
 
 	glGetProgramiv(m_programID, GL_ACTIVE_UNIFORM_BLOCKS, &count);
-	GE_CORE_INFO("Shader '{0}' has {1} uniform blocks", m_name, count);
+	GE_CORE_INFO("OpenGLShader: '{0}' has {1} uniform blocks", m_name, count);
 	
 	for (i = 0; i < count; i++)
 	{
@@ -86,7 +86,7 @@ OpenGLShader::OpenGLShader(std::string vertex_source, std::string fragment_sourc
 		glGetActiveUniformBlockiv(m_programID, (GLuint)i, GL_UNIFORM_BLOCK_DATA_SIZE, &blockSize);
 		glGetActiveUniformBlockiv(m_programID, (GLuint)i, GL_UNIFORM_BLOCK_NAME_LENGTH, &length);
 		glGetActiveUniformBlockName(m_programID, (GLuint)i, length, NULL, name);
-		GE_CORE_INFO("  Uniform Block({0}): '{1}' (size: {2} bytes)", i, name, blockSize);
+		GE_CORE_INFO("OpenGLShader: Uniform Block({0}): '{1}' (size: {2} bytes)", i, name, blockSize);
 
 		std::string blockName(name);
 		GLuint bindingPoint = 0;
@@ -105,7 +105,8 @@ OpenGLShader::OpenGLShader(std::string vertex_source, std::string fragment_sourc
 			bindingPoint = SOLID_BINDING_POINT_IDX;
 		}
 		else {
-			GE_CORE_WARN("    Unknown uniform block '{0}' - using default binding 0", blockName);
+			GE_CORE_WARN("OpenGLShader: Unknown uniform block '{0}'", blockName);
+            continue;
 		}
 		
 		// Get the block index and current binding
@@ -116,28 +117,28 @@ OpenGLShader::OpenGLShader(std::string vertex_source, std::string fragment_sourc
 		// Set the binding point if it's different from current
 		if (currentBinding != bindingPoint) {
 			glUniformBlockBinding(m_programID, blockIndex, bindingPoint);
-			GE_CORE_INFO("    Bound block '{0}' to binding point {1} (was {2})", 
+			GE_CORE_INFO("OpenGLShader: Bound block '{0}' to binding point {1} (was {2})", 
 				blockName, bindingPoint, currentBinding);
 		}
 		else {
-			GE_CORE_INFO("    Block '{0}' already bound to point {1}", blockName, bindingPoint);
+			GE_CORE_INFO("OpenGLShader: Block '{0}' already bound to point {1}", blockName, bindingPoint);
 		}
 		
 		// Validate that binding worked
 		glGetActiveUniformBlockiv(m_programID, blockIndex, GL_UNIFORM_BLOCK_BINDING, &currentBinding);
 		if (currentBinding != bindingPoint) {
-			GE_CORE_ERROR("    FAILED to bind block '{0}' to point {1}, still at {2}", 
+			GE_CORE_ERROR("OpenGLShader: FAILED to bind block '{0}' to point {1}, still at {2}", 
 				blockName, bindingPoint, currentBinding);
 		}
 	}
 
-	GE_CORE_INFO("Created Shader: {0}", m_programID);
+	GE_CORE_INFO("OpenGLShader: Created Shader: {0}", m_programID);
 
 	}
 
 OpenGLShader::~OpenGLShader()
 	{
-		GE_CORE_TRACE("Deleting Shader: {0}", m_programID);
+		GE_CORE_TRACE("OpenGLShader: Deleting Shader: {0}", m_programID);
 		glDeleteProgram(m_programID);
 	}
 
@@ -159,7 +160,7 @@ bool OpenGLShader::compile(const std::string& variantName) {
             GE_CORE_ERROR("OpenGLShader::compileVariant: Variant '{0}' not found, compiling default variant", variantName);
         }
         
-        GE_CORE_INFO("Compiling shader variant '{0}' for shader '{1}'", variantName, m_name);
+        GE_CORE_INFO("OpenGLShader::compile: Compiling shader variant '{0}' for shader '{1}'", variantName, m_name);
     }
 
         for (auto& [type, source] : m_sources) {
@@ -173,13 +174,13 @@ bool OpenGLShader::compile(const std::string& variantName) {
 
             // 2. Compile individual shaders
             if (!compileShader(type, processed)) {
-                GE_CORE_CRITICAL("Shader compilation failed");
+                GE_CORE_CRITICAL("OpenGLShader::compile: Shader compilation failed");
                 return false;
             }
         }
 
         if (!linkProgram()) {
-            GE_CORE_CRITICAL("Shader linking failed");
+            GE_CORE_CRITICAL("OpenGLShader::compile: Shader linking failed");
             return false;
         }
 
@@ -249,7 +250,7 @@ bool OpenGLShader::reload()
             }
         }
         
-        GE_CORE_INFO("Added shader variant '{0}' to shader '{1}'", variant.name, m_name);
+        GE_CORE_INFO("OpenGLShader::addVariant: Added shader variant '{0}' to shader '{1}'", variant.name, m_name);
         m_variants.push_back(variant);
     }
 
@@ -257,7 +258,7 @@ bool OpenGLShader::reload()
     {
         for (auto it = m_variants.begin(); it != m_variants.end(); ++it) {
             if (it->name == name) {
-                GE_CORE_INFO("Removed shader variant '{0}' from shader '{1}'", name, m_name);
+                GE_CORE_INFO("OpenGLShader::removeVariant: Removed shader variant '{0}' from shader '{1}'", name, m_name);
                 m_variants.erase(it);
                 return;
             }
@@ -297,7 +298,7 @@ bool OpenGLShader::reload()
 	{
 		// Simple implementation that returns null
 		// In a real implementation, we would load shader from cache file
-		GE_CORE_INFO("Loading shader '{0}' from cache (not implemented)", name);
+		GE_CORE_INFO("OpenGLShader::loadFromCache: Loading shader '{0}' from cache (not implemented)", name);
 		return nullptr;
 	}
 
@@ -305,7 +306,7 @@ bool OpenGLShader::reload()
 	{
 		// Simple implementation that does nothing
 		// In a real implementation, we would save shader to cache file
-		GE_CORE_INFO("Saving shader to cache (not implemented)");
+		GE_CORE_INFO("OpenGLShader::saveToCache: Saving shader to cache (not implemented)");
 	}
 
     bool OpenGLShader::compileShader(ShaderType type, const std::string& processed_source) {
@@ -335,7 +336,7 @@ bool OpenGLShader::reload()
 			// We don't need the shader anymore.
 			glDeleteShader(shaderID);
 
-			GE_CORE_CRITICAL("---Shader Compilation Error---");
+			GE_CORE_CRITICAL("OpenGLShader::compileShader: ---Shader Compilation Error---");
 			std::string s(infoLog.begin(), infoLog.end());
 			GE_CORE_CRITICAL(s);
 
@@ -377,7 +378,7 @@ bool OpenGLShader::linkProgram() {
 				glDeleteShader(shaderID);
 			}
 
-			GE_CORE_CRITICAL("---Shader Linking Error---");
+			GE_CORE_CRITICAL("OpenGLShader::linkProgram: ---Shader Linking Error---");
 			std::string s(infoLog.begin(), infoLog.end());
 			GE_CORE_CRITICAL(s);
 
@@ -426,7 +427,7 @@ void OpenGLShader::validateShaderProgram()
         glGetProgramiv(m_programID, GL_INFO_LOG_LENGTH, &length);
         std::vector<char> log(length);
         glGetProgramInfoLog(m_programID, length, &length, log.data());
-        GE_CORE_ERROR("Program validation failed: {0}", log.data());
+        GE_CORE_ERROR("OpenGLShader::validateShaderProgram: Program validation failed: {0}", log.data());
     }
 }
 
@@ -503,7 +504,7 @@ int OpenGLShader::getUniformLocation(const std::string& name)
     // If not cached, query OpenGL for the location
     int location = glGetUniformLocation(m_programID, name.c_str());
     if (location == -1) {
-        GE_CORE_WARN("Uniform '{0}' not found in shader '{1}'", name, m_name);
+        GE_CORE_WARN("OpenGLShader::getUniformLocation: Uniform '{0}' not found in shader '{1}'", name, m_name);
     }
     
     // Cache the location for future use

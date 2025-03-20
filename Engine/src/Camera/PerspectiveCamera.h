@@ -25,10 +25,11 @@ namespace Rapture
 
 	};
 
+	// Ensure std140 layout compatibility
 	struct CameraUniform
 	{
-		glm::mat4 projection_mat;
-		glm::mat4 view_mat;
+		alignas(16) glm::mat4 projection_mat; // 64 bytes, aligned to 16 bytes
+		alignas(16) glm::mat4 view_mat;       // 64 bytes, aligned to 16 bytes
 	};
 
 

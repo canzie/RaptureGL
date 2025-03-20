@@ -31,7 +31,9 @@ namespace Rapture
 		template<typename T>
 		bool hasComponent()
 		{
-			return m_Scene->m_Registry.valid<T>(m_EntityHandle);
+			if (!m_Scene) return false;
+			if (m_EntityHandle == entt::null) return false;
+			return m_Scene->m_Registry.all_of<T>(m_EntityHandle);
 		}
 
 		template<typename T>
