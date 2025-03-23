@@ -21,6 +21,8 @@ namespace Rapture {
 		virtual void onEvent(Event& event) = 0;
 
 		std::string getLayerName() { return m_debug_name; }
+		// Alias to match the function name used in profiler
+		const char* getName() { return m_debug_name.c_str(); }
 		
 
 	private:

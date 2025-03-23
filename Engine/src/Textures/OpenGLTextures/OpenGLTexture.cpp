@@ -1,5 +1,6 @@
 #include "OpenGLTexture.h"
 #include "../../Logger/Log.h"
+#include "../../Debug/Profiler.h"
 #include <stb_image.h>
 
 namespace Rapture {
@@ -7,12 +8,15 @@ namespace Rapture {
 OpenGLTexture2D::OpenGLTexture2D(const std::string& path)
     : m_path(path)
 {
+    RAPTURE_PROFILE_FUNCTION();
+    
     int width, height, channels;
-    stbi_set_flip_vertically_on_load(1);
+    stbi_set_flip_vertically_on_load(0);
     
     unsigned char* data = stbi_load(path.c_str(), &width, &height, &channels, 0);
-    
+
     if (data) {
+        RAPTURE_PROFILE_SCOPE("stbi_load - Texture Loading");
         m_width = width;
         m_height = height;
         
@@ -97,6 +101,67 @@ void OpenGLTexture2D::setData(void* data, uint32_t size)
     
     glBindTexture(GL_TEXTURE_2D, m_rendererID);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_width, m_height, m_dataFormat, GL_UNSIGNED_BYTE, data);
+}
+
+void OpenGLTexture2D::setMinFilter(TextureFilter filter)
+{
+    glBindTexture(GL_TEXTURE_2D, m_rendererID);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, convertFilterToGL(filter));
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void OpenGLTexture2D::setMagFilter(TextureFilter filter)
+{
+    glBindTexture(GL_TEXTURE_2D, m_rendererID);
+    // Note: Mag filter can only be GL_NEAREST or GL_LINEAR
+    GLenum glFilter = convertFilterToGL(filter);
+    if (glFilter != GL_NEAREST && glFilter != GL_LINEAR) {
+        GE_CORE_WARN("OpenGLTexture2D: Mag filter can only be Nearest or Linear. Using Linear instead.");
+        glFilter = GL_LINEAR;
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void OpenGLTexture2D::setWrapS(TextureWrap wrap)
+{
+    glBindTexture(GL_TEXTURE_2D, m_rendererID);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, convertWrapToGL(wrap));
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void OpenGLTexture2D::setWrapT(TextureWrap wrap)
+{
+    glBindTexture(GL_TEXTURE_2D, m_rendererID);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, convertWrapToGL(wrap));
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+GLenum OpenGLTexture2D::convertFilterToGL(TextureFilter filter)
+{
+    switch (filter) {
+        case TextureFilter::Nearest:              return GL_NEAREST;
+        case TextureFilter::Linear:               return GL_LINEAR;
+        case TextureFilter::NearestMipmapNearest: return GL_NEAREST_MIPMAP_NEAREST;
+        case TextureFilter::LinearMipmapNearest:  return GL_LINEAR_MIPMAP_NEAREST;
+        case TextureFilter::NearestMipmapLinear:  return GL_NEAREST_MIPMAP_LINEAR;
+        case TextureFilter::LinearMipmapLinear:   return GL_LINEAR_MIPMAP_LINEAR;
+        default:
+            GE_CORE_WARN("OpenGLTexture2D: Unknown filter type, defaulting to Linear");
+            return GL_LINEAR;
+    }
+}
+
+GLenum OpenGLTexture2D::convertWrapToGL(TextureWrap wrap)
+{
+    switch (wrap) {
+        case TextureWrap::ClampToEdge:    return GL_CLAMP_TO_EDGE;
+        case TextureWrap::MirroredRepeat: return GL_MIRRORED_REPEAT;
+        case TextureWrap::Repeat:         return GL_REPEAT;
+        default:
+            GE_CORE_WARN("OpenGLTexture2D: Unknown wrap type, defaulting to Repeat");
+            return GL_REPEAT;
+    }
 }
 
 // Implement the static create functions from Texture2D

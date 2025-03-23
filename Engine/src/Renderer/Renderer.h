@@ -15,6 +15,7 @@ namespace Rapture
 
 	private:
 		static std::shared_ptr<UniformBuffer> s_cameraUBO;
+		static std::shared_ptr<UniformBuffer> s_lightsUBO;
 
 	};
 

@@ -1,675 +1,909 @@
-/*
 #include "glTF2Loader.h"
 
 #include <fstream>
-#include <algorithm>
-#include <filesystem>
+#include <iostream>
+#include <type_traits>
 
-#include "../../Logger/Log.h"
-#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <stb_image.h>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+
+#include "../../Scenes/Components/Components.h"
+#include "../../Logger/Log.h"
+#include "../../Textures/Texture.h"
+#include "../../Materials/Material.h"
+
+#define DIRNAME "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/build/bin/Debug/assets/models/"
 
 namespace Rapture {
 
-// Define static members
-json glTF2Loader::s_glTFDocument;
-std::vector<unsigned char> glTF2Loader::s_binaryData;
-std::vector<glTFMesh> glTF2Loader::s_meshes;
-std::vector<glTFNode> glTF2Loader::s_nodes;
-std::vector<glTFMaterial> glTF2Loader::s_materials;
-std::vector<glTFTexture> glTF2Loader::s_textures;
-std::vector<glTFSampler> glTF2Loader::s_samplers;
-std::vector<glTFImage> glTF2Loader::s_images;
-BufferLayout glTF2Loader::s_bufferLayout;
-int glTF2Loader::s_defaultSceneIndex = 0;
-Mesh* glTF2Loader::s_mesh = nullptr;
-
-// GLTF Component Types
-#define GLTF_FLOAT  5126
-#define GLTF_UINT   5125
-#define GLTF_USHORT 5123
-#define GLTF_SHORT  5122
-#define GLTF_UBYTE  5121
-#define GLTF_BYTE   5120
-
-void glTF2Loader::loadMesh(const std::string& filepath, Mesh* mesh) {
-    if (!mesh) {
-        GE_CORE_ERROR("Cannot load glTF into null mesh");
-        return;
-    }
-    
-    s_mesh = mesh;
-    
-    if (!parseGLTF(filepath)) {
-        GE_CORE_ERROR("Failed to load glTF file: {0}", filepath);
-        return;
-    }
-
-    // Parse all glTF components
-    parseBufferViews();
-    parseAccessors();
-    parseImages();
-    parseSamplers();
-    parseTextures();
-    parseMaterials();
-    parseMeshes();
-    parseNodes();
-    
-    // Process all nodes (which in turn processes meshes)
-    processNodes();
-
-    // Clean up resources
-    cleanUp();
-}
-
-bool glTF2Loader::parseGLTF(const std::string& filepath) {
-    std::filesystem::path path(filepath);
-    std::filesystem::path directory = path.parent_path();
-    
-    // Load the glTF file
-    std::ifstream file(filepath);
-    if (!file.is_open()) {
-        GE_CORE_ERROR("Could not open glTF file: {0}", filepath);
-        return false;
-    }
-    
-    try {
-        file >> s_glTFDocument;
-        file.close();
-    }
-    catch (json::parse_error& e) {
-        GE_CORE_ERROR("JSON parse error: {0}", e.what());
-        return false;
-    }
-    
-    // Check if there are any buffers defined
-    if (s_glTFDocument.contains("buffers") && !s_glTFDocument["buffers"].empty()) {
-        json buffer = s_glTFDocument["buffers"][0];
-        
-        // Check if the buffer is an embedded base64 buffer
-        if (buffer.contains("uri")) {
-            std::string uri = buffer["uri"];
-            
-            // Check if it's a data URI (base64)
-            if (uri.substr(0, 5) == "data:") {
-                // Handle embedded base64 data
-                size_t commaPos = uri.find(',');
-                if (commaPos != std::string::npos) {
-                    std::string base64Data = uri.substr(commaPos + 1);
-                    // TODO: Decode base64 data into s_binaryData
-                }
-            }
-            else {
-                // It's an external file
-                std::filesystem::path bufferPath = directory / uri;
-                std::ifstream binaryFile(bufferPath, std::ios::binary);
-                
-                if (!binaryFile.is_open()) {
-                    GE_CORE_ERROR("Could not open binary file: {0}", bufferPath.string());
-                    return false;
-                }
-                
-                binaryFile.unsetf(std::ios::skipws);
-                
-                // Get file size
-                binaryFile.seekg(0, std::ios::end);
-                std::streampos fileSize = binaryFile.tellg();
-                binaryFile.seekg(0, std::ios::beg);
-                
-                // Reserve space and read the file
-                s_binaryData.resize(static_cast<size_t>(fileSize));
-                binaryFile.read(reinterpret_cast<char*>(s_binaryData.data()), fileSize);
-                
-                binaryFile.close();
-            }
+    glTF2Loader::glTF2Loader(std::shared_ptr<Scene> scene)
+        : m_scene(scene)
+    {
+        if (!m_scene) {
+            GE_CORE_ERROR("glTF2Loader: Scene pointer is null");
         }
-        // GLB format - binary chunk follows JSON chunk
-        else if (filepath.substr(filepath.length() - 4) == ".glb") {
-            // TODO: Implement GLB parsing
-            GE_CORE_ERROR("GLB format not yet supported");
+    }
+
+    glTF2Loader::~glTF2Loader()
+    {
+        cleanUp();
+    }
+
+    bool glTF2Loader::loadModel(const std::string& filepath)
+    {
+        // Reset state to ensure clean loading
+        cleanUp();
+        
+        // Load the gltf file
+        std::ifstream gltf_file(DIRNAME + filepath);
+        if (!gltf_file)
+        {
+            GE_CORE_ERROR("glTF2Loader: Couldn't load glTF file '{}'", filepath);
             return false;
         }
-    }
-    
-    // Set the default scene
-    s_defaultSceneIndex = s_glTFDocument.value("scene", 0);
-    
-    return true;
-}
 
-void glTF2Loader::parseBufferViews() {
-    // Parse buffer views
-    if (!s_glTFDocument.contains("bufferViews")) {
-        return;
-    }
-    
-    // Nothing to implement here yet - we'll use the buffer views directly
-}
+        // Parse the JSON file
+        try {
+            gltf_file >> m_glTFfile;
+        }
+        catch (const std::exception& e) {
+            GE_CORE_ERROR("glTF2Loader: Failed to parse glTF JSON: {}", e.what());
+            return false;
+        }
+        gltf_file.close();
 
-void glTF2Loader::parseAccessors() {
-    // Parse accessors
-    if (!s_glTFDocument.contains("accessors")) {
-        return;
-    }
-    
-    // Nothing to implement here yet - we'll use the accessors directly
-}
+        // Load references to major sections
+        m_accessors = m_glTFfile.value("accessors", json::array());
+        m_meshes = m_glTFfile.value("meshes", json::array());
+        m_bufferViews = m_glTFfile.value("bufferViews", json::array());
+        m_buffers = m_glTFfile.value("buffers", json::array());
+        m_nodes = m_glTFfile.value("nodes", json::array());
+        m_materials = m_glTFfile.value("materials", json::array());
+        m_animations = m_glTFfile.value("animations", json::array());
+        m_skins = m_glTFfile.value("skins", json::array());
+        m_textures = m_glTFfile.value("textures", json::array());
+        m_images = m_glTFfile.value("images", json::array());
+        m_samplers = m_glTFfile.value("samplers", json::array());
 
-void glTF2Loader::parseImages() {
-    // Parse images section
-    if (!s_glTFDocument.contains("images")) {
-        return;
-    }
-    
-    const json& images = s_glTFDocument["images"];
-    s_images.resize(images.size());
-    
-    for (size_t i = 0; i < images.size(); i++) {
-        const json& image = images[i];
-        
-        s_images[i].uri = image.value("uri", "");
-        s_images[i].mimeType = image.value("mimeType", "");
-        s_images[i].bufferView = image.value("bufferView", -1);
-        
-        // NOTE: We don't load the actual image data yet; we'll do that when needed
-    }
-}
 
-void glTF2Loader::parseSamplers() {
-    // Parse samplers section
-    if (!s_glTFDocument.contains("samplers")) {
-        return;
-    }
-    
-    const json& samplers = s_glTFDocument["samplers"];
-    s_samplers.resize(samplers.size());
-    
-    for (size_t i = 0; i < samplers.size(); i++) {
-        const json& sampler = samplers[i];
-        
-        s_samplers[i].magFilter = sampler.value("magFilter", 9729); // GL_LINEAR
-        s_samplers[i].minFilter = sampler.value("minFilter", 9987); // GL_LINEAR_MIPMAP_LINEAR
-        s_samplers[i].wrapS = sampler.value("wrapS", 10497);        // GL_REPEAT
-        s_samplers[i].wrapT = sampler.value("wrapT", 10497);        // GL_REPEAT
-    }
-}
+        // Validate required sections
+        if (m_accessors.empty() || m_meshes.empty() || m_bufferViews.empty() || m_buffers.empty()) {
+            GE_CORE_ERROR("glTF2Loader: Missing required glTF sections");
+            return false;
+        }
 
-void glTF2Loader::parseTextures() {
-    // Parse textures section
-    if (!s_glTFDocument.contains("textures")) {
-        return;
-    }
-    
-    const json& textures = s_glTFDocument["textures"];
-    s_textures.resize(textures.size());
-    
-    for (size_t i = 0; i < textures.size(); i++) {
-        const json& texture = textures[i];
-        
-        s_textures[i].source = texture.value("source", -1);
-        s_textures[i].sampler = texture.value("sampler", -1);
-    }
-}
+        // Extract the directory path from the filepath
+        m_basePath = "";
+        size_t lastSlashPos = filepath.find_last_of("/\\");
+        if (lastSlashPos != std::string::npos) {
+            m_basePath = filepath.substr(0, lastSlashPos + 1);
+        }
 
-void glTF2Loader::parseMaterials() {
-    // Parse materials section
-    if (!s_glTFDocument.contains("materials")) {
-        return;
-    }
-    
-    const json& materials = s_glTFDocument["materials"];
-    s_materials.resize(materials.size());
-    
-    for (size_t i = 0; i < materials.size(); i++) {
-        const json& material = materials[i];
-        
-        s_materials[i].name = material.value("name", "Material_" + std::to_string(i));
-        
-        // Parse PBR metallic roughness properties
-        if (material.contains("pbrMetallicRoughness")) {
-            const json& pbr = material["pbrMetallicRoughness"];
-            
-            // Base color factor (default: white)
-            if (pbr.contains("baseColorFactor")) {
-                const json& bcf = pbr["baseColorFactor"];
-                s_materials[i].baseColorFactor = glm::vec4(
-                    bcf[0], bcf[1], bcf[2], bcf[3]
-                );
-            }
-            
-            // Base color texture
-            if (pbr.contains("baseColorTexture")) {
-                s_materials[i].baseColorTexture = pbr["baseColorTexture"].value("index", -1);
-            }
-            
-            // Metallic factor (default: 1.0)
-            s_materials[i].metallicFactor = pbr.value("metallicFactor", 1.0f);
-            
-            // Roughness factor (default: 1.0)
-            s_materials[i].roughnessFactor = pbr.value("roughnessFactor", 1.0f);
-            
-            // Metallic-roughness texture
-            if (pbr.contains("metallicRoughnessTexture")) {
-                s_materials[i].metallicRoughnessTexture = pbr["metallicRoughnessTexture"].value("index", -1);
-            }
+        // Load the bin file with all the buffer data
+        std::string bufferURI = m_buffers[0].value("uri", "");
+        if (bufferURI.empty()) {
+            GE_CORE_ERROR("glTF2Loader: Buffer URI is missing");
+            return false;
         }
         
-        // Normal texture
-        if (material.contains("normalTexture")) {
-            s_materials[i].normalTexture = material["normalTexture"].value("index", -1);
-            s_materials[i].normalScale = material["normalTexture"].value("scale", 1.0f);
+        // Check if the buffer URI is a relative path
+        if (bufferURI.find("://") == std::string::npos && !bufferURI.empty()) {
+            // Combine the directory path with the buffer URI
+            bufferURI = m_basePath + bufferURI;
+        }
+        std::ifstream binary_file(DIRNAME + bufferURI, std::ios::binary);
+        if (!binary_file)
+        {
+            GE_CORE_ERROR("glTF2Loader: Couldn't load binary file '{}'", DIRNAME + bufferURI);
+            return false;
         }
         
-        // Occlusion texture
-        if (material.contains("occlusionTexture")) {
-            s_materials[i].occlusionTexture = material["occlusionTexture"].value("index", -1);
-            s_materials[i].occlusionStrength = material["occlusionTexture"].value("strength", 1.0f);
+        // Get file size and reserve space
+        binary_file.seekg(0, std::ios::end);
+        size_t fileSize = binary_file.tellg();
+        binary_file.seekg(0, std::ios::beg);
+        
+        m_binVec.resize(fileSize);
+        
+        // Read the entire file at once for efficiency
+        if (!binary_file.read(reinterpret_cast<char*>(m_binVec.data()), fileSize)) {
+            GE_CORE_ERROR("glTF2Loader: Failed to read binary data");
+            return false;
         }
         
-        // Emissive texture and factor
-        if (material.contains("emissiveTexture")) {
-            s_materials[i].emissiveTexture = material["emissiveTexture"].value("index", -1);
-        }
-        
-        if (material.contains("emissiveFactor")) {
-            const json& ef = material["emissiveFactor"];
-            s_materials[i].emissiveFactor = glm::vec3(ef[0], ef[1], ef[2]);
-        }
-        
-        // Alpha mode
-        if (material.contains("alphaMode")) {
-            std::string alphaMode = material["alphaMode"];
-            if (alphaMode == "MASK") {
-                s_materials[i].alphaMode = GltfAlphaMode::MASK;
-                s_materials[i].alphaCutoff = material.value("alphaCutoff", 0.5f);
-            }
-            else if (alphaMode == "BLEND") {
-                s_materials[i].alphaMode = GltfAlphaMode::BLEND;
-            }
-            else {
-                s_materials[i].alphaMode = GltfAlphaMode::OPAQUE;
-            }
-        }
-        
-        // Double sided
-        s_materials[i].doubleSided = material.value("doubleSided", false);
-    }
-}
+        binary_file.close();
 
-void glTF2Loader::parseMeshes() {
-    // Parse meshes section
-    if (!s_glTFDocument.contains("meshes")) {
-        return;
+        // Create a root entity for the model
+        Entity rootEntity = m_scene->createEntity("glTF_Model");
+        
+        // Process the default scene or the first scene if default not specified
+        int defaultScene = m_glTFfile.value("scene", 0);
+        if (m_glTFfile.contains("scenes") && !m_glTFfile["scenes"].empty()) {
+            processScene(m_glTFfile["scenes"][defaultScene]);
+        }
+        else if (!m_nodes.empty()) {
+            // If no scenes but has nodes, process the first node as root
+            Entity nodeEntity = m_scene->createEntity("Root Node");
+            processNode(nodeEntity, m_nodes[0]);
+        }
+        
+        // Clean up
+        cleanUp();
+        
+        return true;
     }
-    
-    const json& meshes = s_glTFDocument["meshes"];
-    s_meshes.resize(meshes.size());
-    
-    for (size_t i = 0; i < meshes.size(); i++) {
-        const json& mesh = meshes[i];
+
+    void glTF2Loader::processScene(json& sceneJSON)
+    {
+        // Create a root entity for the scene
+        std::string sceneName = sceneJSON.value("name", "Scene");
         
-        s_meshes[i].name = mesh.value("name", "Mesh_" + std::to_string(i));
-        
-        // Parse primitives
-        if (mesh.contains("primitives")) {
-            const json& primitives = mesh["primitives"];
-            s_meshes[i].primitives.resize(primitives.size());
-            
-            for (size_t j = 0; j < primitives.size(); j++) {
-                const json& primitive = primitives[j];
-                
-                s_meshes[i].primitives[j].attributes = primitive["attributes"];
-                s_meshes[i].primitives[j].indicesIndex = primitive.value("indices", -1);
-                s_meshes[i].primitives[j].materialIndex = primitive.value("material", -1);
+        // Process each node in the scene
+        if (sceneJSON.contains("nodes") && !sceneJSON["nodes"].empty()) {
+            for (auto& nodeIdx : sceneJSON["nodes"]) {
+                unsigned int nodeIndex = nodeIdx.get<unsigned int>();
+                if (nodeIndex < m_nodes.size()) {
+                    Entity nodeEntity = m_scene->createEntity("Root Node");
+                    processNode(nodeEntity, m_nodes[nodeIndex]);
+                }
             }
         }
     }
-}
 
-void glTF2Loader::parseNodes() {
-    // Parse nodes section
-    if (!s_glTFDocument.contains("nodes")) {
-        return;
-    }
-    
-    const json& nodes = s_glTFDocument["nodes"];
-    s_nodes.resize(nodes.size());
-    
-    for (size_t i = 0; i < nodes.size(); i++) {
-        const json& node = nodes[i];
+    Entity glTF2Loader::processNode(Entity nodeEntity, json& nodeJSON)
+    {
+
+        if (!nodeEntity.hasComponent<EntityNodeComponent>()) {
+            nodeEntity.addComponent<EntityNodeComponent>(nodeEntity);
+        }
+
+        // Create a new entity for this node
+        std::string nodeName = nodeJSON.value("name", "Node");
+        //Entity nodeEntity = m_scene->createEntity(nodeName);
+
+        // Update the tag
+        nodeEntity.getComponent<TagComponent>().tag = nodeName;
+        auto& nodeEntityComp = nodeEntity.getComponent<EntityNodeComponent>();
         
-        s_nodes[i].name = node.value("name", "Node_" + std::to_string(i));
-        s_nodes[i].meshIndex = node.value("mesh", -1);
-        
-        // Parse transformation
-        glm::mat4 transform = glm::mat4(1.0f);
-        
-        // There are three ways to specify the node's transform:
-        // 1. matrix (array of 16 values)
-        // 2. translation, rotation, scale
-        // 3. nothing (identity transform)
-        
-        if (node.contains("matrix")) {
-            const json& matrix = node["matrix"];
-            transform = glm::mat4(
-                matrix[0], matrix[1], matrix[2], matrix[3],
-                matrix[4], matrix[5], matrix[6], matrix[7],
-                matrix[8], matrix[9], matrix[10], matrix[11],
-                matrix[12], matrix[13], matrix[14], matrix[15]
-            );
+
+        nodeEntity.addComponent<TransformComponent>();
+        auto& transformComp = nodeEntity.getComponent<TransformComponent>();
+
+        // Extract transform components if present
+        if (nodeJSON.contains("matrix")) {
+            // Use matrix directly
+            float matrixValues[16];
+            for (int i = 0; i < 16; i++) {
+                matrixValues[i] = nodeJSON["matrix"][i];
+            }
+            glm::mat4 nodeMatrix = glm::make_mat4(matrixValues);
+            std::shared_ptr<EntityNode> parent = nodeEntityComp.entity_node->getParent();
+            if (parent != nullptr) {
+                nodeMatrix = parent->getEntity()->getComponent<TransformComponent>().transformMatrix() * nodeMatrix;
+            }
+
+            transformComp.transforms.setTransform(nodeMatrix);
         }
         else {
-            // Apply TRS properties if provided
-            if (node.contains("translation")) {
-                const json& t = node["translation"];
-                transform = glm::translate(transform, glm::vec3(t[0], t[1], t[2]));
-            }
+            // Use TRS components
+            glm::vec3 translation(0.0f);
+            glm::quat rotation(1.0f, 0.0f, 0.0f, 0.0f);
+            glm::vec3 scale(1.0f);
             
-            if (node.contains("rotation")) {
-                const json& r = node["rotation"];
-                // Note: glTF quaternion is [x, y, z, w], glm::quat constructor takes [w, x, y, z]
-                glm::quat rotation(r[3], r[0], r[1], r[2]);
-                transform = transform * glm::mat4_cast(rotation);
+            if (nodeJSON.contains("translation"))
+                translation = glm::vec3(
+                    nodeJSON["translation"][0],
+                    nodeJSON["translation"][1],
+                    nodeJSON["translation"][2]
+                );
+                
+            if (nodeJSON.contains("rotation")) {
+                // glTF quaternions are [x,y,z,w], but glm::quat constructor takes [w,x,y,z]
+                rotation = glm::quat(
+                    nodeJSON["rotation"][3], // w
+                    nodeJSON["rotation"][0], // x
+                    nodeJSON["rotation"][1], // y
+                    nodeJSON["rotation"][2]  // z
+                );
             }
+                
+            if (nodeJSON.contains("scale"))
+                scale = glm::vec3(
+                    nodeJSON["scale"][0],
+                    nodeJSON["scale"][1],
+                    nodeJSON["scale"][2]
+                );
             
-            if (node.contains("scale")) {
-                const json& s = node["scale"];
-                transform = glm::scale(transform, glm::vec3(s[0], s[1], s[2]));
+            // Build transform matrix correctly using GLM
+            glm::mat4 transformMatrix = glm::mat4(1.0f);
+            transformMatrix = glm::translate(transformMatrix, translation);
+            transformMatrix = transformMatrix * glm::mat4_cast(rotation);
+            transformMatrix = glm::scale(transformMatrix, scale);
+            
+            
+            std::shared_ptr<EntityNode> parent = nodeEntityComp.entity_node->getParent();
+            if (parent != nullptr) {
+                transformMatrix = parent->getEntity()->getComponent<TransformComponent>().transformMatrix() * transformMatrix;
+            }
+
+
+
+            // Add the component with the full transform matrix
+            transformComp.transforms.setTransform(transformMatrix);
+            
+        }
+        
+        // If this node has a mesh, process it
+        if (nodeJSON.contains("mesh")) {
+            unsigned int meshIndex = nodeJSON["mesh"];
+            if (meshIndex < m_meshes.size()) {
+                processMesh(nodeEntity, m_meshes[meshIndex]);
             }
         }
         
-        s_nodes[i].localTransform = transform;
+        // Process children
+        if (nodeJSON.contains("children")) {
+            for (auto& childIdx : nodeJSON["children"]) {
+                unsigned int childIndex = childIdx.get<unsigned int>();
+                if (childIndex < m_nodes.size()) {
+                    Entity childEntity = m_scene->createEntity("Child Node");
+                    childEntity.addComponent<EntityNodeComponent>(childEntity, nodeEntity.getComponent<EntityNodeComponent>().entity_node);
+
+                    nodeEntity.getComponent<EntityNodeComponent>().entity_node->addChild(childEntity.getComponent<EntityNodeComponent>().entity_node);
+
+                    processNode(childEntity, m_nodes[childIndex]);
+
+                    // Establish parent-child relationship
+                    if (!childEntity.hasComponent<EntityNodeComponent>()) {
+                        GE_CORE_ERROR("Child entity '{}' missing EntityNodeComponent", childIndex);
+                        continue;
+                    }
+                    
+                    if (!nodeEntity.hasComponent<EntityNodeComponent>()) {
+                        GE_CORE_ERROR("Node entity '{}' missing EntityNodeComponent", nodeName);
+                        continue;
+                    }
+                    
+
+                }
+            }
+        }
         
-        // Parse children
-        if (node.contains("children")) {
-            const json& children = node["children"];
-            s_nodes[i].children.resize(children.size());
+        return nodeEntity;
+    }
+
+    Entity glTF2Loader::processMesh(Entity parent, json& meshJSON)
+    {
+        auto& parentTransform = parent.getComponent<TransformComponent>();
+
+
+        std::string meshName = meshJSON.value("name", "Mesh");
+        Entity meshEntity = m_scene->createEntity(meshName);
+        // Create transform component that inherits parent transform
+        meshEntity.addComponent<TransformComponent>(parentTransform.transformMatrix());
+        
+        
+        // Check if parent entity has EntityNodeComponent
+        if (!parent.hasComponent<EntityNodeComponent>()) {
+            GE_CORE_ERROR("Parent entity '{}' missing EntityNodeComponent", meshName);
+            return meshEntity;
+        }
+        
+        meshEntity.addComponent<EntityNodeComponent>(meshEntity, parent.getComponent<EntityNodeComponent>().entity_node);
+        
+        // Check if mesh entity has EntityNodeComponent after adding it
+        if (!meshEntity.hasComponent<EntityNodeComponent>()) {
+            GE_CORE_ERROR("Mesh entity '{}' failed to add EntityNodeComponent", meshName);
+            return meshEntity;
+        }
+        
+        std::shared_ptr<EntityNode> mesh_entity_node = meshEntity.getComponent<EntityNodeComponent>().entity_node;
+        
+        parent.getComponent<EntityNodeComponent>().entity_node->addChild(mesh_entity_node);
+    
+        // Process primitives
+        if (meshJSON.contains("primitives") && !meshJSON["primitives"].empty()) {
+            int primitiveIndex = 0;
+            for (auto& primitive : meshJSON["primitives"]) {
+                // For each primitive, create a new entity
+                Entity primitiveEntity = m_scene->createEntity("_Primitive_" + std::to_string(primitiveIndex) + "_" + meshName);
+                primitiveEntity.addComponent<EntityNodeComponent>(primitiveEntity, mesh_entity_node);
+                mesh_entity_node->addChild(primitiveEntity.getComponent<EntityNodeComponent>().entity_node);
+
+                primitiveEntity.addComponent<TransformComponent>(parentTransform.transformMatrix());
+
+                // Process the primitive data
+                processPrimitive(primitiveEntity, primitive);
+                primitiveIndex++;
+            }
+        }
+        
+        return meshEntity;
+    }
+
+    void glTF2Loader::processPrimitive(Entity entity, json& primitive)
+    {
+        // Add mesh component to the entity
+        entity.addComponent<MeshComponent>(true);
+        // Create a new vertex array for this primitive
+        auto vao = std::make_shared<VertexArray>();
+        entity.addComponent<MaterialComponent>();
+        
+        // Check if entity has MeshComponent before accessing it
+        if (!entity.hasComponent<MeshComponent>()) {
+            GE_CORE_ERROR("Entity missing MeshComponent");
+            return;
+        }
+        entity.getComponent<MeshComponent>().mesh->SetVAO(vao);
+
+        BufferLayout bufferLayout;
+        
+        // First gather all attribute data to calculate total buffer size
+        std::vector<std::pair<std::string, std::vector<unsigned char>>> attributeData;
+        size_t totalVertexDataSize = 0;
+        size_t currentOffset = 0;
+
+        // Process vertex attributes
+        if (primitive.contains("attributes")) {
+            json& attribs = primitive["attributes"];
             
-            for (size_t j = 0; j < children.size(); j++) {
-                s_nodes[i].children[j] = children[j];
+            // Set up buffer layout based on attributes and gather data
+            for (auto& attrib : attribs.items()) {
+                std::string name = attrib.key();
+                if (name == "COLOR_0") continue; // Skip color data for now
+                
+                unsigned int accessorIdx = attrib.value();
+                json& accessor = m_accessors[accessorIdx];
+                
+                unsigned int componentType = accessor["componentType"];
+                std::string type = accessor["type"];
+                bufferLayout.buffer_attribs.push_back({name, componentType, type, currentOffset});
+
+
+                // Load attribute data
+                std::vector<unsigned char> attrData;
+                loadAccessor(m_accessors[accessorIdx], attrData);
+                
+                currentOffset += attrData.size();
+
+                if (!attrData.empty()) {
+                    attributeData.push_back({name, attrData});
+                    totalVertexDataSize += attrData.size();
+                }
+            }
+            //bufferLayout.print_buffer_layout();
+        }
+
+ 
+        // Create vertex buffer with the correct size
+        vao->setVertexBuffer(std::make_shared<VertexBuffer>(totalVertexDataSize, BufferUsage::Static));
+        auto vertexBuffer = vao->getVertexBuffer();
+        
+        // Set buffer layout after vertex buffer is created
+        vao->setBufferLayout(bufferLayout);
+        
+        // Add attribute data to the buffer
+        currentOffset = 0;
+        for (auto& [name, data] : attributeData) {
+            vertexBuffer->setData(data.data(), data.size(), currentOffset);
+            currentOffset += data.size();
+        }
+        
+        // Process indices if present
+        if (primitive.contains("indices")) {
+            unsigned int indicesIdx = primitive["indices"];
+            std::vector<unsigned char> indexData;
+            
+            // Load index data
+            loadAccessor(m_accessors[indicesIdx], indexData);
+            
+            if (!indexData.empty()) {
+                // Get index component type
+                unsigned int compType = m_accessors[indicesIdx]["componentType"];
+                unsigned int indCount = m_accessors[indicesIdx]["count"];
+                
+                // Create and set index buffer
+                auto indexBuffer = std::make_shared<IndexBuffer>(indexData.size(), compType, BufferUsage::Static);
+                indexBuffer->setData(indexData.data(), indexData.size());
+                vao->setIndexBuffer(indexBuffer);
+                
+                // Set up draw parameters
+                entity.getComponent<MeshComponent>().mesh->setIndexCount(indCount);
+            }
+        }
+        
+        // Set material if present
+        if (primitive.contains("material")) {
+            unsigned int materialIdx = primitive["material"];
+            if (materialIdx < m_materials.size()) {
+                // Check if entity has MaterialComponent
+                if (!entity.hasComponent<MaterialComponent>()) {
+                    GE_CORE_WARN("Entity missing MaterialComponent for material index {}", materialIdx);
+                }
+
+                json& materialJSON = m_materials[materialIdx];
+                
+                // Check if this material uses the KHR_materials_pbrSpecularGlossiness extension
+                bool hasSpecularGlossiness = false;
+                
+                if (materialJSON.contains("extensions") && 
+                    materialJSON["extensions"].contains("KHR_materials_pbrSpecularGlossiness")) {
+                    hasSpecularGlossiness = true;
+                    
+                    // Process the material as a specular-glossiness material
+                    std::shared_ptr<Material> specGlossMaterial = processSpecularGlossinessMaterial(materialJSON);
+                    if (specGlossMaterial) {
+                        entity.getComponent<MaterialComponent>().material = specGlossMaterial;
+                        entity.getComponent<MaterialComponent>().materialName = specGlossMaterial->getName();
+                    } else {
+                        // Fallback to PBR if specular-glossiness processing failed
+                        auto pbr = std::make_shared<PBRMaterial>();
+                        entity.getComponent<MaterialComponent>().material = pbr;
+                        entity.getComponent<MaterialComponent>().materialName = pbr->getName();
+                        processPBRMaterial(pbr, materialJSON);
+                    }
+                } else {
+                    // Create a standard PBR material
+                    auto pbr = std::make_shared<PBRMaterial>();
+                    entity.getComponent<MaterialComponent>().material = pbr;
+                    processPBRMaterial(pbr, materialJSON);
+                }
             }
         }
     }
-}
 
-void glTF2Loader::processNodes() {
-    // Only process if there are scenes defined
-    if (!s_glTFDocument.contains("scenes")) {
-        return;
-    }
-    
-    // Get the default scene
-    const json& scenes = s_glTFDocument["scenes"];
-    
-    if (s_defaultSceneIndex >= scenes.size()) {
-        GE_CORE_ERROR("Invalid default scene index: {0}", s_defaultSceneIndex);
-        return;
-    }
-    
-    const json& scene = scenes[s_defaultSceneIndex];
-    
-    // Process each root node in the scene
-    if (scene.contains("nodes")) {
-        const json& nodes = scene["nodes"];
+    void glTF2Loader::processPBRMaterial(std::shared_ptr<PBRMaterial> material, json& materialJSON)
+    {
+        // First check for extensions
+        bool hasSpecularGlossiness = false;
         
-        for (const auto& nodeIndex : nodes) {
-            processNode(nodeIndex, glm::mat4(1.0f), s_mesh);
+        if (materialJSON.contains("extensions")) {
+            auto& extensions = materialJSON["extensions"];
+            
+            // Check for specular-glossiness extension, but now we handle it in the primitive processing
+            if (extensions.contains("KHR_materials_pbrSpecularGlossiness")) {
+                hasSpecularGlossiness = true;
+            }
+        }
+        
+        // If no specular-glossiness extension, process standard metallic-roughness
+        if (!hasSpecularGlossiness && materialJSON.contains("pbrMetallicRoughness")) {
+            json& pbrMetallicRoughness = materialJSON["pbrMetallicRoughness"];
+            
+            // Base color factor
+            if (pbrMetallicRoughness.contains("baseColorFactor")) {
+                glm::vec3 baseColor(
+                    pbrMetallicRoughness["baseColorFactor"][0],
+                    pbrMetallicRoughness["baseColorFactor"][1],
+                    pbrMetallicRoughness["baseColorFactor"][2]
+                );
+                material->setVec3("baseColor", baseColor);
+            }
+            
+            // Metallic factor
+            if (pbrMetallicRoughness.contains("metallicFactor")) {
+                float metallic = pbrMetallicRoughness["metallicFactor"];
+                material->setFloat("metallic", metallic);
+            }
+            
+            // Roughness factor
+            if (pbrMetallicRoughness.contains("roughnessFactor")) {
+                float roughness = pbrMetallicRoughness["roughnessFactor"];
+                material->setFloat("roughness", roughness);
+            }
+            
+            // Load textures
+            // Base color texture
+            if (pbrMetallicRoughness.contains("baseColorTexture")) {
+                int texIndex = pbrMetallicRoughness["baseColorTexture"]["index"];
+                if (loadAndSetTexture(material, "albedoMap", texIndex)) {
+                    material->setBool("u_HasAlbedoMap", true);
+                }
+            }
+            
+            // Metallic roughness texture
+            if (pbrMetallicRoughness.contains("metallicRoughnessTexture")) {
+                int texIndex = pbrMetallicRoughness["metallicRoughnessTexture"]["index"];
+                
+                // In glTF, metallicRoughness is combined: R=unused, G=roughness, B=metallic
+                if (loadAndSetTexture(material, "metallicMap", texIndex)) {
+                    material->setBool("u_HasMetallicMap", true);
+                }
+                
+                if (loadAndSetTexture(material, "roughnessMap", texIndex)) {
+                    material->setBool("u_HasRoughnessMap", true);
+                }
+            }
+        }
+        
+        // Normal map - common to both workflows
+        if (materialJSON.contains("normalTexture")) {
+            int texIndex = materialJSON["normalTexture"]["index"];
+            if (loadAndSetTexture(material, "normalMap", texIndex)) {
+                material->setBool("u_HasNormalMap", true);
+            }
+        }
+        
+        // Occlusion map - common to both workflows
+        if (materialJSON.contains("occlusionTexture")) {
+            int texIndex = materialJSON["occlusionTexture"]["index"];
+            if (loadAndSetTexture(material, "aoMap", texIndex)) {
+                material->setBool("u_HasAOMap", true);
+            }
+        }
+        
+        // Emissive map - common to both workflows
+        if (materialJSON.contains("emissiveTexture")) {
+            int texIndex = materialJSON["emissiveTexture"]["index"];
+            if (loadAndSetTexture(material, "emissiveMap", texIndex)) {
+                material->setBool("u_HasEmissiveMap", true);
+            }
+        }
+        
+        // Emissive factor - common to both workflows
+        if (materialJSON.contains("emissiveFactor")) {
+            glm::vec3 emissiveFactor(
+                materialJSON["emissiveFactor"][0],
+                materialJSON["emissiveFactor"][1],
+                materialJSON["emissiveFactor"][2]
+            );
+            material->setVec3("emissiveFactor", emissiveFactor);
         }
     }
-}
 
-void glTF2Loader::processNode(int nodeIndex, const glm::mat4& parentTransform, Mesh* mesh) {
-    // Skip if node index is invalid
-    if (nodeIndex < 0 || nodeIndex >= s_nodes.size()) {
-        GE_CORE_ERROR("Invalid node index: {0}", nodeIndex);
-        return;
-    }
-    
-    const glTFNode& node = s_nodes[nodeIndex];
-    
-    // Calculate global transform
-    glm::mat4 globalTransform = parentTransform * node.localTransform;
-    
-    // Process mesh if this node has one
-    if (node.meshIndex >= 0 && node.meshIndex < s_meshes.size() && mesh) {
-        loadGeometry(s_meshes[node.meshIndex], mesh);
-    }
-    
-    // Process children
-    for (int childIndex : node.children) {
-        processNode(childIndex, globalTransform, mesh);
-    }
-}
+    std::shared_ptr<Material> glTF2Loader::processSpecularGlossinessMaterial(json& materialJSON)
+    {
+        if (!materialJSON.contains("extensions") || 
+            !materialJSON["extensions"].contains("KHR_materials_pbrSpecularGlossiness")) {
+            GE_CORE_ERROR("Material does not contain KHR_materials_pbrSpecularGlossiness extension");
+            return nullptr;
+        }
 
-void glTF2Loader::loadBufferData(int accessorIndex, std::vector<unsigned char>& dataVec) {
-    // Skip if accessor index is invalid
-    if (accessorIndex < 0 || !s_glTFDocument.contains("accessors") || 
-        accessorIndex >= s_glTFDocument["accessors"].size()) {
-        return;
-    }
-    
-    const json& accessor = s_glTFDocument["accessors"][accessorIndex];
-    
-    // Get buffer view index
-    int bufferViewIndex = accessor.value("bufferView", -1);
-    if (bufferViewIndex < 0) {
-        // No buffer view, possibly sparse accessor (not yet supported)
-        return;
-    }
-    
-    // Get buffer view
-    const json& bufferView = s_glTFDocument["bufferViews"][bufferViewIndex];
-    
-    // Get buffer index
-    int bufferIndex = bufferView.value("buffer", 0);
-    
-    // Get byte offset and stride
-    size_t byteOffset = bufferView.value("byteOffset", 0) + accessor.value("byteOffset", 0);
-    size_t byteLength = bufferView.value("byteLength", 0);
-    
-    // Copy data
-    dataVec.resize(byteLength);
-    std::memcpy(dataVec.data(), s_binaryData.data() + byteOffset, byteLength);
-}
+        std::string materialName = materialJSON.value("name", "");
 
-unsigned int glTF2Loader::getComponentSize(int componentType) {
-    switch (componentType) {
-        case GLTF_BYTE:
-        case GLTF_UBYTE:
-            return 1;
-        case GLTF_SHORT:
-        case GLTF_USHORT:
-            return 2;
-        case GLTF_UINT:
-        case GLTF_FLOAT:
-            return 4;
+        
+        json& specularGlossiness = materialJSON["extensions"]["KHR_materials_pbrSpecularGlossiness"];
+        
+        // Extract parameters from the specular-glossiness model
+        glm::vec3 diffuse(0.5f, 0.5f, 0.5f); // Default diffuse color
+        glm::vec3 specular(0.0f, 0.0f, 0.0f); // Default specular color
+        float glossiness = 0.0f; // Default glossiness
+        
+        // Diffuse factor
+        if (specularGlossiness.contains("diffuseFactor")) {
+            diffuse = glm::vec3(
+                specularGlossiness["diffuseFactor"][0],
+                specularGlossiness["diffuseFactor"][1],
+                specularGlossiness["diffuseFactor"][2]
+            );
+        }
+        
+        // Specular factor
+        if (specularGlossiness.contains("specularFactor")) {
+            specular = glm::vec3(
+                specularGlossiness["specularFactor"][0],
+                specularGlossiness["specularFactor"][1],
+                specularGlossiness["specularFactor"][2]
+            );
+        }
+        
+        // Glossiness factor
+        if (specularGlossiness.contains("glossinessFactor")) {
+            glossiness = specularGlossiness["glossinessFactor"];
+        }
+        
+        // Create a specular-glossiness material
+        std::shared_ptr<Material> material = MaterialLibrary::createSpecularGlossinessMaterial(
+            materialName,
+            diffuse,
+            specular,
+            glossiness
+        );
+        
+        // Handle textures
+        // Diffuse texture
+        if (specularGlossiness.contains("diffuseTexture")) {
+            int texIndex = specularGlossiness["diffuseTexture"]["index"];
+            if (loadAndSetTexture(material, "diffuseMap", texIndex)) {
+                material->setBool("u_HasDiffuseMap", true);
+            }
+        }
+        
+        // Specular-glossiness texture
+        if (specularGlossiness.contains("specularGlossinessTexture")) {
+            int texIndex = specularGlossiness["specularGlossinessTexture"]["index"];
+            if (loadAndSetTexture(material, "specularGlossinessMap", texIndex)) {
+                material->setBool("u_HasSpecularGlossinessMap", true);
+            }
+        }
+        
+        // Process additional textures common to both workflows
+        // Normal map
+        if (materialJSON.contains("normalTexture")) {
+            int texIndex = materialJSON["normalTexture"]["index"];
+            if (loadAndSetTexture(material, "normalMap", texIndex)) {
+                material->setBool("u_HasNormalMap", true);
+            }
+        }
+        
+        // Occlusion map
+        if (materialJSON.contains("occlusionTexture")) {
+            int texIndex = materialJSON["occlusionTexture"]["index"];
+            if (loadAndSetTexture(material, "aoMap", texIndex)) {
+                material->setBool("u_HasAOMap", true);
+            }
+        }
+        
+        // Emissive map
+        if (materialJSON.contains("emissiveTexture")) {
+            int texIndex = materialJSON["emissiveTexture"]["index"];
+            if (loadAndSetTexture(material, "emissiveMap", texIndex)) {
+                material->setBool("u_HasEmissiveMap", true);
+            }
+        }
+        
+        // Emissive factor
+        if (materialJSON.contains("emissiveFactor")) {
+            glm::vec3 emissiveFactor(
+                materialJSON["emissiveFactor"][0],
+                materialJSON["emissiveFactor"][1],
+                materialJSON["emissiveFactor"][2]
+            );
+            material->setVec3("emissiveFactor", emissiveFactor);
+        }
+        
+        return material;
+    }
+
+    void glTF2Loader::loadAccessor(json& accessorJSON, std::vector<unsigned char>& dataVec)
+    {
+        // Clear output vector
+        dataVec.clear();
+        
+        // Validate accessor has necessary fields
+        if (!accessorJSON.contains("count") || 
+            !accessorJSON.contains("componentType") || 
+            !accessorJSON.contains("type")) {
+            GE_CORE_ERROR("glTF2Loader: Accessor is missing required fields");
+            return;
+        }
+        
+        unsigned int bufferviewInd = accessorJSON.value("bufferView", 0);
+        if (bufferviewInd >= m_bufferViews.size()) {
+            GE_CORE_ERROR("glTF2Loader: Buffer view index out of range: {}", bufferviewInd);
+            return;
+        }
+        
+        unsigned int count = accessorJSON["count"];
+        unsigned int componentType = accessorJSON["componentType"];
+        size_t accbyteOffset = accessorJSON.value("byteOffset", 0);
+        std::string type = accessorJSON["type"];
+
+        json& bufferView = m_bufferViews[bufferviewInd];
+        size_t byteOffset = bufferView.value("byteOffset", 0) + accbyteOffset;
+        unsigned int byteStride = bufferView.value("byteStride", 0);
+        
+        // Calculate element size
+        unsigned int elementSize = 1; // default for SCALAR
+        if (type == "VEC2") elementSize = 2;
+        else if (type == "VEC3") elementSize = 3;
+        else if (type == "VEC4") elementSize = 4;
+        else if (type == "MAT4") elementSize = 16;
+        
+        unsigned int componentSize = 0;
+        switch (componentType)
+        {
+        case 5120: componentSize = 1; break; // BYTE
+        case 5121: componentSize = 1; break; // UNSIGNED_BYTE
+        case 5122: componentSize = 2; break; // SHORT
+        case 5123: componentSize = 2; break; // UNSIGNED_SHORT
+        case 5125: componentSize = 4; break; // UNSIGNED_INT
+        case 5126: componentSize = 4; break; // FLOAT
         default:
-            return 0;
-    }
-}
-
-unsigned int glTF2Loader::getTypeSize(const std::string& type) {
-    if (type == "SCALAR") return 1;
-    if (type == "VEC2") return 2;
-    if (type == "VEC3") return 3;
-    if (type == "VEC4") return 4;
-    if (type == "MAT2") return 4;
-    if (type == "MAT3") return 9;
-    if (type == "MAT4") return 16;
-    return 0;
-}
-
-unsigned int glTF2Loader::getAccessorByteSize(int accessorIndex) {
-    // Skip if accessor index is invalid
-    if (accessorIndex < 0 || !s_glTFDocument.contains("accessors") || 
-        accessorIndex >= s_glTFDocument["accessors"].size()) {
-        return 0;
-    }
-    
-    const json& accessor = s_glTFDocument["accessors"][accessorIndex];
-    
-    unsigned int count = accessor.value("count", 0);
-    int componentType = accessor.value("componentType", 0);
-    std::string type = accessor.value("type", "");
-    
-    return count * getComponentSize(componentType) * getTypeSize(type);
-}
-
-unsigned int glTF2Loader::getBufferViewStride(int bufferViewIndex) {
-    // Skip if buffer view index is invalid
-    if (bufferViewIndex < 0 || !s_glTFDocument.contains("bufferViews") || 
-        bufferViewIndex >= s_glTFDocument["bufferViews"].size()) {
-        return 0;
-    }
-    
-    const json& bufferView = s_glTFDocument["bufferViews"][bufferViewIndex];
-    
-    return bufferView.value("byteStride", 0);
-}
-
-void glTF2Loader::loadGeometry(const glTFMesh& gltfMesh, Mesh* mesh) {
-    if (!mesh) return;
-    
-    // Load each primitive as a submesh
-    for (const auto& primitive : gltfMesh.primitives) {
-        auto submesh = mesh->addSubMesh();
-        submesh->setName(gltfMesh.name);
-        
-        // Load the primitive data
-        loadPrimitive(primitive, submesh);
-    }
-}
-
-void glTF2Loader::loadPrimitive(const glTFPrimitive& primitive, std::shared_ptr<SubMesh> submesh) {
-    // TODO: implement primitive loading - we'll build vertex and index buffers from the accessor data
-    
-    // Load material if present
-    if (primitive.materialIndex >= 0 && primitive.materialIndex < s_materials.size()) {
-        std::shared_ptr<Material> material;
-        loadMaterial(s_materials[primitive.materialIndex], material);
-        submesh->setMaterial(material);
-    }
-}
-
-void glTF2Loader::loadMaterial(const glTFMaterial& material, std::shared_ptr<Material>& outMaterial) {
-    // Create the appropriate material based on the glTF material properties
-    
-    // PBR material is the default in glTF
-    outMaterial = MaterialLibrary::createPBRMaterial(
-        material.name,
-        glm::vec3(material.baseColorFactor),
-        material.roughnessFactor,
-        material.metallicFactor,
-        1.0f // Specular (not directly in glTF)
-    );
-    
-    // Set additional properties if specified
-    
-    // Load textures if available
-    if (material.baseColorTexture >= 0 && material.baseColorTexture < s_textures.size()) {
-        std::shared_ptr<Texture2D> texture = loadTexture(s_textures[material.baseColorTexture]);
-        if (texture) {
-            outMaterial->setTexture("baseColorTexture", texture);
-        }
-    }
-    
-    if (material.metallicRoughnessTexture >= 0 && material.metallicRoughnessTexture < s_textures.size()) {
-        std::shared_ptr<Texture2D> texture = loadTexture(s_textures[material.metallicRoughnessTexture]);
-        if (texture) {
-            outMaterial->setTexture("metallicRoughnessTexture", texture);
-        }
-    }
-    
-    if (material.normalTexture >= 0 && material.normalTexture < s_textures.size()) {
-        std::shared_ptr<Texture2D> texture = loadTexture(s_textures[material.normalTexture]);
-        if (texture) {
-            outMaterial->setTexture("normalTexture", texture);
-            outMaterial->setFloat("normalScale", material.normalScale);
-        }
-    }
-    
-    if (material.occlusionTexture >= 0 && material.occlusionTexture < s_textures.size()) {
-        std::shared_ptr<Texture2D> texture = loadTexture(s_textures[material.occlusionTexture]);
-        if (texture) {
-            outMaterial->setTexture("occlusionTexture", texture);
-            outMaterial->setFloat("occlusionStrength", material.occlusionStrength);
-        }
-    }
-    
-    if (material.emissiveTexture >= 0 && material.emissiveTexture < s_textures.size()) {
-        std::shared_ptr<Texture2D> texture = loadTexture(s_textures[material.emissiveTexture]);
-        if (texture) {
-            outMaterial->setTexture("emissiveTexture", texture);
-            outMaterial->setVec3("emissiveFactor", material.emissiveFactor);
-        }
-    }
-    
-    // Set alpha mode
-    if (material.alphaMode == GltfAlphaMode::MASK) {
-        outMaterial->setFloat("alphaCutoff", material.alphaCutoff);
-        // Set flag for alpha mask mode
-        outMaterial->setFlag(MaterialFlagBitLocations::TRANSPARENT, true);
-    }
-    else if (material.alphaMode == GltfAlphaMode::BLEND) {
-        // Set flag for transparency
-        outMaterial->setFlag(MaterialFlagBitLocations::TRANSPARENT, true);
-    }
-    
-    // Set double-sided flag if needed
-    // TODO: Add support for double-sided rendering
-}
-
-std::shared_ptr<Texture2D> glTF2Loader::loadTexture(const glTFTexture& texture) {
-    // Skip if texture has no valid source
-    if (texture.source < 0 || texture.source >= s_images.size()) {
-        return nullptr;
-    }
-    
-    // Get the image
-    const glTFImage& image = s_images[texture.source];
-    
-    // Load image data and create texture
-    return loadImageData(image);
-}
-
-std::shared_ptr<Texture2D> glTF2Loader::loadImageData(const glTFImage& image) {
-    // Handle different image sources
-    if (!image.uri.empty()) {
-        // External image file
-        std::filesystem::path imagePath = std::filesystem::path(image.uri);
-        
-        // Check if the image is already loaded in the texture library
-        std::shared_ptr<Texture2D> existingTexture = TextureLibrary::get(imagePath.string());
-        if (existingTexture) {
-            return existingTexture;
+            GE_CORE_ERROR("glTF2Loader: Unknown component type: {}", componentType);
+            return;
         }
         
-        // Load from file
-        return TextureLibrary::load(imagePath.string());
+        // Total bytes for this accessor
+        unsigned int totalBytes = count * elementSize * componentSize;
+        
+        
+        // Check if we need to handle interleaved data with stride
+        if (byteStride > 0 && byteStride != (elementSize * componentSize)) {
+            // Data is interleaved, need to copy with stride
+            dataVec.resize(totalBytes);
+            
+            unsigned int elementBytes = elementSize * componentSize;
+            unsigned int dstOffset = 0;
+            
+            for (unsigned int i = 0; i < count; i++) {
+                if (byteOffset + i * byteStride + elementBytes > m_binVec.size()) {
+                    GE_CORE_ERROR("glTF2Loader: Buffer access out of bounds");
+                    dataVec.clear();
+                    return;
+                }
+                
+                std::memcpy(
+                    dataVec.data() + dstOffset,
+                    m_binVec.data() + byteOffset + i * byteStride,
+                    elementBytes
+                );
+                dstOffset += elementBytes;
+            }
+        } else {
+            // Data is tightly packed, can copy in one go
+            if (byteOffset + totalBytes > m_binVec.size()) {
+                GE_CORE_ERROR("glTF2Loader: Buffer access out of bounds: offset={}, size={}, buffer size={}", 
+                    byteOffset, totalBytes, m_binVec.size());
+                return;
+            }
+            
+            dataVec.resize(totalBytes);
+            std::memcpy(dataVec.data(), m_binVec.data() + byteOffset, totalBytes);
+        }
+        
+        // Additional validation for TEXCOORD_0
+        if (type == "VEC2" && elementSize == 2 && (totalBytes > 0)) {
+            // Check if any texture coordinates are outside the [0,1] range 
+            // This could indicate potential issues with texture mapping
+            bool hasOutOfRange = false;
+            if (componentType == 5126) { // FLOAT
+                float* coords = reinterpret_cast<float*>(dataVec.data());
+                for (unsigned int i = 0; i < count * elementSize; i += elementSize) {
+                    float u = coords[i];
+                    float v = coords[i + 1];
+                    if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f) {
+                        hasOutOfRange = true;
+                        break;
+                    }
+                }
+                
+                if (hasOutOfRange) {
+                    GE_CORE_WARN("glTF2Loader: Texture coordinates found outside [0,1] range. This may cause texture wrapping issues.");
+                }
+            }
+        }
     }
-    else if (image.bufferView >= 0) {
-        // Image data is stored in a buffer view
-        // TODO: Implement loading from buffer view
-        GE_CORE_ERROR("Loading textures from buffer views not yet implemented");
+
+    void glTF2Loader::cleanUp()
+    {
+        m_glTFfile.clear();
+        m_accessors.clear();
+        m_meshes.clear();
+        m_bufferViews.clear();
+        m_buffers.clear();
+        m_nodes.clear();
+        m_materials.clear();
+        m_animations.clear();
+        m_skins.clear();
+        m_textures.clear();
+        m_images.clear();
+        m_samplers.clear();
+        
+        m_binVec.clear();
     }
-    
-    return nullptr;
+
+    bool glTF2Loader::loadAndSetTexture(std::shared_ptr<Material> material, const std::string& textureName, int textureIndex)
+    {
+        if (textureIndex < 0 || textureIndex >= m_textures.size()) {
+            GE_CORE_ERROR("glTF2Loader: Invalid texture index {}", textureIndex);
+            return false;
+        }
+
+        json& texture = m_textures[textureIndex];
+        
+        // Get the image index
+        if (!texture.contains("source")) {
+            GE_CORE_ERROR("glTF2Loader: Texture missing source property");
+            return false;
+        }
+        
+        int imageIndex = texture["source"];
+        if (imageIndex < 0 || imageIndex >= m_images.size()) {
+            GE_CORE_ERROR("glTF2Loader: Invalid image index {}", imageIndex);
+            return false;
+        }
+        
+        json& image = m_images[imageIndex];
+        
+        // Get the image URI
+        if (!image.contains("uri")) {
+            GE_CORE_ERROR("glTF2Loader: Image missing URI");
+            return false;
+        }
+        
+        std::string imageURI = image["uri"];
+        
+        // Load the texture
+        std::string texturePath = DIRNAME + m_basePath + imageURI;
+        
+        std::shared_ptr<Texture2D> tex = TextureLibrary::load(texturePath, textureName);
+        
+        if (!tex) {
+            GE_CORE_ERROR("glTF2Loader: Failed to load texture {}", texturePath);
+            return false;
+        }
+        
+        // Apply sampler parameters if present
+        if (texture.contains("sampler")) {
+            int samplerIndex = texture["sampler"];
+            if (samplerIndex >= 0 && samplerIndex < m_samplers.size()) {
+                json& sampler = m_samplers[samplerIndex];
+                
+                // The glTF spec defines these constants:
+                // GL_NEAREST = 9728
+                // GL_LINEAR = 9729
+                // GL_NEAREST_MIPMAP_NEAREST = 9984
+                // GL_LINEAR_MIPMAP_NEAREST = 9985
+                // GL_NEAREST_MIPMAP_LINEAR = 9986
+                // GL_LINEAR_MIPMAP_LINEAR = 9987
+                // GL_CLAMP_TO_EDGE = 33071
+                // GL_MIRRORED_REPEAT = 33648
+                // GL_REPEAT = 10497
+                
+                // Apply filter settings
+                if (sampler.contains("magFilter")) {
+                    int magFilter = sampler["magFilter"];
+                    if (magFilter == 9728) { // GL_NEAREST
+                        tex->setMagFilter(TextureFilter::Nearest);
+                    } else if (magFilter == 9729) { // GL_LINEAR
+                        tex->setMagFilter(TextureFilter::Linear);
+                    }
+                }
+                
+                if (sampler.contains("minFilter")) {
+                    int minFilter = sampler["minFilter"];
+                    if (minFilter == 9728) { // GL_NEAREST
+                        tex->setMinFilter(TextureFilter::Nearest);
+                    } else if (minFilter == 9729) { // GL_LINEAR
+                        tex->setMinFilter(TextureFilter::Linear);
+                    } else if (minFilter == 9984) { // GL_NEAREST_MIPMAP_NEAREST
+                        tex->setMinFilter(TextureFilter::NearestMipmapNearest);
+                    } else if (minFilter == 9985) { // GL_LINEAR_MIPMAP_NEAREST
+                        tex->setMinFilter(TextureFilter::LinearMipmapNearest);
+                    } else if (minFilter == 9986) { // GL_NEAREST_MIPMAP_LINEAR
+                        tex->setMinFilter(TextureFilter::NearestMipmapLinear);
+                    } else if (minFilter == 9987) { // GL_LINEAR_MIPMAP_LINEAR
+                        tex->setMinFilter(TextureFilter::LinearMipmapLinear);
+                    }
+                }
+                
+                // Apply wrap settings
+                if (sampler.contains("wrapS")) {
+                    int wrapS = sampler["wrapS"];
+                    if (wrapS == 33071) { // GL_CLAMP_TO_EDGE
+                        tex->setWrapS(TextureWrap::ClampToEdge);
+                    } else if (wrapS == 33648) { // GL_MIRRORED_REPEAT
+                        tex->setWrapS(TextureWrap::MirroredRepeat);
+                    } else if (wrapS == 10497) { // GL_REPEAT
+                        tex->setWrapS(TextureWrap::Repeat);
+                    }
+                }
+                
+                if (sampler.contains("wrapT")) {
+                    int wrapT = sampler["wrapT"];
+                    if (wrapT == 33071) { // GL_CLAMP_TO_EDGE
+                        tex->setWrapT(TextureWrap::ClampToEdge);
+                    } else if (wrapT == 33648) { // GL_MIRRORED_REPEAT
+                        tex->setWrapT(TextureWrap::MirroredRepeat);
+                    } else if (wrapT == 10497) { // GL_REPEAT
+                        tex->setWrapT(TextureWrap::Repeat);
+                    }
+                }
+            }
+        } else {
+            // Set default texture parameters if no sampler is specified
+            tex->setMinFilter(TextureFilter::LinearMipmapLinear);
+            tex->setMagFilter(TextureFilter::Linear);
+            tex->setWrapS(TextureWrap::Repeat);
+            tex->setWrapT(TextureWrap::Repeat);
+        }
+        
+        // Set the texture on the material
+        material->setTexture(textureName, tex);
+        
+        return true;
+    }
 }
 
-void glTF2Loader::cleanUp() {
-    // Clear all loaded data
-    s_glTFDocument.clear();
-    s_binaryData.clear();
-    s_meshes.clear();
-    s_nodes.clear();
-    s_materials.clear();
-    s_textures.clear();
-    s_samplers.clear();
-    s_images.clear();
-    s_mesh = nullptr;
-}
-
-} // namespace Rapture 
-
-*/

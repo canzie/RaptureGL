@@ -21,6 +21,7 @@ layout (std140, binding=3) uniform SOLID
 out vec4 v_Albedo;
 out vec3 v_Position;
 out vec3 v_Normal;
+out vec2 v_TexCoord;
 
 uniform mat4 u_model;
 uniform int u_DebugMode = 0; // 0=Normal, 1=BaseColor, 2=Normals, 3=ID-based
@@ -51,6 +52,6 @@ void main()
 		float b = fract(sin(gl_VertexID * 0.3) * 19642.3571);
 		v_Albedo = vec4(r, g, b, 1.0);
 	}
-	
+	v_TexCoord = aTexCoord0;
 	gl_Position = u_proj * u_view * u_model * vec4(aPos, 1.0);
 }

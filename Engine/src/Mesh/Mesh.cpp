@@ -7,7 +7,7 @@
 #include "../Buffers/VertexArray.h"
 #include "../Buffers/BufferLayout.h"
 
-#include "../File Loaders/glTF/glTFLoader.h"
+//#include "../File Loaders/glTF/glTFLoader.h"
 //#include "../File Loaders/glTF/glTF2Loader.h"
 #include "../Logger/Log.h"
 #include <glad/glad.h>
@@ -24,25 +24,21 @@ namespace Rapture
 		//if (useGLTF2) {
 		//	glTF2Loader::loadMesh(filepath, this);
 		//} else {
-			glTFLoader::loadMesh(filepath, this);
+			//glTFLoader::loadMesh(filepath, this);
 		//}
 
 	}
+
+    Mesh::Mesh()
+    : m_indexCount(0), m_offsetBytes(0) {}
 
     
 
 	Mesh::~Mesh()
 	{
-		m_meshes = {};
 	}
 
-	std::shared_ptr<SubMesh> Mesh::addSubMesh()
-	{
-		std::shared_ptr<SubMesh> s = std::make_shared<SubMesh>(this);
 
-		m_meshes.push_back(s);
-		return s;
-	}
 
 	std::shared_ptr<Mesh> Mesh::createCube(float size)
 	{
@@ -255,13 +251,14 @@ namespace Rapture
 		mesh->m_VAO->setIndexBuffer(indexBuffer);
 		
 		// Create a single submesh for the cube
-		std::shared_ptr<SubMesh> submesh = mesh->addSubMesh();
 		
 		// Use setPartition for GLTF compatibility
-		submesh->setPartition(36, 0); // 6 faces * 2 triangles * 3 vertices
-		
+		//submesh->setPartition(36, 0); // 6 faces * 2 triangles * 3 vertices
+		mesh->setIndexCount(36);
+		mesh->setOffsetBytes(0);
+
 		GE_CORE_INFO("Created cube mesh with {0} vertices, {1} indices", 24, 36);
-		GE_CORE_INFO("SubMesh index count: {0}, offset: {1}", submesh->getIndexCount(), submesh->getOffset());
+		GE_CORE_INFO("SubMesh index count: {0}, offset: {1}", mesh->getIndexCount(), mesh->getOffsetBytes());
 		
 		return mesh;
 	}

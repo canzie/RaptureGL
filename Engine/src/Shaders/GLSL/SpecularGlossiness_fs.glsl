@@ -34,73 +34,32 @@ layout(std140, binding = 2) uniform Lights {
     Light lights[MAX_LIGHTS];
 };
 
-
-layout (std140, binding=1) uniform PBR
+layout (std140, binding=4) uniform SpecularGlossiness
 {
-	vec3 base_color;
-	float roughness;
-	float metallic;
-    float specular;
+	vec3 diffuse_color;
+	float glossiness;
+	vec3 specular_color;
+    float padding;
 };
 
-// PBR textures
-layout(binding = 0) uniform sampler2D u_AlbedoMap;    // ALBEDO=0
-layout(binding = 1) uniform sampler2D u_NormalMap;    // NORMAL=1
-layout(binding = 2) uniform sampler2D u_MetallicMap;  // METALLIC=2
-layout(binding = 3) uniform sampler2D u_RoughnessMap; // ROUGHNESS=3
-layout(binding = 4) uniform sampler2D u_AOMap;        // AO=4
-layout(binding = 5) uniform sampler2D u_EmissiveMap;  // EMISSION=5
-layout(binding = 6) uniform sampler2D u_HeightMap;    // HEIGHT=6
+// Texture samplers
+layout(binding = 0) uniform sampler2D u_DiffuseMap;             // ALBEDO=0
+layout(binding = 1) uniform sampler2D u_NormalMap;              // NORMAL=1 
+layout(binding = 7) uniform sampler2D u_SpecularGlossinessMap;  // SPECULAR=7
+layout(binding = 4) uniform sampler2D u_AOMap;                  // AO=4
+layout(binding = 5) uniform sampler2D u_EmissiveMap;            // EMISSION=5
 
 // Texture availability flags
-uniform bool u_HasAlbedoMap = false;
-uniform bool u_HasRoughnessMap = false;
-uniform bool u_HasMetallicMap = false;
+uniform bool u_HasDiffuseMap = false;
+uniform bool u_HasSpecularGlossinessMap = false;
 uniform bool u_HasNormalMap = false;
 uniform bool u_HasAOMap = false;
 uniform bool u_HasEmissiveMap = false;
 
 // Debug uniform to control visualization mode
-uniform int u_DebugMode = 0; // 0=Normal, 1=BaseColor, 2=Normals, 3=ID-based
+uniform int u_DebugMode = 0; // 0=Normal, 1=Diffuse, 2=Normals, 3=ID-based
 
 #define PI 3.1415926535897932384626433832795
-
-vec3 lin2rgb(vec3 lin) {
-	return pow(lin, vec3(1.0/2.2));
-}
-
-vec3 rgb2lin(vec3 rgb) {
-	return pow(rgb, vec3(2.2));
-}
-
-// normal distribution function
-// GGX/Trowbridge-reitz model
-float distributionGGX(float NdotH, float roughness)
-{
-    float a = pow(roughness, 2.0);
-    float a2 = pow(a, 2.0);
-    float denom = pow(NdotH, 2.0) * (a2-1.0) + 1.0;
-    denom = PI * pow(denom, 2.0);
-    return a2/max(denom, 0.0000001);
-
-}
-
-// geometry shadowing function
-//schlick-ggx
-float geometrySmith(float NdotV, float NdotL, float roughness)
-{
-    float r = roughness + 1.0;
-    float k = pow(r, 2.0) / 8.0;
-    float ggx1 = NdotV / (NdotV * (1.0 - k) + k);
-    float ggx2 = NdotL / (NdotL * (1.0 - k) + k);
-    return ggx1*ggx2;
-}
-
-// fresnel function
-vec3 fresnel(float HdotV, vec3 baseReflectivity)
-{
-    return baseReflectivity + (1.0 - baseReflectivity) * pow(1.0-HdotV, 5.0);
-}
 
 // Function to calculate tangent space normal from normal map
 vec3 getNormalFromMap()
@@ -148,9 +107,16 @@ float calculateSpotEffect(vec3 lightDir, vec3 spotDir, float innerConeAngle, flo
 
 void main() {
     // Get material properties from textures or fallback to uniforms
-    vec3 albedo = u_HasAlbedoMap ? texture(u_AlbedoMap, texCoord).rgb : base_color;
-    float material_roughness = u_HasRoughnessMap ? texture(u_RoughnessMap, texCoord).r : roughness;
-    float material_metallic = u_HasMetallicMap ? texture(u_MetallicMap, texCoord).r : metallic;
+    vec3 diffuseVal = u_HasDiffuseMap ? texture(u_DiffuseMap, texCoord).rgb : diffuse_color;
+    float glossinessVal = glossiness;
+    vec3 specularVal = specular_color;
+    
+    if (u_HasSpecularGlossinessMap) {
+        vec4 specGloss = texture(u_SpecularGlossinessMap, texCoord);
+        specularVal = specGloss.rgb;
+        glossinessVal = specGloss.a;
+    }
+    
     float ao = u_HasAOMap ? texture(u_AOMap, texCoord).r : 1.0;
     vec3 emission = u_HasEmissiveMap ? texture(u_EmissiveMap, texCoord).rgb : vec3(0.0);
     
@@ -161,8 +127,8 @@ void main() {
 
     // Debug visualization modes
     if (u_DebugMode == 1) {
-        // Just show the base color directly
-        visualColor = albedo;
+        // Just show the diffuse color directly
+        visualColor = diffuseVal;
     }
     else if (u_DebugMode == 2) {
         // Show surface normals
@@ -170,18 +136,21 @@ void main() {
     }
     else if (u_DebugMode == 3) {
         // Generate a unique color based on object ID (using any unique per-object value)
-        // For testing, we'll just use position as a makeshift ID
         float r = fract(sin(dot(floor(vertPos.xyz*10.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
         float g = fract(sin(dot(floor(vertPos.xyz*10.0), vec3(39.3465, 23.427, 83.654))) * 34561.5453);
         float b = fract(sin(dot(floor(vertPos.xyz*10.0), vec3(73.9826, 45.337, 27.436))) * 65428.5453);
         visualColor = vec3(r, g, b);
     }
     else {
-        // Normal PBR rendering
-        vec3 baseReflectivity = mix(vec3(0.04), rgb2lin(albedo), material_metallic);
-        vec3 Lo = vec3(0.0); // Total radiance
-
-        float NdotV = max(dot(N, V), 0.0000001);
+        // Standard specular-glossiness rendering
+        // Convert glossiness to shininess
+        float shininess = exp2(10.0 * glossinessVal + 1.0);
+        
+        // Ambient term (same for all lights)
+        vec3 ambient = diffuseVal * 0.03 * ao;
+        
+        // Accumulated light contribution
+        vec3 Lo = vec3(0.0);
         
         // Process each light
         for (uint i = 0u; i < lightCount; i++) {
@@ -220,38 +189,36 @@ void main() {
             // Skip calculation if radiance is negligible
             if (length(radiance) < 0.001) continue;
             
-            // Standard PBR calculations for this light
+            // Standard specular-glossiness calculations for this light
             vec3 H = normalize(V + lightDir);
             
-            float NdotL = max(dot(N, lightDir), 0.0000001);
-            float HdotV = max(dot(H, V), 0.0);
+            // Key reflection angles
+            float NdotL = max(dot(N, lightDir), 0.0);
+            float NdotV = max(dot(N, V), 0.0);
             float NdotH = max(dot(N, H), 0.0);
+            float VdotH = max(dot(V, H), 0.0);
             
-            float D = distributionGGX(NdotH, material_roughness);
-            float G = geometrySmith(NdotV, NdotL, material_roughness);
-            vec3 F = fresnel(HdotV, baseReflectivity);
+            // Diffuse term (lambertian)
+            vec3 diffuse = diffuseVal / PI;
             
-            vec3 spec = D * G * F;
-            spec /= 4.0 * NdotV * NdotL;
+            // Specular term (Blinn-Phong with glossiness)
+            vec3 specular = specularVal * pow(NdotH, shininess);
             
-            vec3 kD = vec3(1.0) - F;
-            kD *= 1.0 - material_metallic;
+            // Fresnel approximation
+            vec3 fresnel = specularVal + (1.0 - specularVal) * pow(1.0 - VdotH, 5.0);
             
             // Add this light's contribution
-            Lo += (kD * lin2rgb(albedo) / PI + spec) * radiance * NdotL;
+            Lo += (diffuse * (1.0 - fresnel) + specular * fresnel) * radiance * NdotL;
         }
-
-        // Add ambient lighting and emission
-        vec3 ambient = vec3(0.03) * albedo * ao;
         
         visualColor = ambient + Lo + emission;
-
+        
         // HDR tonemapping
         visualColor = visualColor / (visualColor + vec3(1.0));
-
+        
         // gamma correction
-        visualColor = lin2rgb(visualColor);
+        visualColor = pow(visualColor, vec3(1.0/2.2));
     }
 
     outColor = vec4(visualColor, 1.0);
-}
+} 

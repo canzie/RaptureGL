@@ -1,5 +1,6 @@
 #include "Texture.h"
 #include "../Logger/Log.h"
+#include "../Debug/Profiler.h"
 #include <filesystem>
 
 namespace Rapture {
@@ -8,17 +9,21 @@ std::unordered_map<std::string, std::shared_ptr<Texture2D>> TextureLibrary::s_te
 
 void TextureLibrary::init()
 {
+    RAPTURE_PROFILE_FUNCTION();
     GE_CORE_INFO("Initializing TextureLibrary");
 }
 
 void TextureLibrary::shutdown()
 {
+    RAPTURE_PROFILE_FUNCTION();
     GE_CORE_INFO("Shutting down TextureLibrary");
     s_textures.clear();
 }
 
 void TextureLibrary::add(const std::string& name, const std::shared_ptr<Texture2D>& texture)
 {
+    RAPTURE_PROFILE_FUNCTION();
+    
     if (s_textures.find(name) != s_textures.end()) {
         GE_CORE_WARN("Texture '{0}' already exists in the library, overwriting", name);
     }
@@ -34,8 +39,10 @@ void TextureLibrary::add(const std::shared_ptr<Texture2D>& texture)
     add(name, texture);
 }
 
-std::shared_ptr<Texture2D> TextureLibrary::load(const std::string& filepath)
+std::shared_ptr<Texture2D> TextureLibrary::load(const std::string& filepath,const std::string& name)
 {
+    RAPTURE_PROFILE_FUNCTION();
+    
     // Use filepath as name, but cleanup to get just the filename
     std::string filename = std::filesystem::path(filepath).filename().string();
     
@@ -48,6 +55,9 @@ std::shared_ptr<Texture2D> TextureLibrary::load(const std::string& filepath)
     // Load the texture
     auto texture = Texture2D::create(filepath);
     if (texture) {
+        if (!name.empty()) {
+            filename = name;
+        }
         add(filename, texture);
         return texture;
     }
@@ -58,6 +68,8 @@ std::shared_ptr<Texture2D> TextureLibrary::load(const std::string& filepath)
 
 std::shared_ptr<Texture2D> TextureLibrary::get(const std::string& name)
 {
+    RAPTURE_PROFILE_FUNCTION();
+    
     auto it = s_textures.find(name);
     if (it != s_textures.end()) {
         return it->second;

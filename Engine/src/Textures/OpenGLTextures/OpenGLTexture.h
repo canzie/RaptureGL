@@ -19,6 +19,17 @@ public:
     virtual void unbind() const override;
 
     void setData(void* data, uint32_t size);
+    
+    // Implement texture parameter setters
+    virtual void setMinFilter(TextureFilter filter) override;
+    virtual void setMagFilter(TextureFilter filter) override;
+    virtual void setWrapS(TextureWrap wrap) override;
+    virtual void setWrapT(TextureWrap wrap) override;
+
+private:
+    // Helper to convert enum to GL constant
+    GLenum convertFilterToGL(TextureFilter filter);
+    GLenum convertWrapToGL(TextureWrap wrap);
 
 private:
     std::string m_path;

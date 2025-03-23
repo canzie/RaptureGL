@@ -21,9 +21,9 @@ void MaterialLibrary::init()
     
     GE_CORE_INFO("MaterialLibrary: Initializing...");
     // Initialize static shaders for material types
-    // Metal material shader
-    if (!MetalMaterial::s_shader) {
-        MetalMaterial::s_shader = new OpenGLShader("PBR_vs.glsl", "PBR_fs.glsl");
+    // PBR material shader
+    if (!PBRMaterial::s_shader) {
+        PBRMaterial::s_shader = new OpenGLShader("PBR_vs.glsl", "PBR_fs.glsl");
         GE_CORE_INFO("MaterialLibrary: Initialized PBR shader");
     }
     
@@ -39,8 +39,15 @@ void MaterialLibrary::init()
         GE_CORE_INFO("MaterialLibrary: Initialized Solid shader");
     }
     
+    // Specular-Glossiness material shader
+    if (!SpecularGlossinessMaterial::s_shader) {
+        SpecularGlossinessMaterial::s_shader = new OpenGLShader("SpecularGlossiness_vs.glsl", "SpecularGlossiness_fs.glsl");
+        GE_CORE_INFO("MaterialLibrary: Initialized Specular-Glossiness shader");
+    }
+    
     // Create a default material
     s_defaultMaterial = std::make_shared<SolidMaterial>(glm::vec3(1.0f, 0.0f, 1.0f)); // Magenta for visibility
+    s_defaultMaterial->setName("Default");
     registerMaterial("Default", s_defaultMaterial);
     
     s_initialized = true;
@@ -78,7 +85,8 @@ std::shared_ptr<Material> MaterialLibrary::createPBRMaterial(
         return getMaterial(name);
     }
     
-    auto material = std::make_shared<MetalMaterial>(baseColor, roughness, metallic, specular);
+    auto material = std::make_shared<PBRMaterial>(baseColor, roughness, metallic, specular);
+    material->setName(name);
     registerMaterial(name, material);
     return material;
 }
@@ -111,6 +119,25 @@ std::shared_ptr<Material> MaterialLibrary::createPhongMaterial(
     }
     
     auto material = std::make_shared<PhongMaterial>(1.0f, diffuseColor, specularColor, glm::vec4(0.1f, 0.1f, 0.1f, 1.0f), shininess);
+    material->setName(name);
+    registerMaterial(name, material);
+    return material;
+}
+
+std::shared_ptr<Material> MaterialLibrary::createSpecularGlossinessMaterial(
+    const std::string& name,
+    const glm::vec3& diffuseColor,
+    const glm::vec3& specularColor,
+    float glossiness)
+{
+    if (hasMaterial(name))
+    {
+        GE_CORE_WARN("MaterialLibrary: Material with name '{0}' already exists!", name);
+        return getMaterial(name);
+    }
+    
+    auto material = std::make_shared<SpecularGlossinessMaterial>(diffuseColor, specularColor, glossiness);
+    material->setName(name);
     registerMaterial(name, material);
     return material;
 }

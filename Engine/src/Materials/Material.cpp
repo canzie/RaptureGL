@@ -11,11 +11,14 @@ namespace Rapture
 {
 
 	// Initialize static shader and UBO pointers for derived classes
-	Shader* MetalMaterial::s_shader = nullptr;
+	Shader* PBRMaterial::s_shader = nullptr;
 
 	Shader* PhongMaterial::s_shader = nullptr;
 
 	Shader* SolidMaterial::s_shader = nullptr;
+    
+    // Initialize static shader for SpecularGlossiness material
+    Shader* SpecularGlossinessMaterial::s_shader = nullptr;
 
 	//OpenGLShader* Material::s_shader = nullptr;
 
@@ -153,15 +156,25 @@ namespace Rapture
 	{
 		if (m_shader)
 			m_shader->unBind();
+
+		// Unbind all textures in the material parameters
+		for (const auto& [name, param] : m_parameters) {
+			if (param.getType() == MaterialParameterType::TEXTURE2D) {
+				std::shared_ptr<Texture2D> texture = param.asTexture();
+				if (texture) {
+					texture->unbind();
+				}
+			}
+		}
 	}
 
-	MetalMaterial::MetalMaterial()
-		: MetalMaterial(glm::vec3(0.5f, 0.5f, 0.5f), 0.5f, 1.0f, 0.5f) { }
+	PBRMaterial::PBRMaterial()
+		: PBRMaterial(glm::vec3(0.5f, 0.5f, 0.5f), 0.5f, 1.0f, 0.5f) { }
 
-	MetalMaterial::MetalMaterial(glm::vec3 base_color, float roughness, float metallic, float specular)
-		: Material(MaterialType::PBR, "Metal_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
+	PBRMaterial::PBRMaterial(glm::vec3 base_color, float roughness, float metallic, float specular)
+		: Material(MaterialType::PBR, "PBR_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
 	{
-		GE_CORE_INFO("Creating Metal Material: {0} (Color: {1},{2},{3})", 
+		GE_CORE_INFO("Creating PBR Material: {0} (Color: {1},{2},{3})", 
 			m_name, base_color.x, base_color.y, base_color.z);
 		
 		if (!s_shader) {
@@ -182,10 +195,10 @@ namespace Rapture
 			sizeof(m_uniformData), 
 			PBR_BINDING_POINT_IDX);
 		
-		m_uniformData.base_color = base_color;
-		m_uniformData.roughness = roughness;
-		m_uniformData.metallic = metallic;
-		m_uniformData.specular = specular;
+		m_uniformData.baseColorFactor = glm::vec4(base_color, 1.0f);
+		m_uniformData.metallicFactor = metallic;
+		m_uniformData.roughnessFactor = roughness;
+		m_uniformData.specularFactor = specular;
 		
 		// Store as parameters for serialization/deserialization
 		setVec3("baseColor", base_color);
@@ -194,22 +207,101 @@ namespace Rapture
 		setFloat("specular", specular);
 	}
 
-	void MetalMaterial::bindData()
+	void PBRMaterial::bindData()
 	{
 		if (!m_uniformBuffer) {
-			GE_CORE_ERROR("Metal material {0} has no uniform buffer!", m_name);
+			GE_CORE_ERROR("PBR material {0} has no uniform buffer!", m_name);
 			return;
 		}
 	
 		// Update uniform data from parameters
 		if (hasParameter("baseColor"))
-			m_uniformData.base_color = getParameter("baseColor").asVec3();
+			m_uniformData.baseColorFactor = getParameter("baseColor").asVec4();
 		if (hasParameter("roughness")) 
-			m_uniformData.roughness = getParameter("roughness").asFloat();
+			m_uniformData.roughnessFactor = getParameter("roughness").asFloat();
 		if (hasParameter("metallic"))
-			m_uniformData.metallic = getParameter("metallic").asFloat();
+			m_uniformData.metallicFactor = getParameter("metallic").asFloat();
 		if (hasParameter("specular"))
-			m_uniformData.specular = getParameter("specular").asFloat();
+			m_uniformData.specularFactor = getParameter("specular").asFloat();
+        
+        // Bind all PBR textures to their respective slots
+        if (hasParameter("albedoMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("albedoMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
+                m_shader->setInt("u_AlbedoMap", static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
+                m_shader->setBool("u_HasAlbedoMap", true);
+            } else {
+                m_shader->setBool("u_HasAlbedoMap", false);
+            }
+        } else {
+            m_shader->setBool("u_HasAlbedoMap", false);
+        }
+        
+        if (hasParameter("normalMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("normalMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::NORMAL));
+                m_shader->setInt("u_NormalMap", static_cast<uint32_t>(TextureActiveSlot::NORMAL));
+                m_shader->setBool("u_HasNormalMap", true);
+            } else {
+                m_shader->setBool("u_HasNormalMap", false);
+            }
+        } else {
+            m_shader->setBool("u_HasNormalMap", false);
+        }
+        
+        if (hasParameter("metallicMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("metallicMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::METALLIC));
+                m_shader->setInt("u_MetallicMap", static_cast<uint32_t>(TextureActiveSlot::METALLIC));
+                m_shader->setBool("u_HasMetallicMap", true);
+            } else {
+                m_shader->setBool("u_HasMetallicMap", false);
+            }
+        } else {
+            m_shader->setBool("u_HasMetallicMap", false);
+        }
+        
+        if (hasParameter("roughnessMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("roughnessMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::ROUGHNESS));
+                m_shader->setInt("u_RoughnessMap", static_cast<uint32_t>(TextureActiveSlot::ROUGHNESS));
+                m_shader->setBool("u_HasRoughnessMap", true);
+            } else {
+                m_shader->setBool("u_HasRoughnessMap", false);
+            }
+        } else {
+            m_shader->setBool("u_HasRoughnessMap", false);
+        }
+        
+        if (hasParameter("aoMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("aoMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::AO));
+                m_shader->setInt("u_AOMap", static_cast<uint32_t>(TextureActiveSlot::AO));
+                m_shader->setBool("u_HasAOMap", true);
+            } else {
+                m_shader->setBool("u_HasAOMap", false);
+            }
+        } else {
+            m_shader->setBool("u_HasAOMap", false);
+        }
+        
+        if (hasParameter("emissiveMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("emissiveMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::EMISSION));
+                m_shader->setInt("u_EmissiveMap", static_cast<uint32_t>(TextureActiveSlot::EMISSION));
+                m_shader->setBool("u_HasEmissiveMap", true);
+            } else {
+                m_shader->setBool("u_HasEmissiveMap", false);
+            }
+        } else {
+            m_shader->setBool("u_HasEmissiveMap", false);
+        }
 		
 		// Explicitly bind UBO to binding point before updating
 		m_uniformBuffer->bindBase(PBR_BINDING_POINT_IDX);
@@ -324,7 +416,7 @@ namespace Rapture
 			sizeof(m_uniformData), 
 			SOLID_BINDING_POINT_IDX);
 		
-		m_uniformData.color = glm::vec4(base_color, 1.0f);
+		m_uniformData.baseColorFactor = glm::vec4(base_color, 1.0f);
 		
 		// Store as parameters for serialization/deserialization
 		setVec3("color", base_color);
@@ -340,8 +432,20 @@ namespace Rapture
 		// Update uniform data from parameters
 		if (hasParameter("color")) {
 			glm::vec3 color = getParameter("color").asVec3();
-			m_uniformData.color = glm::vec4(color, 1.0f);
+			m_uniformData.baseColorFactor = glm::vec4(color, 1.0f);
 		}
+                if (hasParameter("albedoMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("albedoMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
+            }
+        }
+        if (hasParameter("normalMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("normalMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::NORMAL));
+            }
+        }
 		
 		// Explicitly bind UBO to binding point before updating
 		m_uniformBuffer->bindBase(SOLID_BINDING_POINT_IDX);
@@ -352,4 +456,144 @@ namespace Rapture
 		// Force flush to ensure data is sent to GPU
 		m_uniformBuffer->flush();
 	}
+
+    // Default constructor for SpecularGlossinessMaterial
+    SpecularGlossinessMaterial::SpecularGlossinessMaterial()
+        : SpecularGlossinessMaterial(glm::vec3(0.8f, 0.8f, 0.8f), glm::vec3(1.0f, 1.0f, 1.0f), 0.5f) { }
+
+    // Constructor with parameters
+    SpecularGlossinessMaterial::SpecularGlossinessMaterial(glm::vec3 diffuseColor, glm::vec3 specularColor, float glossiness)
+        : Material(MaterialType::KHR_SPECULAR_GLOSSINESS, "SpecGloss_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
+    {
+        GE_CORE_INFO("Creating Specular-Glossiness Material: {0} (Diffuse: {1},{2},{3}, Specular: {4},{5},{6}, Glossiness: {7})", 
+            m_name, diffuseColor.x, diffuseColor.y, diffuseColor.z, 
+            specularColor.x, specularColor.y, specularColor.z, glossiness);
+        
+        if (!s_shader) {
+            GE_CORE_ERROR("Specular-Glossiness shader not initialized! Use MaterialLibrary::init() first.");
+            return;
+        }
+        
+        setShader(s_shader);
+        
+        // Create our uniform buffer
+        m_uniformBuffer = std::make_shared<UniformBuffer>(
+            sizeof(m_uniformData), 
+            BufferUsage::Dynamic, 
+            &m_uniformData, 
+            SPECULAR_GLOSSINESS_BINDING_POINT_IDX);
+        
+        GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
+            m_uniformBuffer->getID(), 
+            sizeof(m_uniformData), 
+            SPECULAR_GLOSSINESS_BINDING_POINT_IDX);
+        
+        m_uniformData.diffuseFactor = glm::vec4(diffuseColor, 1.0f);
+        m_uniformData.specularFactor = glm::vec4(specularColor, glossiness);
+        m_uniformData.flags = 0.0f;
+        
+        // Store as parameters for serialization/deserialization
+        setVec3("diffuseColor", diffuseColor);
+        setVec3("specularColor", specularColor);
+        setFloat("glossiness", glossiness);
+    }
+
+    void SpecularGlossinessMaterial::bindData()
+    {
+        if (!m_uniformBuffer) {
+            GE_CORE_ERROR("Specular-Glossiness material {0} has no uniform buffer!", m_name);
+            return;
+        }
+        
+        // Update uniform data from parameters
+        if (hasParameter("diffuseColor")) {
+            glm::vec3 diffuse = getParameter("diffuseColor").asVec3();
+            m_uniformData.diffuseFactor = glm::vec4(diffuse, m_uniformData.diffuseFactor.a);
+        }
+        
+        if (hasParameter("specularColor")) {
+            glm::vec3 specular = getParameter("specularColor").asVec3();
+            m_uniformData.specularFactor = glm::vec4(specular, m_uniformData.specularFactor.a);
+        }
+        
+        if (hasParameter("glossiness")) {
+            float glossiness = getParameter("glossiness").asFloat();
+            m_uniformData.specularFactor.a = glossiness;
+        }
+        
+        // Bind textures
+        if (hasParameter("diffuseMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("diffuseMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
+                m_shader->setInt("u_DiffuseMap", static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
+                m_shader->setBool("u_HasDiffuseMap", true);
+            } else {
+                m_shader->setBool("u_HasDiffuseMap", false);
+            }
+        } else {
+            m_shader->setBool("u_HasDiffuseMap", false);
+        }
+        
+        if (hasParameter("specularGlossinessMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("specularGlossinessMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::SPECULAR));
+                m_shader->setInt("u_SpecularGlossinessMap", static_cast<uint32_t>(TextureActiveSlot::SPECULAR));
+                m_shader->setBool("u_HasSpecularGlossinessMap", true);
+            } else {
+                m_shader->setBool("u_HasSpecularGlossinessMap", false);
+            }
+        } else {
+            m_shader->setBool("u_HasSpecularGlossinessMap", false);
+        }
+
+        if (hasParameter("normalMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("normalMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::NORMAL));
+                m_shader->setInt("u_NormalMap", static_cast<uint32_t>(TextureActiveSlot::NORMAL));
+                m_shader->setBool("u_HasNormalMap", true);
+            } else {
+                m_shader->setBool("u_HasNormalMap", false);
+            }
+        } else {
+            m_shader->setBool("u_HasNormalMap", false);
+        }
+        
+        if (hasParameter("aoMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("aoMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::AO));
+                m_shader->setInt("u_AOMap", static_cast<uint32_t>(TextureActiveSlot::AO));
+                m_shader->setBool("u_HasAOMap", true);
+            } else {
+                m_shader->setBool("u_HasAOMap", false);
+            }
+        } else {
+            m_shader->setBool("u_HasAOMap", false);
+        }
+        
+        if (hasParameter("emissiveMap")) {
+            std::shared_ptr<Texture2D> texture = getParameter("emissiveMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::EMISSION));
+                m_shader->setInt("u_EmissiveMap", static_cast<uint32_t>(TextureActiveSlot::EMISSION));
+                m_shader->setBool("u_HasEmissiveMap", true);
+            } else {
+                m_shader->setBool("u_HasEmissiveMap", false);
+            }
+        } else {
+            m_shader->setBool("u_HasEmissiveMap", false);
+        }
+        
+        // Explicitly bind UBO to binding point before updating
+        m_uniformBuffer->bindBase(SPECULAR_GLOSSINESS_BINDING_POINT_IDX);
+        
+        // Now update the data
+        m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
+        
+        // Force flush to ensure data is sent to GPU
+        m_uniformBuffer->flush();
+    }
 }

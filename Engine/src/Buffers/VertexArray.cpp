@@ -232,6 +232,7 @@ namespace Rapture {
 
 	void VertexArray::setIndexBuffer(const std::shared_ptr<IndexBuffer>& indexBuffer)
 	{
+
 		m_indexBuffer = indexBuffer;
 		
 		if (GLCapabilities::hasDSA()) {

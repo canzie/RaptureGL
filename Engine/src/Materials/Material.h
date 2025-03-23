@@ -16,9 +16,11 @@ enum class MaterialType {
 	PBR,
 	PHONG,
 	SOLID,
-	KHR_SpecularGlossiness,
+	KHR_SPECULAR_GLOSSINESS,
 	CUSTOM
 };
+
+
 
 enum class MaterialFlagBitLocations {
 	TRANSPARENT=0,
@@ -40,6 +42,7 @@ class Material : public std::enable_shared_from_this<Material> {
         // Get material information
         MaterialType getType() const { return m_type; }
         const std::string& getName() const { return m_name; }
+        void setName(const std::string& name) { m_name = name; }
         
         // Shader management
         void setShader(Shader* shader);
@@ -89,12 +92,12 @@ class Material : public std::enable_shared_from_this<Material> {
         MaterialParameterMap m_parameters;
 };
 
-// Existing material classes will be updated later
+// Existing material classes
 
-class MetalMaterial : public Material {
+class PBRMaterial : public Material {
     public:
-        MetalMaterial();
-        MetalMaterial(glm::vec3 base_color, float roughness, float metallic, float specular);
+        PBRMaterial();
+        PBRMaterial(glm::vec3 base_color, float roughness, float metallic, float specular);
 
         virtual void bindData() override;
 
@@ -131,6 +134,21 @@ class SolidMaterial : public Material {
 
     protected:
         SolidColorUniform m_uniformData;
+};
+
+// New SpecularGlossiness material class
+class SpecularGlossinessMaterial : public Material {
+    public:
+        SpecularGlossinessMaterial();
+        SpecularGlossinessMaterial(glm::vec3 diffuseColor, glm::vec3 specularColor, float glossiness);
+
+        virtual void bindData() override;
+
+        // Make static members public so they can be initialized by MaterialLibrary
+        static Shader* s_shader;
+
+    protected:
+        SpecularGlossinessUniform m_uniformData;
 };
 
 } // namespace Rapture

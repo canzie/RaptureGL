@@ -104,6 +104,9 @@ OpenGLShader::OpenGLShader(std::string vertex_source, std::string fragment_sourc
 		else if (blockName == "SOLID") {
 			bindingPoint = SOLID_BINDING_POINT_IDX;
 		}
+		else if (blockName == "SpecularGlossiness") {
+			bindingPoint = SPECULAR_GLOSSINESS_BINDING_POINT_IDX;
+		}
 		else {
 			GE_CORE_WARN("OpenGLShader: Unknown uniform block '{0}'", blockName);
             continue;

@@ -4,6 +4,11 @@
 #include "Events/Events.h"
 #include "Events/MouseEvents.h"
 #include "Events/InputEvents.h"
+#include "ImGuiPanels/EntityBrowserPanel.h"
+#include "ImGuiPanels/PropertiesPanel.h"
+#include "ImGuiPanels/ViewportPanel.h"
+#include "ImGuiPanels/StatsPanel.h"
+
 
 namespace Rapture {
 
@@ -23,6 +28,11 @@ public:
 
 private:
     float m_Time = 0.0f;
+    // Panel instances
+    EntityBrowserPanel m_EntityBrowserPanel;
+    PropertiesPanel m_PropertiesPanel;
+    ViewportPanel m_ViewportPanel;
+    StatsPanel m_StatsPanel;
 };
 
 } 

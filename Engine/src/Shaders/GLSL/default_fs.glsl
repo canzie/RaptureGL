@@ -5,9 +5,12 @@ layout(location = 0) out vec4 outColor;
 in vec4 v_Albedo;
 in vec3 v_Position;
 in vec3 v_Normal;
+in vec2 v_TexCoord;
 
 uniform int u_DebugMode = 0; // 0=Normal, 1=BaseColor, 2=Normals, 3=ID-based
 uniform float u_Time = 0.0;   // For animation effects in debug modes
+
+uniform sampler2D u_albedoMap;
 
 void main()
 {
@@ -40,5 +43,5 @@ void main()
 		);
 	}
 	
-	outColor = finalColor;
+	outColor = v_Albedo;
 }

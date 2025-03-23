@@ -1,153 +1,157 @@
-/*
 #pragma once
 
 #include <string>
 #include <vector>
 #include <memory>
-#include <unordered_map>
+
 #include <glm/glm.hpp>
 #include "json.hpp"
 
-#include "../../Textures/Texture.h"
+#include "../../DataTypes.h"
+#include "../../Buffers/VertexArray.h"
+#include "../../Scenes/Scene.h"
+#include "../../Scenes/Entity.h"
 #include "../../Materials/Material.h"
-#include "../../Materials/MaterialLibrary.h"
-#include "../../Mesh/Mesh.h"
-#include "../../Mesh/SubMesh.h"
-
-namespace Rapture {
 
 using json = nlohmann::json;
 
-// Alpha modes in glTF
-enum class GltfAlphaMode {
-    OPAQUE,
-    MASK,
-    BLEND
-};
+namespace Rapture
+{
+	/**
+	 * @brief Modern loader for glTF 2.0 format 3D models using entity-component architecture
+	 * 
+	 * This class handles loading glTF model files and creating entities with appropriate components.
+	 * Each glTF node becomes an entity with transform and mesh components as needed.
+	 */
+	class glTF2Loader
+	{
+	public:
+		/**
+		 * @brief Constructor that takes a scene to populate
+		 * 
+		 * @param scene Pointer to the scene where entities will be created
+		 */
+		glTF2Loader(std::shared_ptr<Scene> scene);
+		
+		/**
+		 * @brief Destructor
+		 */
+		~glTF2Loader();
+		
+		/**
+		 * @brief Load a model from a glTF file and populate the scene with entities
+		 * 
+		 * @param filepath Path to the .gltf file
+		 * @return true if loading was successful, false otherwise
+		 */
+		bool loadModel(const std::string& filepath);
 
-// Structs to store glTF data
-struct glTFPrimitive {
-    json attributes;
-    int indicesIndex = -1;
-    int materialIndex = -1;
-};
+	private:
+		/**
+		 * @brief Process a glTF primitive and set up mesh data
+		 * 
+		 * @param entity Entity to attach mesh data to
+		 * @param primitive JSON object containing primitive data
+		 */
+		void processPrimitive(Entity entity, json& primitive);
 
-struct glTFMesh {
-    std::string name;
-    std::vector<glTFPrimitive> primitives;
-};
+		/**
+		 * @brief Extract raw binary data from an accessor
+		 * 
+		 * @param accessorJSON JSON object containing accessor information
+		 * @param data_vec Vector to store the extracted binary data
+		 */
+		void loadAccessor(json& accessorJSON, std::vector<unsigned char>& data_vec);
 
-struct glTFNode {
-    std::string name;
-    int meshIndex = -1;
-    glm::mat4 localTransform = glm::mat4(1.0f);
-    std::vector<int> children;
-};
+		/**
+		 * @brief Process a mesh from the glTF file and create entities
+		 * 
+		 * @param parentEntity Parent entity for this mesh
+		 * @param meshJSON JSON object containing mesh data
+		 * @return Entity The created entity
+		 */
+		Entity processMesh(Entity parentEntity, json& meshJSON);
 
-struct glTFMaterial {
-    std::string name;
-    
-    // PBR metallic roughness
-    glm::vec4 baseColorFactor = glm::vec4(1.0f);
-    int baseColorTexture = -1;
-    float metallicFactor = 1.0f;
-    float roughnessFactor = 1.0f;
-    int metallicRoughnessTexture = -1;
-    
-    // Normal texture
-    int normalTexture = -1;
-    float normalScale = 1.0f;
-    
-    // Occlusion texture
-    int occlusionTexture = -1;
-    float occlusionStrength = 1.0f;
-    
-    // Emissive properties
-    int emissiveTexture = -1;
-    glm::vec3 emissiveFactor = glm::vec3(0.0f);
-    
-    // Alpha properties
-    GltfAlphaMode alphaMode = GltfAlphaMode::OPAQUE;
-    float alphaCutoff = 0.5f;
-    
-    // Miscellaneous properties
-    bool doubleSided = false;
-};
+		/**
+		 * @brief Process the node hierarchy and create entities with proper transforms
+		 * 
+		 * @param parentEntity Parent entity
+		 * @param nodeJSON JSON object containing node data
+		 * @return Entity The created entity
+		 */
+		Entity processNode(Entity parentEntity, json& nodeJSON);
 
-struct glTFSampler {
-    int magFilter = 9729; // GL_LINEAR
-    int minFilter = 9987; // GL_LINEAR_MIPMAP_LINEAR
-    int wrapS = 10497;    // GL_REPEAT
-    int wrapT = 10497;    // GL_REPEAT
-};
+		/**
+		 * @brief Process a scene from the glTF file
+		 * 
+		 * @param sceneJSON JSON object containing scene data
+		 * @return Entity The root scene entity
+		 */
+		void processScene(json& sceneJSON);
 
-struct glTFTexture {
-    int source = -1;
-    int sampler = -1;
-};
+		/**
+		 * @brief Load a texture from the glTF file and set it on a material
+		 *
+		 * @param material The material to set the texture on
+		 * @param textureName The name of the texture parameter in the material
+		 * @param textureIndex The index of the texture in the glTF file
+		 * @return true if the texture was loaded and set successfully
+		 */
+		bool loadAndSetTexture(std::shared_ptr<Material> material, const std::string& textureName, int textureIndex);
 
-struct glTFImage {
-    std::string uri;
-    std::string mimeType;
-    int bufferView = -1;
-};
+        /**
+         * @brief Process a PBR material and set appropriate parameters
+         * 
+         * @param material The PBR material to set parameters on
+         * @param materialJSON The JSON object containing the material data
+         */
+        void processPBRMaterial(std::shared_ptr<PBRMaterial> material, json& materialJSON);
 
-class glTF2Loader {
-public:
-    // Main entry point: Load a glTF mesh from a file
-    static void loadMesh(const std::string& filepath, Mesh* mesh);
+        /**
+         * @brief Process a KHR_materials_pbrSpecularGlossiness extension and create a SpecularGlossinessMaterial
+         * 
+         * @param materialJSON The JSON object containing the material data with extensions
+         * @return The created SpecularGlossinessMaterial
+         */
+        std::shared_ptr<Material> processSpecularGlossinessMaterial(json& materialJSON);
 
-private:
-    // glTF parsing functions
-    static bool parseGLTF(const std::string& filepath);
-    static void parseBufferViews();
-    static void parseAccessors();
-    static void parseImages();
-    static void parseSamplers();
-    static void parseTextures();
-    static void parseMaterials();
-    static void parseMeshes();
-    static void parseNodes();
-    
-    // Node processing
-    static void processNodes();
-    static void processNode(int nodeIndex, const glm::mat4& parentTransform, Mesh* mesh);
-    
-    // Geometry loading
-    static void loadGeometry(const glTFMesh& mesh, Mesh* outMesh);
-    static void loadPrimitive(const glTFPrimitive& primitive, std::shared_ptr<SubMesh> submesh);
-    
-    // Material loading
-    static void loadMaterial(const glTFMaterial& material, std::shared_ptr<Material>& outMaterial);
-    
-    // Texture loading
-    static std::shared_ptr<Texture2D> loadTexture(const glTFTexture& texture);
-    static std::shared_ptr<Texture2D> loadImageData(const glTFImage& image);
-    
-    // Buffer handling
-    static void loadBufferData(int accessorIndex, std::vector<unsigned char>& dataVec);
-    static unsigned int getComponentSize(int componentType);
-    static unsigned int getTypeSize(const std::string& type);
-    static unsigned int getAccessorByteSize(int accessorIndex);
-    static unsigned int getBufferViewStride(int bufferViewIndex);
-    
-    // Clean up resources
-    static void cleanUp();
-    
-    // Static storage for glTF data
-    static json s_glTFDocument;
-    static std::vector<unsigned char> s_binaryData;
-    static std::vector<glTFMesh> s_meshes;
-    static std::vector<glTFNode> s_nodes;
-    static std::vector<glTFMaterial> s_materials;
-    static std::vector<glTFTexture> s_textures;
-    static std::vector<glTFSampler> s_samplers;
-    static std::vector<glTFImage> s_images;
-    static BufferLayout s_bufferLayout;
-    static int s_defaultSceneIndex;
-    static Mesh* s_mesh;
-};
+		/**
+		 * @brief Clean up all data after loading
+		 */
+		void cleanUp();
 
-} // namespace Rapture 
+	private:
+		// Reference to the scene being populated
+		std::shared_ptr<Scene> m_scene;
+		
+		// JSON components from the glTF file
+		json m_glTFfile;
+		json m_accessors;
+		json m_meshes;
+		json m_bufferViews;
+		json m_buffers;
+		json m_nodes;
+		json m_materials;
+		json m_animations;
+		json m_skins;
+		json m_textures;
+		json m_images;
+		json m_samplers;
 
-*/
+		// Raw binary data from the .bin file
+		std::vector<unsigned char> m_binVec;
+		
+		// Base path for loading external resources
+		std::string m_basePath;
+		
+        
+
+		// Constants for glTF component types
+		static const unsigned int GLTF_FLOAT = 5126;
+		static const unsigned int GLTF_UINT = 5125;
+		static const unsigned int GLTF_USHORT = 5123;
+		static const unsigned int GLTF_SHORT = 5122;
+		static const unsigned int GLTF_UBYTE = 5121;
+		static const unsigned int GLTF_BYTE = 5120;
+	};
+}

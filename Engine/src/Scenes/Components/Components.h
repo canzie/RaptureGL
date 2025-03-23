@@ -1,10 +1,16 @@
 //#include <glm/glm.hpp>
 
+#pragma once
+
 #include "../../Materials/Material.h"
 #include "../../Materials/MaterialLibrary.h"
 #include "../../Mesh/Mesh.h"
 #include "../../Camera/PerspectiveCamera.h"
-#include<glm/gtc/quaternion.hpp>
+#include "../../Scenes/EntityNode.h"
+#include "Transforms.h"
+
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <vector>
 //#include <string>
@@ -14,11 +20,31 @@ namespace Rapture {
 
 	struct TransformComponent
 	{
-		glm::vec3 translation = { 0.0f, 0.0f, 0.0f };
-		//glm::quat rotation = { 1.0f, 0.0f, 0.0f, 0.0f };
-		glm::vec3 rotation = { 0.0f, 0.0f, 0.0f };
+		Transforms transforms;
+        
+        glm::vec3 translation() const { return transforms.getTranslation(); }
+        glm::vec3 rotation() const { return transforms.getRotation(); }
+        glm::vec3 scale() const { return transforms.getScale(); }
+        glm::mat4 transformMatrix() const { return transforms.getTransform(); }
 
-		glm::vec3 scale = { 1.0f, 1.0f, 1.0f };
+        TransformComponent()
+        {
+            transforms = Transforms();
+        }
+
+        TransformComponent(glm::vec3 translation, glm::vec3 rotation, glm::vec3 scale) {
+            transforms = Transforms(translation, rotation, scale);
+
+        }
+
+        // Add constructor for quaternion rotation
+        TransformComponent(glm::vec3 translation, glm::quat rotation, glm::vec3 scale) {
+            transforms = Transforms(translation, rotation, scale);
+        }
+
+        TransformComponent(glm::mat4 transformMatrix) {
+            transforms.setTransform(transformMatrix);
+        }
 	};
 
 	struct MeshComponent
@@ -28,39 +54,40 @@ namespace Rapture {
 		MeshComponent(std::string fname)
 		{
 			mesh = std::make_shared<Mesh>(fname);
-            GE_CORE_INFO("Loading mesh with glTF Loader: {0}, submesh count: {1}", fname, mesh->getSubMeshes().size());
+            GE_CORE_INFO("Loading mesh with glTF Loader: {0}", fname);
 		}
         
         MeshComponent(std::string fname, bool useGLTF2)
         {
             // TODO: Implement glTF2 loading
             mesh = std::make_shared<Mesh>(fname);
-            GE_CORE_INFO("Loading mesh with glTF2 Loader: {0}, submesh count: {1}", fname, mesh->getSubMeshes().size());
+            GE_CORE_INFO("Loading mesh with glTF2 Loader: {0}", fname);
         }
         
         // Constructor that takes a mesh shared_ptr
         MeshComponent(const std::shared_ptr<Mesh>& existingMesh) 
         {
             mesh = existingMesh;
-            GE_CORE_INFO("Created MeshComponent with existing mesh, submesh count: {0}", 
-                mesh ? mesh->getSubMeshes().size() : 0);
+            GE_CORE_INFO("Created MeshComponent with existing mesh");
         }
         
-        // Constructor that takes a raw mesh pointer (for backward compatibility)
-        MeshComponent(Mesh* existingMesh) 
-        {
-            if (existingMesh) {
-                mesh = std::shared_ptr<Mesh>(existingMesh, [](Mesh*){});  // Non-owning shared_ptr
-                GE_CORE_WARN("Created MeshComponent with raw pointer, consider using shared_ptr instead");
-            }
-            GE_CORE_INFO("Created MeshComponent with existing mesh, submesh count: {0}", 
-                mesh ? mesh->getSubMeshes().size() : 0);
-        }
-
-		MeshComponent() 
+        MeshComponent(bool isEmpty)
 		{
-			mesh = std::make_shared<Mesh>("Cube.gltf");
+			if (isEmpty)
+			{
+				mesh = std::make_shared<Mesh>();
+			}
+            else
+            {
+                MeshComponent();
+            }
 		}
+
+		MeshComponent()
+		{
+			mesh = Mesh::createCube();
+		}
+
 	};
 
 	struct MaterialComponent
@@ -73,12 +100,12 @@ namespace Rapture {
 			// Create a default metal material with dark gray color
 			material = MaterialLibrary::createPBRMaterial(
 				"DefaultMaterial",
-				glm::vec3(0.04768598f, 0.05147058f, 0.05068756f), // Base color
+				glm::vec3(1.0f, 0.0f, 1.0f), // Base color
 				0.0f,  // Roughness
 				0.0f,  // Metallic
 				0.2f   // Specular
 			);
-            materialName = "DefaultMaterial";
+            materialName = material->getName();
 		}
 
         MaterialComponent(glm::vec3 base_color)
@@ -87,7 +114,7 @@ namespace Rapture {
                 "SolidMaterial_" + std::to_string(reinterpret_cast<uintptr_t>(this)),
                 base_color
             );
-            materialName = "SolidMaterial_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+            materialName = material->getName();
         }
 
 		
@@ -101,7 +128,7 @@ namespace Rapture {
 				metallic, 
 				specular
 			);
-            materialName = "CustomMaterial_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+            materialName = material->getName();
 		}
 		
 		MaterialComponent(const std::string& materialName)
@@ -263,5 +290,89 @@ namespace Rapture {
 
 	};
 
+    struct EntityNodeComponent
+    {
+        std::shared_ptr<EntityNode> entity_node;
+
+        EntityNodeComponent() = default;
+
+        EntityNodeComponent(std::shared_ptr<Entity> entity)
+        {
+            entity_node = std::make_shared<EntityNode>(entity);
+        }
+
+        EntityNodeComponent(std::shared_ptr<Entity> entity, std::shared_ptr<EntityNode> parent)
+        {
+            entity_node = std::make_shared<EntityNode>(entity, parent);
+        }
+        
+        // Add constructors that accept Entity directly
+        EntityNodeComponent(Entity entity)
+        {
+            entity_node = std::make_shared<EntityNode>(std::make_shared<Entity>(entity));
+        }
+
+        EntityNodeComponent(Entity entity, std::shared_ptr<EntityNode> parent)
+        {
+            entity_node = std::make_shared<EntityNode>(std::make_shared<Entity>(entity), parent);
+        }
+
+        ~EntityNodeComponent()
+        {
+        }
+        
+        
+    };
+
+    struct TagComponent
+    {
+        std::string tag;
+
+        TagComponent(const std::string& tag) : tag(tag) {}
+        
+    };
+
+    // Light types for the LightComponent
+    enum class LightType
+    {
+        Point = 0,
+        Directional = 1,
+        Spot = 2
+    };
+
+    struct LightComponent
+    {
+        LightType type = LightType::Point;
+        glm::vec3 color = glm::vec3(1.0f);    // Light color (default: white)
+        float intensity = 1.0f;               // Light intensity multiplier
+        
+        // For point and spot lights
+        float range = 10.0f;                  // Attenuation range
+        
+        // For spot lights only
+        float innerConeAngle = glm::radians(30.0f); // Inner cone angle in radians
+        float outerConeAngle = glm::radians(45.0f); // Outer cone angle in radians
+        
+        // Flag indicating if the light is active
+        bool isActive = true;
+        
+        // Constructors
+        LightComponent() = default;
+        
+        // Constructor for point light
+        LightComponent(const glm::vec3& color, float intensity, float range)
+            : type(LightType::Point), color(color), intensity(intensity), range(range) {}
+        
+        // Constructor for directional light
+        LightComponent(const glm::vec3& color, float intensity)
+            : type(LightType::Directional), color(color), intensity(intensity) {}
+        
+        // Constructor for spot light
+        LightComponent(const glm::vec3& color, float intensity, float range, 
+                      float innerAngleDegrees, float outerAngleDegrees)
+            : type(LightType::Spot), color(color), intensity(intensity), range(range),
+              innerConeAngle(glm::radians(innerAngleDegrees)), 
+              outerConeAngle(glm::radians(outerAngleDegrees)) {}
+    };
 
 }

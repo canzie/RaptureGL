@@ -1,6 +1,6 @@
 #include "Scene.h"
 #include "Entity.h"
-
+#include "Components/Components.h"
 
 namespace Rapture
 {
@@ -14,6 +14,7 @@ namespace Rapture
 	Entity Scene::createEntity(const std::string& name)
 	{
 		Entity entity(m_Registry.create(), this);
+		entity.addComponent<TagComponent>(name);
 
 		return entity;
 	}

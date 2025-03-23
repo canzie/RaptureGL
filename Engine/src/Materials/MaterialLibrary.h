@@ -28,6 +28,11 @@ public:
     
     static std::shared_ptr<Material> createSolidMaterial(const std::string& name, 
                                                         const glm::vec3& color = glm::vec3(1.0f));
+    
+    static std::shared_ptr<Material> createSpecularGlossinessMaterial(const std::string& name,
+                                                                     const glm::vec3& diffuseColor = glm::vec3(0.8f, 0.8f, 0.8f),
+                                                                     const glm::vec3& specularColor = glm::vec3(1.0f, 1.0f, 1.0f),
+                                                                     float glossiness = 0.5f);
 
     // Material instance creation
     static std::shared_ptr<MaterialInstance> createMaterialInstance(const std::string& sourceMaterialName, 

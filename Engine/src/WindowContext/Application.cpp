@@ -4,6 +4,8 @@
 
 #include "../Timestep/Timestep.h"
 #include "../Renderer/Renderer.h"
+#include "../Debug/Profiler.h"
+#include "../Debug/GPUProfiler.h"
 
 namespace Rapture {
 
@@ -11,6 +13,10 @@ namespace Rapture {
 
 	Application::Application()
 	{
+		// Initialize profiler before any other operations
+		Profiler::init();
+		GPUProfiler::init();
+		
 		// creates openGL windows context, change it so its dynamic
 		m_window = std::unique_ptr<WindowContext>(WindowContext::createWindow());
 		m_window->setWindowEventCallback(std::bind(&Application::onEvent, this, std::placeholders::_1));
@@ -20,6 +26,10 @@ namespace Rapture {
 
 	Application::~Application()
 	{
+		// Shutdown profiler
+		GPUProfiler::shutdown();
+		Profiler::shutdown();
+		
 		// closes twice...
 		//onWindowContextClose();
 	}
@@ -28,20 +38,33 @@ namespace Rapture {
 	{
 		while (m_running)
 		{
+			RAPTURE_PROFILE_FUNCTION();
+			
+			// Begin frame profiling
+			Profiler::beginFrame();
+			GPUProfiler::beginFrame();
+			
 			//GE_CORE_TRACE("DT: {0}", Timestep::deltaTimeMs());
 
 			for (auto layer : m_layerStack)
 			{
+				RAPTURE_PROFILE_SCOPE(layer->getName().c_str());
 				layer->onUpdate((float)Timestep::deltaTimeMs().count());
 			}
 
 			Timestep::onUpdate();
 			m_window->onUpdate();
+			
+			// End frame profiling
+			GPUProfiler::endFrame();
+			Profiler::endFrame();
 		}
 	}
 
 	void Application::onEvent(Event& e)
 	{
+		RAPTURE_PROFILE_FUNCTION();
+		
 		switch (e.getEventType())
 		{
 		case EventType::WINDOW_CLOSE:
