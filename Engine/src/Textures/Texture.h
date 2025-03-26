@@ -3,6 +3,9 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
+#include <queue>
+#include <mutex>
+#include <functional>
 
 namespace Rapture {
 
@@ -34,6 +37,7 @@ enum class TextureWrap {
     Repeat                  // GL_REPEAT
 };
 
+
 class Texture {
 public:
     virtual ~Texture() = default;
@@ -54,22 +58,61 @@ public:
 
 class Texture2D : public Texture {
 public:
+    virtual void setData(void* data, uint32_t size) = 0;
+
     static std::shared_ptr<Texture2D> create(const std::string& path);
-    static std::shared_ptr<Texture2D> create(uint32_t width, uint32_t height);
+    static std::shared_ptr<Texture2D> create(uint32_t width, uint32_t height, uint32_t channels);
+};
+
+struct TextureLoadRequest {
+    std::string path;
+    std::string name;
+    std::vector<unsigned char> data;
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    std::shared_ptr<Texture2D> texture;
+    std::function<void(std::shared_ptr<Texture2D>)> callback = nullptr;
 };
 
 class TextureLibrary {
 public:
-    static void init();
+    static void init(unsigned int numThreads = 4);
     static void shutdown();
     
     static void add(const std::string& name, const std::shared_ptr<Texture2D>& texture);
     static void add(const std::shared_ptr<Texture2D>& texture);
-    static std::shared_ptr<Texture2D> load(const std::string& filepath,const std::string& name="");
+    static std::shared_ptr<Texture2D> load(const std::string& filepath);
+    static std::shared_ptr<Texture2D> loadAsync(const std::string& filepath);
     static std::shared_ptr<Texture2D> get(const std::string& name);
     
+    static bool getTextureDimensions(const std::string& path, int& width, int& height, int& channels);
+
+    // Multithreaded Operations
+    static void shutdownWorkers();
+
+    static void processLoadingQueue();
+    
+
+private:
+    // Worker thread function for loading textures from disk
+    static void textureLoadThread();
+
 private:
     static std::unordered_map<std::string, std::shared_ptr<Texture2D>> s_textures;
+
+        // Thread-safe queues
+    static std::mutex s_queueMutex;
+    static std::mutex s_completedMutex;
+    static std::queue<TextureLoadRequest> s_pendingTextures;
+    static std::queue<TextureLoadRequest> s_completedTextures;
+    
+        // Thread management
+    static std::vector<std::thread> s_workerThreads;
+    static std::atomic<bool> s_threadRunning;
+
 };
+
+
 
 } // namespace Rapture 

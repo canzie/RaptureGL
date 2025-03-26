@@ -3,7 +3,6 @@
 #include "TestLayer.h"
 #include "imgui.h"
 
-namespace Rapture {
 
 class ViewportPanel {
 public:
@@ -18,4 +17,3 @@ private:
     bool firstTime = true;
 };
 
-}  // namespace Rapture 

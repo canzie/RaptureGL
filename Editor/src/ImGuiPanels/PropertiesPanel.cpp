@@ -4,55 +4,37 @@
 #include "Materials/MaterialParameter.h"
 #include "Textures/Texture.h"
 
-namespace Rapture {
 
-void PropertiesPanel::render(TestLayer* testLayer) {
+void PropertiesPanel::render(TestLayer* testLayer, EntityBrowserPanel* entityBrowser) {
     ImGui::Begin("Properties");
     
     // Access the scene registry from the TestLayer
-    if (testLayer) {
+    if (testLayer && entityBrowser) {
         auto& registry = testLayer->getActiveScene()->getRegistry();
         
-        // Get all entities with transform components
-        auto view = registry.view<Rapture::TransformComponent>();
-        
-        if (view.size() > 0) {
-            // Create a vector to store entity handles for UI selection
-            std::vector<entt::entity> entities;
-            for (auto entity : view) {
-                entities.push_back(entity);
-            }
-            
-            // Cap the selected index to valid range
-            if (selectedEntityIndex >= entities.size())
-                selectedEntityIndex = entities.size() - 1;
-                
-            // Get the selected entity early for name display
-            entt::entity selectedEntity = entities[selectedEntityIndex];
+        // Check if an entity is selected in the entity browser
+        if (entityBrowser->hasSelectedEntity()) {
+            entt::entity selectedEntity = entityBrowser->getSelectedEntity();
             Rapture::Entity entity(selectedEntity, testLayer->getActiveScene().get());
             
-            // Dropdown to select an entity
-            if (ImGui::BeginCombo("Entity", entity.hasComponent<Rapture::TagComponent>() ? 
-                entity.getComponent<Rapture::TagComponent>().tag.c_str() : 
-                std::to_string((uint32_t)entities[selectedEntityIndex]).c_str())) {
-                for (int i = 0; i < entities.size(); i++) {
-                    Rapture::Entity entityItem(entities[i], testLayer->getActiveScene().get());
-                    std::string entityName = entityItem.hasComponent<Rapture::TagComponent>() ? 
-                        entityItem.getComponent<Rapture::TagComponent>().tag : 
-                        std::to_string((uint32_t)entities[i]);
-                    
-                    bool isSelected = (selectedEntityIndex == i);
-                    if (ImGui::Selectable(entityName.c_str(), isSelected))
-                        selectedEntityIndex = i;
-                    
-                    if (isSelected)
-                        ImGui::SetItemDefaultFocus();
+            // Display entity name at the top
+            if (entity.hasComponent<Rapture::TagComponent>()) {
+                auto& tagComponent = entity.getComponent<Rapture::TagComponent>();
+                
+                char buffer[256];
+                strcpy_s(buffer, sizeof(buffer), tagComponent.tag.c_str());
+                if (ImGui::InputText("Name", buffer, sizeof(buffer))) {
+                    tagComponent.tag = std::string(buffer);
                 }
-                ImGui::EndCombo();
+            } else {
+                ImGui::Text("Entity ID: %u", (uint32_t)selectedEntity);
             }
             
+            ImGui::Separator();
+            
             // Edit Transform component
-            if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (entity.hasComponent<Rapture::TransformComponent>() && 
+                ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
                 auto& transform = entity.getComponent<Rapture::TransformComponent>();
                 
                 // Position with lock option
@@ -422,10 +404,11 @@ void PropertiesPanel::render(TestLayer* testLayer) {
                 }
             }
         } else {
-            ImGui::Text("No entities with transform components found.");
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "No entity selected");
+            ImGui::Text("Select an entity in the Entity Browser panel");
         }
     } else {
-        ImGui::Text("No active scene available.");
+        ImGui::Text("No active scene available");
     }
     
     ImGui::End();
@@ -444,7 +427,7 @@ void PropertiesPanel::drawMaterialTextures(Rapture::Entity& entity) {
     
     if (ImGui::CollapsingHeader("Textures", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Create vectors to store texture names and their parameters
-        std::vector<std::pair<std::string, std::shared_ptr<Texture2D>>> textures;
+        std::vector<std::pair<std::string, std::shared_ptr<Rapture::Texture2D>>> textures;
         
         // Common texture parameter names to look for
         static const std::vector<std::string> textureParamNames = {
@@ -456,7 +439,7 @@ void PropertiesPanel::drawMaterialTextures(Rapture::Entity& entity) {
         for (const auto& paramName : textureParamNames) {
             if (materialComp.material->hasParameter(paramName)) {
                 const auto& param = materialComp.material->getParameter(paramName);
-                if (param.getType() == MaterialParameterType::TEXTURE2D) {
+                if (param.getType() == Rapture::MaterialParameterType::TEXTURE2D) {
                     auto texture = param.asTexture();
                     if (texture) {
                         textures.push_back({paramName, texture});
@@ -492,7 +475,7 @@ void PropertiesPanel::drawMaterialTextures(Rapture::Entity& entity) {
             // Show texture preview
             if (!selectedTextureName.empty() && materialComp.material->hasParameter(selectedTextureName)) {
                 const auto& param = materialComp.material->getParameter(selectedTextureName);
-                if (param.getType() == MaterialParameterType::TEXTURE2D) {
+                if (param.getType() == Rapture::MaterialParameterType::TEXTURE2D) {
                     auto texture = param.asTexture();
                     if (texture) {
                         ImGui::Text("Preview: %s", selectedTextureName.c_str());
@@ -523,7 +506,7 @@ void PropertiesPanel::drawMaterialTextures(Rapture::Entity& entity) {
     }
 }
 
-const char* Rapture::PropertiesPanel::getLightTypeString(int type)
+const char* PropertiesPanel::getLightTypeString(int type)
 {
     switch (type)
     {
@@ -533,5 +516,3 @@ const char* Rapture::PropertiesPanel::getLightTypeString(int type)
     default: return "Unknown";
     }
 }
-
-}  // namespace Rapture 

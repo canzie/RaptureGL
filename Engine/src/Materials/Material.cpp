@@ -182,8 +182,10 @@ namespace Rapture
 			return;
 		}
 		
+
 		setShader(s_shader);
-		
+
+
 		m_uniformBuffer = std::make_shared<UniformBuffer>(
             sizeof(m_uniformData), 
             BufferUsage::Dynamic, 
@@ -201,10 +203,12 @@ namespace Rapture
 		m_uniformData.specularFactor = specular;
 		
 		// Store as parameters for serialization/deserialization
-		setVec3("baseColor", base_color);
+		setVec4("baseColor", glm::vec4(base_color, 1.0f));
 		setFloat("roughness", roughness);
 		setFloat("metallic", metallic);
 		setFloat("specular", specular);
+
+        GE_DEBUG_TRACE("PBR Material finished creating: {0}", m_name);
 	}
 
 	void PBRMaterial::bindData()
@@ -224,8 +228,10 @@ namespace Rapture
 		if (hasParameter("specular"))
 			m_uniformData.specularFactor = getParameter("specular").asFloat();
         
+
         // Bind all PBR textures to their respective slots
         if (hasParameter("albedoMap")) {
+            
             std::shared_ptr<Texture2D> texture = getParameter("albedoMap").asTexture();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
@@ -302,6 +308,7 @@ namespace Rapture
         } else {
             m_shader->setBool("u_HasEmissiveMap", false);
         }
+
 		
 		// Explicitly bind UBO to binding point before updating
 		m_uniformBuffer->bindBase(PBR_BINDING_POINT_IDX);

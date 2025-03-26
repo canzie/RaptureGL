@@ -17,6 +17,7 @@ using json = nlohmann::json;
 
 namespace Rapture
 {
+
 	/**
 	 * @brief Modern loader for glTF 2.0 format 3D models using entity-component architecture
 	 * 
@@ -44,7 +45,7 @@ namespace Rapture
 		 * @param filepath Path to the .gltf file
 		 * @return true if loading was successful, false otherwise
 		 */
-		bool loadModel(const std::string& filepath);
+		bool loadModel(const std::string& filepath, bool isAbsolute=false);
 
 	private:
 		/**
@@ -100,12 +101,12 @@ namespace Rapture
 		bool loadAndSetTexture(std::shared_ptr<Material> material, const std::string& textureName, int textureIndex);
 
         /**
-         * @brief Process a PBR material and set appropriate parameters
+         * @brief Process a PBR material and create a Material from the JSON data
          * 
-         * @param material The PBR material to set parameters on
          * @param materialJSON The JSON object containing the material data
+         * @return The created PBR Material
          */
-        void processPBRMaterial(std::shared_ptr<PBRMaterial> material, json& materialJSON);
+        std::shared_ptr<Material> processPBRMaterial(json& materialJSON);
 
         /**
          * @brief Process a KHR_materials_pbrSpecularGlossiness extension and create a SpecularGlossinessMaterial
@@ -119,6 +120,13 @@ namespace Rapture
 		 * @brief Clean up all data after loading
 		 */
 		void cleanUp();
+
+        /**
+         * @brief Report progress of the loading process
+         * 
+         * @param progress The progress value between 0.0 and 1.0
+         */
+        void reportProgress(float progress);
 
 	private:
 		// Reference to the scene being populated

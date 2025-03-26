@@ -3,7 +3,6 @@
 #include "imgui.h"
 #include <array>
 
-namespace Rapture {
 
 class StatsPanel {
 public:
@@ -13,4 +12,3 @@ public:
     void render(float timestep);
 };
 
-}  // namespace Rapture 

@@ -4,21 +4,20 @@
 #include "Scenes/Entity.h"
 #include "Scenes/Components/Components.h"
 #include "TestLayer.h"
+#include "ImGuiPanels/EntityBrowserPanel.h"
 #include <glm/gtc/type_ptr.hpp>
 
 #include "imgui.h"
 
-namespace Rapture {
 
 class PropertiesPanel {
 public:
     PropertiesPanel() = default;
     ~PropertiesPanel() = default;
 
-    void render(TestLayer* testLayer);
+    void render(TestLayer* testLayer, EntityBrowserPanel* entityBrowser);
 
 private:
-    int selectedEntityIndex = 0;
     bool positionLocked = false;
     bool rotationLocked = false;
     bool scaleLocked = false;
@@ -34,4 +33,3 @@ private:
     const char* getLightTypeString(int type);
 };
 
-}  // namespace Rapture 

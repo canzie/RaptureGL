@@ -234,3 +234,23 @@ A robust mesh system should use a hierarchical structure with support for instan
   - Create automatic instancing for similar objects
   - Add support for per-instance property overrides
   - Implement efficient instance culling
+
+
+
+
+- improved buffer management trough 16-64mb pre-allocated buffers
+- instanced meshes
+- particle system
+- deffered renderer
+- mouse picking
+- Physics
+- Audio
+- serializer
+- more advanced particle system
+- Scripting
+
+
+
+
+
+

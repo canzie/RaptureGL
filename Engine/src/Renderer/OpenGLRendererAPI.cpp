@@ -31,7 +31,7 @@ namespace Rapture {
 		drawIndexed(indexCount, comp_type, 0);
 	}
 
-	void OpenGLRendererAPI::drawIndexed(int indexCount, unsigned int comp_type, size_t offset)
+	void OpenGLRendererAPI::drawIndexed(int indexCount, unsigned int comp_type, size_t offset, size_t vertexOffset)
 	{
         // Clear any previous errors
         //while (glGetError() != GL_NO_ERROR);
@@ -67,7 +67,7 @@ namespace Rapture {
 
 
 
-		glDrawElements(GL_TRIANGLES, indexCount, (GLenum)comp_type, (void*)offset);
+		glDrawElementsBaseVertex(GL_TRIANGLES, indexCount, (GLenum)comp_type, (void*)offset, vertexOffset);
         
         GLenum error = glGetError();
         if (error != GL_NO_ERROR) {

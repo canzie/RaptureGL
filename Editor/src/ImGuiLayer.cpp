@@ -5,6 +5,7 @@
 #include "Scenes/Components/Components.h"
 #include "Scenes/Entity.h"
 #include <glm/gtc/type_ptr.hpp>
+#include <filesystem>
 
 // ImGui
 #include "imgui.h"
@@ -12,7 +13,6 @@
 #include "backends/imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
 
-namespace Rapture {
 
 ImGuiLayer::ImGuiLayer()
     : Layer("ImGuiLayer")
@@ -32,6 +32,7 @@ void ImGuiLayer::onAttach()
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport
+    io.FontGlobalScale = m_FontScale;
 
     // Setup ImGui style
     ImGui::StyleColorsDark();
@@ -44,12 +45,19 @@ void ImGuiLayer::onAttach()
         style.Colors[ImGuiCol_WindowBg].w = 1.0f;
     }
 
+
     // Get window context from application
-    GLFWwindow* window = static_cast<GLFWwindow*>(Application::getInstance().getWindowContext().getNativeWindowContext());
+    GLFWwindow* window = static_cast<GLFWwindow*>(Rapture::Application::getInstance().getWindowContext().getNativeWindowContext());
     
     // Setup Platform/Renderer bindings
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 410");
+    
+    // Initialize the AssetsPanel with the project root directory
+    // Use a valid absolute path that exists to avoid crashes
+    std::string currentPath = std::filesystem::current_path().string();
+    Rapture::GE_INFO("Setting assets panel root directory to: {0}", currentPath);
+    m_AssetsPanel.setRootDirectory(currentPath);
 }
 
 void ImGuiLayer::onDetach()
@@ -94,7 +102,7 @@ void ImGuiLayer::onUpdate(float ts)
     
     // Get access to the TestLayer to retrieve its framebuffer
     TestLayer* testLayer = nullptr;
-    for (Layer* layer : Application::getInstance().getLayerStack())
+    for (Rapture::Layer* layer : Rapture::Application::getInstance().getLayerStack())
     {
         if (TestLayer* tl = dynamic_cast<TestLayer*>(layer))
         {
@@ -169,7 +177,9 @@ void ImGuiLayer::onUpdate(float ts)
     m_ViewportPanel.renderDepthBufferViewport(testLayer);
     m_StatsPanel.render(ts);
     m_EntityBrowserPanel.render(testLayer);
-    m_PropertiesPanel.render(testLayer);
+    m_PropertiesPanel.render(testLayer, &m_EntityBrowserPanel);
+    m_LogPanel.render();
+    m_AssetsPanel.render(testLayer);
     
     ImGui::End(); // End DockSpace Demo
     
@@ -177,9 +187,8 @@ void ImGuiLayer::onUpdate(float ts)
     end();
 }
 
-void ImGuiLayer::onEvent(Event& event)
+void ImGuiLayer::onEvent(Rapture::Event& event)
 {
     // ImGui handles events through GLFW callbacks set up in ImGui_ImplGlfw_InitForOpenGL
 }
 
-} 

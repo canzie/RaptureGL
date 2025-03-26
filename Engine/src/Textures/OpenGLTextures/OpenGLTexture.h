@@ -8,7 +8,7 @@ namespace Rapture {
 class OpenGLTexture2D : public Texture2D {
 public:
     OpenGLTexture2D(const std::string& path);
-    OpenGLTexture2D(uint32_t width, uint32_t height);
+    OpenGLTexture2D(uint32_t width, uint32_t height, uint32_t channels);
     virtual ~OpenGLTexture2D() override;
 
     virtual uint32_t getWidth() const override { return m_width; }
@@ -18,7 +18,7 @@ public:
     virtual void bind(uint32_t slot = 0) const override;
     virtual void unbind() const override;
 
-    void setData(void* data, uint32_t size);
+    virtual void setData(void* data, uint32_t size) override;
     
     // Implement texture parameter setters
     virtual void setMinFilter(TextureFilter filter) override;

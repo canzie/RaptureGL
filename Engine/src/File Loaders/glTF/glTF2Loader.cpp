@@ -12,6 +12,8 @@
 #include "../../Logger/Log.h"
 #include "../../Textures/Texture.h"
 #include "../../Materials/Material.h"
+#include "../../Debug/Profiler.h"
+
 
 #define DIRNAME "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/build/bin/Debug/assets/models/"
 
@@ -30,16 +32,21 @@ namespace Rapture {
         cleanUp();
     }
 
-    bool glTF2Loader::loadModel(const std::string& filepath)
+    bool glTF2Loader::loadModel(const std::string& filepath, bool isAbsolute)
     {
         // Reset state to ensure clean loading
         cleanUp();
         
+        // Report initial progress
+        reportProgress(0.0f);
+        
+        std::string fullPath = isAbsolute ? filepath : DIRNAME + filepath;
+
         // Load the gltf file
-        std::ifstream gltf_file(DIRNAME + filepath);
+        std::ifstream gltf_file(fullPath);
         if (!gltf_file)
         {
-            GE_CORE_ERROR("glTF2Loader: Couldn't load glTF file '{}'", filepath);
+            GE_CORE_ERROR("glTF2Loader: Couldn't load glTF file '{}'", fullPath);
             return false;
         }
 
@@ -75,9 +82,9 @@ namespace Rapture {
 
         // Extract the directory path from the filepath
         m_basePath = "";
-        size_t lastSlashPos = filepath.find_last_of("/\\");
+        size_t lastSlashPos = fullPath.find_last_of("/\\");
         if (lastSlashPos != std::string::npos) {
-            m_basePath = filepath.substr(0, lastSlashPos + 1);
+            m_basePath = fullPath.substr(0, lastSlashPos + 1);
         }
 
         // Load the bin file with all the buffer data
@@ -92,10 +99,10 @@ namespace Rapture {
             // Combine the directory path with the buffer URI
             bufferURI = m_basePath + bufferURI;
         }
-        std::ifstream binary_file(DIRNAME + bufferURI, std::ios::binary);
+        std::ifstream binary_file(bufferURI, std::ios::binary);
         if (!binary_file)
         {
-            GE_CORE_ERROR("glTF2Loader: Couldn't load binary file '{}'", DIRNAME + bufferURI);
+            GE_CORE_ERROR("glTF2Loader: Couldn't load binary file '{}'", bufferURI);
             return false;
         }
         
@@ -117,6 +124,8 @@ namespace Rapture {
         // Create a root entity for the model
         Entity rootEntity = m_scene->createEntity("glTF_Model");
         
+        GE_CORE_INFO("glTF2Loader: Loading model from '{}'", fullPath);
+
         // Process the default scene or the first scene if default not specified
         int defaultScene = m_glTFfile.value("scene", 0);
         if (m_glTFfile.contains("scenes") && !m_glTFfile["scenes"].empty()) {
@@ -335,20 +344,24 @@ namespace Rapture {
             GE_CORE_ERROR("Entity missing MeshComponent");
             return;
         }
-        entity.getComponent<MeshComponent>().mesh->SetVAO(vao);
+        auto& meshComp = entity.getComponent<MeshComponent>();
+        meshComp.mesh->SetVAO(vao);
 
         BufferLayout bufferLayout;
         
-        // First gather all attribute data to calculate total buffer size
+        // Gather attribute data and calculate attribute sizes
         std::vector<std::pair<std::string, std::vector<unsigned char>>> attributeData;
-        size_t totalVertexDataSize = 0;
-        size_t currentOffset = 0;
+        
+        std::vector<unsigned char> temp_indexData;
+        unsigned int temp_indCount = 0;
+        unsigned int temp_compType = 0;
+        unsigned int vertexCount = 0;
 
         // Process vertex attributes
         if (primitive.contains("attributes")) {
             json& attribs = primitive["attributes"];
             
-            // Set up buffer layout based on attributes and gather data
+            // First pass: gather data and determine vertex count
             for (auto& attrib : attribs.items()) {
                 std::string name = attrib.key();
                 if (name == "COLOR_0") continue; // Skip color data for now
@@ -356,60 +369,126 @@ namespace Rapture {
                 unsigned int accessorIdx = attrib.value();
                 json& accessor = m_accessors[accessorIdx];
                 
-                unsigned int componentType = accessor["componentType"];
-                std::string type = accessor["type"];
-                bufferLayout.buffer_attribs.push_back({name, componentType, type, currentOffset});
-
-
+                // Get vertex count from the first attribute (should be the same for all attributes)
+                if (vertexCount == 0 && accessor.contains("count")) {
+                    vertexCount = accessor["count"];
+                }
+                
                 // Load attribute data
                 std::vector<unsigned char> attrData;
                 loadAccessor(m_accessors[accessorIdx], attrData);
                 
-                currentOffset += attrData.size();
-
                 if (!attrData.empty()) {
                     attributeData.push_back({name, attrData});
-                    totalVertexDataSize += attrData.size();
                 }
             }
-            //bufferLayout.print_buffer_layout();
         }
 
- 
-        // Create vertex buffer with the correct size
-        vao->setVertexBuffer(std::make_shared<VertexBuffer>(totalVertexDataSize, BufferUsage::Static));
-        auto vertexBuffer = vao->getVertexBuffer();
+        // Early exit if no vertex data
+        if (attributeData.empty() || vertexCount == 0) {
+            GE_CORE_ERROR("No vertex data found for primitive");
+            return;
+        }
+
+        // Calculate attribute sizes and strides
+        size_t vertexStride = 0;
+        std::vector<size_t> attrSizes;
+        std::vector<size_t> attrOffsets;
         
-        // Set buffer layout after vertex buffer is created
-        vao->setBufferLayout(bufferLayout);
-        
-        // Add attribute data to the buffer
-        currentOffset = 0;
-        for (auto& [name, data] : attributeData) {
-            vertexBuffer->setData(data.data(), data.size(), currentOffset);
-            currentOffset += data.size();
+        for (const auto& [name, data] : attributeData) {
+            size_t attrSize = data.size() / vertexCount;
+            attrSizes.push_back(attrSize);
+            attrOffsets.push_back(vertexStride);
+            vertexStride += attrSize;
         }
         
+        // Create buffer layout for interleaved data
+        size_t currentOffset = 0;
+        for (size_t i = 0; i < attributeData.size(); i++) {
+            const auto& [name, data] = attributeData[i];
+            unsigned int accessorIdx = primitive["attributes"][name];
+            json& accessor = m_accessors[accessorIdx];
+            
+            unsigned int componentType = accessor["componentType"];
+            std::string type = accessor["type"];
+            
+            // For interleaved data, the offset is the relative position within a single vertex
+            bufferLayout.buffer_attribs.push_back({name, componentType, type, attrOffsets[i]});
+        }
+        
+        // Set interleaved flag to true
+        bufferLayout.isInterleaved = true;
+        bufferLayout.vertexSize = vertexStride;
+        
+        // Create vertex buffer with the correct size
+        size_t totalVertexDataSize = vertexCount * vertexStride;
+        
+        // Pre-allocate interleaved data with the exact known size
+        std::vector<unsigned char> interleavedData;
+        interleavedData.reserve(totalVertexDataSize);
+        interleavedData.resize(totalVertexDataSize);
+        
+        // Fill the interleaved buffer using direct memory access
+        for (unsigned int v = 0; v < vertexCount; v++) {
+            unsigned char* vertexDest = interleavedData.data() + (v * vertexStride);
+            for (size_t a = 0; a < attributeData.size(); a++) {
+                const auto& [name, data] = attributeData[a];
+                size_t attrSize = attrSizes[a];
+                const unsigned char* attrSrc = data.data() + (v * attrSize);
+                unsigned char* attrDest = vertexDest + attrOffsets[a];
+                
+                // Direct memory copy
+                std::memcpy(attrDest, attrSrc, attrSize);
+            }
+        }
+        
+        // Upload interleaved data to the GPU
+        //vertexBuffer->setData(interleavedData.data(), interleavedData.size(), 0);
+        
+        std::vector<unsigned char> indexData;
+        unsigned int compType = 0;
+        unsigned int indCount = 0;
+
         // Process indices if present
         if (primitive.contains("indices")) {
             unsigned int indicesIdx = primitive["indices"];
-            std::vector<unsigned char> indexData;
+            
+            // Pre-allocate index data to avoid reallocation
+            indexData.reserve(m_accessors[indicesIdx].value("count", 0) * 4); // Worst case: 4 bytes per index
             
             // Load index data
             loadAccessor(m_accessors[indicesIdx], indexData);
             
             if (!indexData.empty()) {
                 // Get index component type
-                unsigned int compType = m_accessors[indicesIdx]["componentType"];
-                unsigned int indCount = m_accessors[indicesIdx]["count"];
+                compType = m_accessors[indicesIdx]["componentType"];
+                indCount = m_accessors[indicesIdx]["count"];
                 
                 // Create and set index buffer
-                auto indexBuffer = std::make_shared<IndexBuffer>(indexData.size(), compType, BufferUsage::Static);
-                indexBuffer->setData(indexData.data(), indexData.size());
-                vao->setIndexBuffer(indexBuffer);
+                //auto indexBuffer = std::make_shared<IndexBuffer>(indexData.size(), compType, BufferUsage::Static);
+                //indexBuffer->setData(indexData.data(), indexData.size());
+                //vao->setIndexBuffer(indexBuffer);
                 
                 // Set up draw parameters
-                entity.getComponent<MeshComponent>().mesh->setIndexCount(indCount);
+                //entity.getComponent<MeshComponent>().mesh->setIndexCount(indCount);
+            }
+        }
+        {
+            RAPTURE_PROFILE_SCOPE("Set Mesh Data");
+            if (indexData.size() > 0) {
+                meshComp.mesh->setMeshData(bufferLayout, 
+                    interleavedData.data(), 
+                    totalVertexDataSize, 
+                    indexData.data(), 
+                    indexData.size(), 
+                    indCount, 
+                    compType);
+                interleavedData.clear();
+                indexData.clear();
+            } else {
+                GE_CORE_ERROR("glTF2Loader: Vertex data only not supported yet");
+                entity.removeComponent<MeshComponent>();
+                return;
             }
         }
         
@@ -438,118 +517,20 @@ namespace Rapture {
                         entity.getComponent<MaterialComponent>().materialName = specGlossMaterial->getName();
                     } else {
                         // Fallback to PBR if specular-glossiness processing failed
-                        auto pbr = std::make_shared<PBRMaterial>();
-                        entity.getComponent<MaterialComponent>().material = pbr;
-                        entity.getComponent<MaterialComponent>().materialName = pbr->getName();
-                        processPBRMaterial(pbr, materialJSON);
+                        auto material = processPBRMaterial(materialJSON);
+                        entity.getComponent<MaterialComponent>().material = material;
+                        entity.getComponent<MaterialComponent>().materialName = material->getName();
                     }
                 } else {
                     // Create a standard PBR material
-                    auto pbr = std::make_shared<PBRMaterial>();
-                    entity.getComponent<MaterialComponent>().material = pbr;
-                    processPBRMaterial(pbr, materialJSON);
+                    auto material = processPBRMaterial(materialJSON);
+                    entity.getComponent<MaterialComponent>().material = material;
+                    entity.getComponent<MaterialComponent>().materialName = material->getName();
                 }
             }
         }
-    }
 
-    void glTF2Loader::processPBRMaterial(std::shared_ptr<PBRMaterial> material, json& materialJSON)
-    {
-        // First check for extensions
-        bool hasSpecularGlossiness = false;
-        
-        if (materialJSON.contains("extensions")) {
-            auto& extensions = materialJSON["extensions"];
-            
-            // Check for specular-glossiness extension, but now we handle it in the primitive processing
-            if (extensions.contains("KHR_materials_pbrSpecularGlossiness")) {
-                hasSpecularGlossiness = true;
-            }
-        }
-        
-        // If no specular-glossiness extension, process standard metallic-roughness
-        if (!hasSpecularGlossiness && materialJSON.contains("pbrMetallicRoughness")) {
-            json& pbrMetallicRoughness = materialJSON["pbrMetallicRoughness"];
-            
-            // Base color factor
-            if (pbrMetallicRoughness.contains("baseColorFactor")) {
-                glm::vec3 baseColor(
-                    pbrMetallicRoughness["baseColorFactor"][0],
-                    pbrMetallicRoughness["baseColorFactor"][1],
-                    pbrMetallicRoughness["baseColorFactor"][2]
-                );
-                material->setVec3("baseColor", baseColor);
-            }
-            
-            // Metallic factor
-            if (pbrMetallicRoughness.contains("metallicFactor")) {
-                float metallic = pbrMetallicRoughness["metallicFactor"];
-                material->setFloat("metallic", metallic);
-            }
-            
-            // Roughness factor
-            if (pbrMetallicRoughness.contains("roughnessFactor")) {
-                float roughness = pbrMetallicRoughness["roughnessFactor"];
-                material->setFloat("roughness", roughness);
-            }
-            
-            // Load textures
-            // Base color texture
-            if (pbrMetallicRoughness.contains("baseColorTexture")) {
-                int texIndex = pbrMetallicRoughness["baseColorTexture"]["index"];
-                if (loadAndSetTexture(material, "albedoMap", texIndex)) {
-                    material->setBool("u_HasAlbedoMap", true);
-                }
-            }
-            
-            // Metallic roughness texture
-            if (pbrMetallicRoughness.contains("metallicRoughnessTexture")) {
-                int texIndex = pbrMetallicRoughness["metallicRoughnessTexture"]["index"];
-                
-                // In glTF, metallicRoughness is combined: R=unused, G=roughness, B=metallic
-                if (loadAndSetTexture(material, "metallicMap", texIndex)) {
-                    material->setBool("u_HasMetallicMap", true);
-                }
-                
-                if (loadAndSetTexture(material, "roughnessMap", texIndex)) {
-                    material->setBool("u_HasRoughnessMap", true);
-                }
-            }
-        }
-        
-        // Normal map - common to both workflows
-        if (materialJSON.contains("normalTexture")) {
-            int texIndex = materialJSON["normalTexture"]["index"];
-            if (loadAndSetTexture(material, "normalMap", texIndex)) {
-                material->setBool("u_HasNormalMap", true);
-            }
-        }
-        
-        // Occlusion map - common to both workflows
-        if (materialJSON.contains("occlusionTexture")) {
-            int texIndex = materialJSON["occlusionTexture"]["index"];
-            if (loadAndSetTexture(material, "aoMap", texIndex)) {
-                material->setBool("u_HasAOMap", true);
-            }
-        }
-        
-        // Emissive map - common to both workflows
-        if (materialJSON.contains("emissiveTexture")) {
-            int texIndex = materialJSON["emissiveTexture"]["index"];
-            if (loadAndSetTexture(material, "emissiveMap", texIndex)) {
-                material->setBool("u_HasEmissiveMap", true);
-            }
-        }
-        
-        // Emissive factor - common to both workflows
-        if (materialJSON.contains("emissiveFactor")) {
-            glm::vec3 emissiveFactor(
-                materialJSON["emissiveFactor"][0],
-                materialJSON["emissiveFactor"][1],
-                materialJSON["emissiveFactor"][2]
-            );
-            material->setVec3("emissiveFactor", emissiveFactor);
-        }
+        entity.getComponent<MeshComponent>().isLoading = false;
     }
 
     std::shared_ptr<Material> glTF2Loader::processSpecularGlossinessMaterial(json& materialJSON)
@@ -656,6 +637,121 @@ namespace Rapture {
         return material;
     }
 
+    std::shared_ptr<Material> glTF2Loader::processPBRMaterial(json& materialJSON)
+    {
+        // Get material name if available
+        std::string materialName = materialJSON.value("name", "");
+        
+        // Extract PBR parameters from material JSON
+        glm::vec3 baseColor(0.5f, 0.5f, 0.5f); // Default base color
+        float metallic = 0.0f;                 // Default metallic
+        float roughness = 0.5f;                // Default roughness
+        float specular = 0.5f;                 // Default specular
+        
+        // First check for extensions
+        bool hasSpecularGlossiness = false;
+        
+        if (materialJSON.contains("extensions")) {
+            auto& extensions = materialJSON["extensions"];
+            
+            // Check for specular-glossiness extension, but now we handle it in the primitive processing
+            if (extensions.contains("KHR_materials_pbrSpecularGlossiness")) {
+                hasSpecularGlossiness = true;
+            }
+        }
+        
+        // If no specular-glossiness extension, process standard metallic-roughness
+        if (!hasSpecularGlossiness && materialJSON.contains("pbrMetallicRoughness")) {
+            json& pbrMetallicRoughness = materialJSON["pbrMetallicRoughness"];
+            
+            // Base color factor
+            if (pbrMetallicRoughness.contains("baseColorFactor")) {
+                baseColor = glm::vec3(
+                    pbrMetallicRoughness["baseColorFactor"][0],
+                    pbrMetallicRoughness["baseColorFactor"][1],
+                    pbrMetallicRoughness["baseColorFactor"][2]
+                );
+            }
+            
+            // Metallic factor
+            if (pbrMetallicRoughness.contains("metallicFactor")) {
+                metallic = pbrMetallicRoughness["metallicFactor"];
+            }
+            
+            // Roughness factor
+            if (pbrMetallicRoughness.contains("roughnessFactor")) {
+                roughness = pbrMetallicRoughness["roughnessFactor"];
+            }
+        }
+        
+        // Create a PBR material using the MaterialLibrary
+        std::shared_ptr<Material> material = MaterialLibrary::createPBRMaterial(
+            materialName.empty() ? "PBRMaterial_" + std::to_string(reinterpret_cast<uintptr_t>(&materialJSON)) : materialName,
+            baseColor,
+            roughness,
+            metallic,
+            specular
+        );
+        
+        // If there's pbrMetallicRoughness data, process textures
+        if (!hasSpecularGlossiness && materialJSON.contains("pbrMetallicRoughness")) {
+            json& pbrMetallicRoughness = materialJSON["pbrMetallicRoughness"];
+            
+            // Load textures
+            // Base color texture
+            if (pbrMetallicRoughness.contains("baseColorTexture")) {
+                int texIndex = pbrMetallicRoughness["baseColorTexture"]["index"];
+                loadAndSetTexture(material, "albedoMap", texIndex);
+                // Flag will be set in the callback
+            }
+            
+            // Metallic roughness texture
+            if (pbrMetallicRoughness.contains("metallicRoughnessTexture")) {
+                int texIndex = pbrMetallicRoughness["metallicRoughnessTexture"]["index"];
+                
+                // In glTF, metallicRoughness is combined: R=unused, G=roughness, B=metallic
+                loadAndSetTexture(material, "metallicMap", texIndex);
+                // Flag will be set in the callback
+                
+                loadAndSetTexture(material, "roughnessMap", texIndex);
+                // Flag will be set in the callback
+            }
+        }
+        
+        // Normal map - common to both workflows
+        if (materialJSON.contains("normalTexture")) {
+            int texIndex = materialJSON["normalTexture"]["index"];
+            loadAndSetTexture(material, "normalMap", texIndex);
+            // Flag will be set in the callback
+        }
+        
+        // Occlusion map - common to both workflows
+        if (materialJSON.contains("occlusionTexture")) {
+            int texIndex = materialJSON["occlusionTexture"]["index"];
+            loadAndSetTexture(material, "aoMap", texIndex);
+            // Flag will be set in the callback
+        }
+        
+        // Emissive map - common to both workflows
+        if (materialJSON.contains("emissiveTexture")) {
+            int texIndex = materialJSON["emissiveTexture"]["index"];
+            loadAndSetTexture(material, "emissiveMap", texIndex);
+            // Flag will be set in the callback
+        }
+        
+        // Emissive factor - common to both workflows
+        if (materialJSON.contains("emissiveFactor")) {
+            glm::vec3 emissiveFactor(
+                materialJSON["emissiveFactor"][0],
+                materialJSON["emissiveFactor"][1],
+                materialJSON["emissiveFactor"][2]
+            );
+            material->setVec3("emissiveFactor", emissiveFactor);
+        }
+        
+        return material;
+    }
+
     void glTF2Loader::loadAccessor(json& accessorJSON, std::vector<unsigned char>& dataVec)
     {
         // Clear output vector
@@ -708,14 +804,15 @@ namespace Rapture {
         // Total bytes for this accessor
         unsigned int totalBytes = count * elementSize * componentSize;
         
+        // Pre-allocate the vector to avoid reallocations
+        dataVec.reserve(totalBytes);
+        dataVec.resize(totalBytes);
         
         // Check if we need to handle interleaved data with stride
         if (byteStride > 0 && byteStride != (elementSize * componentSize)) {
             // Data is interleaved, need to copy with stride
-            dataVec.resize(totalBytes);
-            
             unsigned int elementBytes = elementSize * componentSize;
-            unsigned int dstOffset = 0;
+            unsigned char* dstPtr = dataVec.data();
             
             for (unsigned int i = 0; i < count; i++) {
                 if (byteOffset + i * byteStride + elementBytes > m_binVec.size()) {
@@ -724,12 +821,9 @@ namespace Rapture {
                     return;
                 }
                 
-                std::memcpy(
-                    dataVec.data() + dstOffset,
-                    m_binVec.data() + byteOffset + i * byteStride,
-                    elementBytes
-                );
-                dstOffset += elementBytes;
+                const unsigned char* srcPtr = m_binVec.data() + byteOffset + i * byteStride;
+                std::memcpy(dstPtr, srcPtr, elementBytes);
+                dstPtr += elementBytes;
             }
         } else {
             // Data is tightly packed, can copy in one go
@@ -739,7 +833,6 @@ namespace Rapture {
                 return;
             }
             
-            dataVec.resize(totalBytes);
             std::memcpy(dataVec.data(), m_binVec.data() + byteOffset, totalBytes);
         }
         
@@ -784,6 +877,12 @@ namespace Rapture {
         m_binVec.clear();
     }
 
+    void glTF2Loader::reportProgress(float progress)
+    {
+        GE_CORE_INFO("glTF2Loader: Progress: {}", progress);
+        //m_progressCallback(progress);
+    }
+
     bool glTF2Loader::loadAndSetTexture(std::shared_ptr<Material> material, const std::string& textureName, int textureIndex)
     {
         if (textureIndex < 0 || textureIndex >= m_textures.size()) {
@@ -816,16 +915,16 @@ namespace Rapture {
         std::string imageURI = image["uri"];
         
         // Load the texture
-        std::string texturePath = DIRNAME + m_basePath + imageURI;
+        std::string texturePath = m_basePath + imageURI;
         
-        std::shared_ptr<Texture2D> tex = TextureLibrary::load(texturePath, textureName);
-        
+        std::shared_ptr<Texture2D> tex = TextureLibrary::loadAsync(texturePath);
+
         if (!tex) {
             GE_CORE_ERROR("glTF2Loader: Failed to load texture {}", texturePath);
             return false;
         }
-        
-        // Apply sampler parameters if present
+
+            // Apply sampler parameters if present
         if (texture.contains("sampler")) {
             int samplerIndex = texture["sampler"];
             if (samplerIndex >= 0 && samplerIndex < m_samplers.size()) {
@@ -841,7 +940,7 @@ namespace Rapture {
                 // GL_CLAMP_TO_EDGE = 33071
                 // GL_MIRRORED_REPEAT = 33648
                 // GL_REPEAT = 10497
-                
+      
                 // Apply filter settings
                 if (sampler.contains("magFilter")) {
                     int magFilter = sampler["magFilter"];
@@ -891,19 +990,43 @@ namespace Rapture {
                         tex->setWrapT(TextureWrap::Repeat);
                     }
                 }
+            } else {
+                // Set default texture parameters if no sampler is specified
+                tex->setMinFilter(TextureFilter::LinearMipmapLinear);
+                tex->setMagFilter(TextureFilter::Linear);
+                tex->setWrapS(TextureWrap::Repeat);
+                tex->setWrapT(TextureWrap::Repeat);
             }
-        } else {
-            // Set default texture parameters if no sampler is specified
-            tex->setMinFilter(TextureFilter::LinearMipmapLinear);
-            tex->setMagFilter(TextureFilter::Linear);
-            tex->setWrapS(TextureWrap::Repeat);
-            tex->setWrapT(TextureWrap::Repeat);
-        }
+            
+            // Set the texture on the material
+            material->setTexture(textureName, tex);
+            
+            // Set the appropriate flag in the material
+            std::string uniformName = "u_Has";
+            if (textureName == "albedoMap" || textureName == "diffuseMap") 
+                uniformName += textureName == "albedoMap" ? "AlbedoMap" : "DiffuseMap";
+            else if (textureName == "normalMap") 
+                uniformName += "NormalMap";
+            else if (textureName == "metallicMap") 
+                uniformName += "MetallicMap";
+            else if (textureName == "roughnessMap") 
+                uniformName += "RoughnessMap";
+            else if (textureName == "aoMap") 
+                uniformName += "AOMap";
+            else if (textureName == "emissiveMap") 
+                uniformName += "EmissiveMap";
+            else if (textureName == "specularGlossinessMap") 
+                uniformName += "SpecularGlossinessMap";
+            
+            material->setBool(uniformName, true);
+            
+        //GE_CORE_INFO("glTF2Loader: Successfully loaded texture '{}' for material '{}'", 
+        //   texturePath, material->getName());
         
-        // Set the texture on the material
-        material->setTexture(textureName, tex);
-        
-        return true;
+        return true; // Return true to indicate the texture was queued for loading
     }
+
+    return false;
 }
 
+}

@@ -15,6 +15,8 @@
 #include <unistd.h>
 #endif
 
+#include "../../Debug/Profiler.h"
+
 namespace Rapture {
 
 // Shader directory path - externally accessible
@@ -146,6 +148,7 @@ OpenGLShader::~OpenGLShader()
 	}
 
 bool OpenGLShader::compile(const std::string& variantName) {
+    RAPTURE_PROFILE_FUNCTION();
 
     const ShaderVariant* variant = nullptr;
     

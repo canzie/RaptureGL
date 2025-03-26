@@ -11,12 +11,18 @@ OpenGLTexture2D::OpenGLTexture2D(const std::string& path)
     RAPTURE_PROFILE_FUNCTION();
     
     int width, height, channels;
-    stbi_set_flip_vertically_on_load(0);
     
-    unsigned char* data = stbi_load(path.c_str(), &width, &height, &channels, 0);
+    // Profile stbi_load specifically
+    unsigned char* data = nullptr;
+    {
+        RAPTURE_PROFILE_SCOPE("stbi_load - Texture Loading");
+        stbi_set_flip_vertically_on_load(0);
+        data = stbi_load(path.c_str(), &width, &height, &channels, 0);
+    }
 
     if (data) {
-        RAPTURE_PROFILE_SCOPE("stbi_load - Texture Loading");
+        // Profile the OpenGL texture creation
+        RAPTURE_PROFILE_SCOPE("OpenGL Texture Creation");
         m_width = width;
         m_height = height;
         
@@ -51,17 +57,30 @@ OpenGLTexture2D::OpenGLTexture2D(const std::string& path)
         glGenerateMipmap(GL_TEXTURE_2D);
         
         stbi_image_free(data);
-        
-        GE_CORE_INFO("Loaded texture '{0}' ({1}x{2}, {3} channels)", path, m_width, m_height, channels);
     }
     else {
         GE_CORE_ERROR("Failed to load texture '{0}'", path);
     }
 }
 
-OpenGLTexture2D::OpenGLTexture2D(uint32_t width, uint32_t height)
-    : m_width(width), m_height(height), m_internalFormat(GL_RGBA8), m_dataFormat(GL_RGBA)
+OpenGLTexture2D::OpenGLTexture2D(uint32_t width, uint32_t height, uint32_t channels)
+    : m_width(width), m_height(height), m_internalFormat(0), m_dataFormat(0)
 {
+    RAPTURE_PROFILE_FUNCTION();
+
+    if (channels == 4) {
+        m_internalFormat = GL_RGBA8;
+        m_dataFormat = GL_RGBA;
+    }
+    else if (channels == 3) {
+        m_internalFormat = GL_RGB8;
+        m_dataFormat = GL_RGB;
+    }
+    else {
+        GE_CORE_ERROR("OpenGLTexture2D: Unsupported format! Channels: {0}", channels);
+        return;
+    }
+
     glGenTextures(1, &m_rendererID);
     glBindTexture(GL_TEXTURE_2D, m_rendererID);
     
@@ -93,6 +112,8 @@ void OpenGLTexture2D::unbind() const
 
 void OpenGLTexture2D::setData(void* data, uint32_t size)
 {
+    RAPTURE_PROFILE_FUNCTION();
+
     uint32_t bytesPerPixel = m_dataFormat == GL_RGBA ? 4 : 3;
     if (size != m_width * m_height * bytesPerPixel) {
         GE_CORE_ERROR("OpenGLTexture2D::setData: Data size doesn't match texture size!");
@@ -101,6 +122,10 @@ void OpenGLTexture2D::setData(void* data, uint32_t size)
     
     glBindTexture(GL_TEXTURE_2D, m_rendererID);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_width, m_height, m_dataFormat, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+
+
 }
 
 void OpenGLTexture2D::setMinFilter(TextureFilter filter)
@@ -170,9 +195,9 @@ std::shared_ptr<Texture2D> Texture2D::create(const std::string& path)
     return std::make_shared<OpenGLTexture2D>(path);
 }
 
-std::shared_ptr<Texture2D> Texture2D::create(uint32_t width, uint32_t height)
+std::shared_ptr<Texture2D> Texture2D::create(uint32_t width, uint32_t height, uint32_t channels)
 {
-    return std::make_shared<OpenGLTexture2D>(width, height);
+    return std::make_shared<OpenGLTexture2D>(width, height, channels);
 }
 
 } // namespace Rapture 

@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <string>
 #include <memory>
+#include <mutex>
 
 namespace Rapture {
 
@@ -58,10 +59,15 @@ public:
     static void removeMaterialInstance(const std::string& name);
 
 private:
+    // Internal helpers for thread-safe implementation
+    static bool hasMaterialInternal(const std::string& name);
+    static bool hasMaterialInstanceInternal(const std::string& name);
+    
     static std::unordered_map<std::string, std::shared_ptr<Material>> s_materials;
     static std::unordered_map<std::string, std::shared_ptr<MaterialInstance>> s_materialInstances;
     static std::shared_ptr<Material> s_defaultMaterial;
     static bool s_initialized;
+    static std::mutex s_mutex; // Mutex for thread synchronization
 };
 
 } // namespace Rapture 

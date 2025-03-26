@@ -6,6 +6,10 @@
 #include "../Renderer/Renderer.h"
 #include "../Debug/Profiler.h"
 #include "../Debug/GPUProfiler.h"
+#include "../Textures/Texture.h"
+
+#include "../Materials/MaterialLibrary.h"
+#include "../Buffers/BufferPools.h"
 
 namespace Rapture {
 
@@ -17,10 +21,14 @@ namespace Rapture {
 		Profiler::init();
 		GPUProfiler::init();
 		
+
+        TextureLibrary::init(4);
+
 		// creates openGL windows context, change it so its dynamic
 		m_window = std::unique_ptr<WindowContext>(WindowContext::createWindow());
 		m_window->setWindowEventCallback(std::bind(&Application::onEvent, this, std::placeholders::_1));
 		s_instance = this;
+        BufferPoolManager::init();
 		Renderer::init();
 	}
 
@@ -29,7 +37,10 @@ namespace Rapture {
 		// Shutdown profiler
 		GPUProfiler::shutdown();
 		Profiler::shutdown();
-		
+        TextureLibrary::shutdown();
+        MaterialLibrary::shutdown();
+		BufferPoolManager::shutdown();
+
 		// closes twice...
 		//onWindowContextClose();
 	}
@@ -44,11 +55,13 @@ namespace Rapture {
 			Profiler::beginFrame();
 			GPUProfiler::beginFrame();
 			
+            TextureLibrary::processLoadingQueue();
+
+
 			//GE_CORE_TRACE("DT: {0}", Timestep::deltaTimeMs());
 
 			for (auto layer : m_layerStack)
 			{
-				RAPTURE_PROFILE_SCOPE(layer->getName().c_str());
 				layer->onUpdate((float)Timestep::deltaTimeMs().count());
 			}
 

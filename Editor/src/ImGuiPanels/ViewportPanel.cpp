@@ -1,7 +1,6 @@
 #include "ViewportPanel.h"
 #include "Logger/Log.h"
 
-namespace Rapture {
 
 void ViewportPanel::renderSceneViewport(TestLayer* testLayer) {
     ImGui::Begin("Scene Viewport");
@@ -62,4 +61,3 @@ void ViewportPanel::renderDepthBufferViewport(TestLayer* testLayer) {
     ImGui::End();
 }
 
-}  // namespace Rapture 

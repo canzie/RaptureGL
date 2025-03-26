@@ -10,6 +10,7 @@
 #include "Mesh/Mesh.h"
 
 #include "File Loaders/glTF/glTF2Loader.h"
+#include "File Loaders/ModelLoader.h"
 #include "Textures/Texture.h"
 
 void TestLayer::onAttach()
@@ -26,7 +27,7 @@ void TestLayer::onAttach()
 
     // Initialize the material library
 	Rapture::MaterialLibrary::init();
-	Rapture::TextureLibrary::init();
+	//Rapture::TextureLibrary::init();
     
     Rapture::TextureLibrary::add("albedoMap", Rapture::TextureLibrary::load("./assets/models/adamHead/Assets/Models/PBR/Adam/Textures/Adam_Head_a.jpg"));
 
@@ -43,6 +44,10 @@ void TestLayer::onAttach()
 	
 	Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
 	loader.loadModel("adamHead/adamHead.gltf");
+    
+	//loader.loadModel("sphere.gltf");
+    
+    loader.loadModel("Sponza/glTF/Sponza.gltf");
 
 	//loader.loadModel("sphere.gltf");
 
@@ -73,8 +78,8 @@ void TestLayer::onAttach()
         10.0f                         // Range
     );
     // Add a cube mesh to visualize the light
-    light1.addComponent<Rapture::MeshComponent>();
-    light1.getComponent<Rapture::MeshComponent>().mesh = Rapture::Mesh::createCube();
+    //light1.addComponent<Rapture::MeshComponent>();
+    //light1.getComponent<Rapture::MeshComponent>().mesh = Rapture::Mesh::createCube();
     // Create an emissive material for the light
     light1.addComponent<Rapture::MaterialComponent>(glm::vec3(1.0f, 1.0f, 1.0f));  // White emissive material
     
@@ -92,8 +97,8 @@ void TestLayer::onAttach()
         8.0f                          // Range
     );
     // Add a cube mesh to visualize the light
-    light2.addComponent<Rapture::MeshComponent>();
-    light2.getComponent<Rapture::MeshComponent>().mesh = Rapture::Mesh::createCube();
+    //light2.addComponent<Rapture::MeshComponent>();
+    //light2.getComponent<Rapture::MeshComponent>().mesh = Rapture::Mesh::createCube();
     // Create an emissive material that matches the light color
     light2.addComponent<Rapture::MaterialComponent>(glm::vec3(0.2f, 0.4f, 1.0f));  // Blue emissive material
 

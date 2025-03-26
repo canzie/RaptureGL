@@ -17,7 +17,7 @@ public:
         pushLayer(new TestLayer());
         
         // Push ImGui layer as an overlay so it renders on top
-        pushOverlay(new Rapture::ImGuiLayer());
+        pushOverlay(new ImGuiLayer());
     }
     
     ~EditorApp() {

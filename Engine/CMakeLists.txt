@@ -8,31 +8,25 @@ file(GLOB_RECURSE ENGINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
 
+# Always include the profiler source files for both debug and release builds
+list(APPEND ENGINE_SOURCES 
+    src/Debug/Profiler.cpp
+    src/Debug/GPUProfiler.cpp
+)
+
 # Debug mode settings - check in multiple ways
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR RAPTURE_DEBUG)
-    message(STATUS "Debug build detected - Enabling profiler")
+    message(STATUS "Debug build detected - Enabling debug flags")
     add_definitions(-DRAPTURE_DEBUG)
     add_definitions(-D_DEBUG)
-    
-    # Add profiler sources
-    list(APPEND ENGINE_SOURCES 
-        src/Debug/Profiler.cpp
-        src/Debug/GPUProfiler.cpp
-    )
 elseif(MSVC)
     # For MSVC, check if we're in debug configuration
     add_compile_definitions($<$<CONFIG:Debug>:RAPTURE_DEBUG>)
     add_compile_definitions($<$<CONFIG:Debug>:_DEBUG>)
     
-    # Always include the profiler source files, but they'll only be active in debug
-    list(APPEND ENGINE_SOURCES 
-        src/Debug/Profiler.cpp
-        src/Debug/GPUProfiler.cpp
-    )
-    
-    message(STATUS "MSVC build - Profiler will be enabled in Debug configuration only")
+    message(STATUS "MSVC build - Debug flags will be enabled in Debug configuration only")
 else()
-    message(STATUS "Release build - Profiler disabled")
+    message(STATUS "Release build - Debug flags disabled")
 endif()
 
 # Create engine library

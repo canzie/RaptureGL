@@ -1,7 +1,6 @@
 #include "EntityBrowserPanel.h"
 #include "Logger/Log.h"
 
-namespace Rapture {
 
 void EntityBrowserPanel::render(TestLayer* testLayer) {
     ImGui::Begin("Entity Browser");
@@ -48,15 +47,17 @@ void EntityBrowserPanel::render(TestLayer* testLayer) {
                         entity.getComponent<Rapture::TagComponent>().tag : 
                         std::to_string((uint32_t)entityHandle);
                         
-                    // Display as a simple selectable item
-                    if (ImGui::Selectable(entityName.c_str())) {
-                        // TODO: Select this entity in properties panel
+                    // Display as a selectable item with highlighting for the selected entity
+                    bool isSelected = (_selectedEntity == entityHandle);
+                    if (ImGui::Selectable(entityName.c_str(), isSelected)) {
+                        _selectedEntity = entityHandle;
+                        Rapture::GE_INFO("Selected entity: {}", entityName);
                     }
                     
                     // Context menu for actions
                     if (ImGui::BeginPopupContextItem()) {
                         if (ImGui::MenuItem("Properties")) {
-                            // TODO: Select this entity in properties panel
+                            _selectedEntity = entityHandle;
                         }
                         ImGui::EndPopup();
                     }
@@ -86,7 +87,7 @@ void EntityBrowserPanel::render(TestLayer* testLayer) {
     ImGui::End();
 }
 
-void EntityBrowserPanel::displayEntityHierarchy(entt::entity entityHandle, int depth, Scene* scene) {
+void EntityBrowserPanel::displayEntityHierarchy(entt::entity entityHandle, int depth, Rapture::Scene* scene) {
     Rapture::Entity entity(entityHandle, scene);
     
     // Get the entity's name from TagComponent
@@ -119,13 +120,23 @@ void EntityBrowserPanel::displayEntityHierarchy(entt::entity entityHandle, int d
     if (!hasChildren)
         flags |= ImGuiTreeNodeFlags_Leaf; // No arrow for leaf nodes
     
+    // Add selected flag if this entity is currently selected
+    if (_selectedEntity == entityHandle)
+        flags |= ImGuiTreeNodeFlags_Selected;
+    
     // Display tree node for this entity
     bool nodeOpen = ImGui::TreeNodeEx((void*)(intptr_t)entityHandle, flags, "%s", entityName.c_str());
+    
+    // Handle selection when clicked
+    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+        _selectedEntity = entityHandle;
+        Rapture::GE_INFO("Selected entity: {}", entityName);
+    }
     
     // Handle right-click menu
     if (ImGui::BeginPopupContextItem()) {
         if (ImGui::MenuItem("Properties")) {
-            // TODO: Select this entity in properties panel
+            _selectedEntity = entityHandle;
         }
         ImGui::EndPopup();
     }
@@ -166,5 +177,3 @@ void EntityBrowserPanel::displayEntityHierarchy(entt::entity entityHandle, int d
     // Reset indentation
     ImGui::Indent(-depth * 20.0f);
 }
-
-}  // namespace Rapture 

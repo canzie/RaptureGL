@@ -2,6 +2,7 @@
 #include "glad/glad.h"
 #include "../../../logger/Log.h"
 #include "../../BufferConversionHelpers.h"
+#include "../../../Debug/Profiler.h"
 
 
 
@@ -13,6 +14,8 @@ namespace Rapture {
 	UniformBuffer::UniformBuffer(size_t size, BufferUsage usage, const void* data, unsigned int bindingPoint)
 		: m_size(size), m_usage(usage), m_isImmutable(false), m_isMapped(false), m_bindingPoint(bindingPoint)
 	{
+		RAPTURE_PROFILE_FUNCTION();
+
 		if (GLCapabilities::hasBufferStorage()) {
 			// Create buffer with immutable storage
 			glCreateBuffers(1, &m_rendererId);
@@ -24,15 +27,12 @@ namespace Rapture {
 			
 			// Clear any previous OpenGL errors
 			while (glGetError() != GL_NO_ERROR);
-			
 			glNamedBufferStorage(m_rendererId, size, data, flags);
-			
 			// Check for errors
 			GLenum error = glGetError();
 			if (error != GL_NO_ERROR) {
 				GE_CORE_ERROR("UNIFORM BUFFER: Error creating buffer storage: {0} (0x{1:x})", error, error);
 			}
-			
 			m_isImmutable = true;
 		} else {
 			// Fall back to traditional buffer
@@ -75,6 +75,8 @@ namespace Rapture {
 	}
 
 	UniformBuffer::~UniformBuffer() {
+		RAPTURE_PROFILE_FUNCTION();
+		
 		if (m_isMapped) {
 			unmap();
 		}
@@ -83,36 +85,42 @@ namespace Rapture {
 	}
 
 	void UniformBuffer::bind() {
+		RAPTURE_PROFILE_FUNCTION();
 		glBindBuffer(GL_UNIFORM_BUFFER, m_rendererId);
 	}
 
 	void UniformBuffer::unbind() {
+		RAPTURE_PROFILE_FUNCTION();
 		glBindBuffer(GL_UNIFORM_BUFFER, 0);
 	}
 
 	void UniformBuffer::bindBase(unsigned int bindingPoint) {
+		RAPTURE_PROFILE_FUNCTION();
 		m_bindingPoint = bindingPoint;
 		glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, m_rendererId);
 	}
 
 	void UniformBuffer::bindBase() {
+		RAPTURE_PROFILE_FUNCTION();
 		glBindBufferBase(GL_UNIFORM_BUFFER, m_bindingPoint, m_rendererId);
 	}
 
 
 	void UniformBuffer::setData(const void* data, size_t size, size_t offset) {
+		RAPTURE_PROFILE_FUNCTION();
+		
 		if (offset + size > m_size) {
 			GE_CORE_ERROR("UNIFORM BUFFER: Buffer overflow: Trying to write {0} bytes at offset {1} in UBO of size {2}", 
 				size, offset, m_size);
 			return;
 		}
 
-
 		// Clear previous errors
 		while (glGetError() != GL_NO_ERROR);
 
 		if (m_isImmutable) {
 			// For immutable storage, use mapping
+			RAPTURE_PROFILE_SCOPE("Map and Write Immutable Buffer");
 			
 			// Map the buffer
 			void* mappedPtr = nullptr;
@@ -140,6 +148,8 @@ namespace Rapture {
 			}
 		} else {
 			// For non-immutable storage, use glBufferSubData
+			RAPTURE_PROFILE_SCOPE("BufferSubData Update");
+			
 			if (GLCapabilities::hasDSA()) {
 				GE_CORE_INFO("UNIFORM BUFFER: Using DSA to set buffer data");
 				glNamedBufferSubData(m_rendererId, offset, size, data);
@@ -171,6 +181,8 @@ namespace Rapture {
 	}
 
 	void* UniformBuffer::map(size_t offset, size_t size) {
+		RAPTURE_PROFILE_FUNCTION();
+		
 		if (m_isMapped) {
 			GE_CORE_WARN("UNIFORM BUFFER: Uniform buffer already mapped");
 			return nullptr;
@@ -197,6 +209,8 @@ namespace Rapture {
 	}
 
 	void UniformBuffer::unmap() {
+		RAPTURE_PROFILE_FUNCTION();
+		
 		if (!m_isMapped) return;
 		
 		if (GLCapabilities::hasDSA()) {

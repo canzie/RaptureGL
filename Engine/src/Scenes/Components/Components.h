@@ -50,10 +50,12 @@ namespace Rapture {
 	struct MeshComponent
 	{
 		std::shared_ptr<Mesh> mesh;
+        bool isLoading = false;
 		
 		MeshComponent(std::string fname)
 		{
 			mesh = std::make_shared<Mesh>(fname);
+            isLoading = true;
             GE_CORE_INFO("Loading mesh with glTF Loader: {0}", fname);
 		}
         
@@ -61,6 +63,7 @@ namespace Rapture {
         {
             // TODO: Implement glTF2 loading
             mesh = std::make_shared<Mesh>(fname);
+            isLoading = true;
             GE_CORE_INFO("Loading mesh with glTF2 Loader: {0}", fname);
         }
         
@@ -76,6 +79,7 @@ namespace Rapture {
 			if (isEmpty)
 			{
 				mesh = std::make_shared<Mesh>();
+                isLoading = true;
 			}
             else
             {

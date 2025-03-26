@@ -11,7 +11,6 @@
 
 #include "imgui.h"
 
-namespace Rapture {
 
 class EntityBrowserPanel {
 public:
@@ -19,10 +18,18 @@ public:
     ~EntityBrowserPanel() = default;
 
     void render(TestLayer* testLayer);
+    
+    // Get the currently selected entity
+    entt::entity getSelectedEntity() const { return _selectedEntity; }
+    
+    // Check if an entity is selected
+    bool hasSelectedEntity() const { return _selectedEntity != entt::null; }
 
 private:
     // Helper function to display an entity and its children recursively
-    void displayEntityHierarchy(entt::entity entityHandle, int depth, Scene* scene);
+    void displayEntityHierarchy(entt::entity entityHandle, int depth, Rapture::Scene* scene);
+    
+    // Currently selected entity
+    entt::entity _selectedEntity = entt::null;
 };
 
-}  // namespace Rapture 

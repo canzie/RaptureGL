@@ -14,12 +14,27 @@ namespace Rapture
 		RGB8,
 		RED_INTEGER,
 		
+		// High precision formats for G-buffer
+		RGB16F,
+		RGB32F,
+		RGBA16F,
+		
 		// Depth/stencil formats
 		DEPTH24STENCIL8,
 		DEPTH32F,
 		
 		// Defaults
 		Depth = DEPTH24STENCIL8
+	};
+
+	// G-buffer attachment types
+	enum class GBufferAttachmentType
+	{
+		POSTITION,    // RGB32F or RGB16F for world space positions
+		NORMAL,      // RGB16F for normals
+		ALBEDO,      // RGBA8 for albedo (RGB) and specular (A)
+		MATERIAL,    // RGBA8 or RGBA16F for material properties (roughness, metallic, etc.)
+		DEPTH        // DEPTH24STENCIL8
 	};
 
 	struct FramebufferTextureSpecification
@@ -70,6 +85,9 @@ namespace Rapture
 		const FramebufferSpecification& getSpecification() const { return m_specification; }
 
 		static std::shared_ptr<Framebuffer> create(const FramebufferSpecification& spec);
+		
+		// G-buffer creation helper
+		static std::shared_ptr<Framebuffer> createGBuffer(uint32_t width, uint32_t height, bool useHighPrecision = true);
 		
 	private:
 		FramebufferSpecification m_specification;

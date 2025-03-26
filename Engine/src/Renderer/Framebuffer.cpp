@@ -15,6 +15,9 @@ namespace Rapture
 			case FramebufferTextureFormat::RGBA8:       return GL_RGBA8;
 			case FramebufferTextureFormat::RGB8:        return GL_RGB8;
 			case FramebufferTextureFormat::RED_INTEGER: return GL_R32I;
+			case FramebufferTextureFormat::RGB16F:      return GL_RGB16F;
+			case FramebufferTextureFormat::RGB32F:      return GL_RGB32F;
+			case FramebufferTextureFormat::RGBA16F:     return GL_RGBA16F;
 			case FramebufferTextureFormat::DEPTH24STENCIL8: return GL_DEPTH24_STENCIL8;
 			case FramebufferTextureFormat::DEPTH32F:    return GL_DEPTH_COMPONENT32F;
 		}
@@ -30,10 +33,29 @@ namespace Rapture
 			case FramebufferTextureFormat::RGBA8:       return GL_RGBA;
 			case FramebufferTextureFormat::RGB8:        return GL_RGB;
 			case FramebufferTextureFormat::RED_INTEGER: return GL_RED_INTEGER;
+			case FramebufferTextureFormat::RGB16F:      return GL_RGB;
+			case FramebufferTextureFormat::RGB32F:      return GL_RGB;
+			case FramebufferTextureFormat::RGBA16F:     return GL_RGBA;
 		}
 
 		GE_CORE_ERROR("Unknown framebuffer data format!");
 		return 0;
+	}
+	
+	static GLenum TextureFormatToGLDataType(FramebufferTextureFormat format)
+	{
+		switch (format)
+		{
+			case FramebufferTextureFormat::RGBA8:       return GL_UNSIGNED_BYTE;
+			case FramebufferTextureFormat::RGB8:        return GL_UNSIGNED_BYTE;
+			case FramebufferTextureFormat::RED_INTEGER: return GL_INT;
+			case FramebufferTextureFormat::RGB16F:      return GL_FLOAT;
+			case FramebufferTextureFormat::RGB32F:      return GL_FLOAT;
+			case FramebufferTextureFormat::RGBA16F:     return GL_FLOAT;
+		}
+
+		GE_CORE_ERROR("Unknown framebuffer data type!");
+		return GL_UNSIGNED_BYTE;
 	}
 	
 	static bool IsDepthFormat(FramebufferTextureFormat format)
@@ -46,6 +68,38 @@ namespace Rapture
 		}
 		
 		return false;
+	}
+
+	// Helper function to create a G-buffer with multiple render targets
+	std::shared_ptr<Framebuffer> Framebuffer::createGBuffer(uint32_t width, uint32_t height, bool useHighPrecision)
+	{
+		FramebufferSpecification gBufferSpec;
+		gBufferSpec.width = width;
+		gBufferSpec.height = height;
+		gBufferSpec.samples = 1; // G-buffer typically doesn't use MSAA (would require resolve)
+		
+		// Position buffer (RGB32F or RGB16F)
+		gBufferSpec.attachments.push_back(
+			useHighPrecision ? FramebufferTextureFormat::RGB32F : FramebufferTextureFormat::RGB16F
+		);
+		
+		// Normal buffer (RGB16F)
+		gBufferSpec.attachments.push_back(FramebufferTextureFormat::RGB16F);
+		
+		// Albedo + Specular buffer (RGBA8)
+		gBufferSpec.attachments.push_back(FramebufferTextureFormat::RGBA8);
+		
+		// Material properties buffer (RGBA8 or RGBA16F)
+		gBufferSpec.attachments.push_back(
+			useHighPrecision ? FramebufferTextureFormat::RGBA16F : FramebufferTextureFormat::RGBA8
+		);
+		
+		// Depth buffer is added automatically in the Framebuffer::invalidate() method
+		
+		GE_CORE_INFO("Creating G-buffer ({0}x{1}) with {2} precision", 
+			width, height, useHighPrecision ? "high" : "standard");
+			
+		return create(gBufferSpec);
 	}
 
 	std::shared_ptr<Framebuffer> Framebuffer::create(const FramebufferSpecification& spec)
@@ -132,10 +186,11 @@ namespace Rapture
 				{
 					GLenum glFormat = TextureFormatToGL(format);
 					GLenum dataFormat = TextureFormatToGLDataFormat(format);
+					GLenum dataType = TextureFormatToGLDataType(format);
 					
 					// Force alpha to be fully opaque (1.0) to prevent transparency issues
 					glTexImage2D(GL_TEXTURE_2D, 0, glFormat, m_specification.width, m_specification.height, 
-						0, dataFormat, GL_UNSIGNED_BYTE, nullptr);
+						0, dataFormat, dataType, nullptr);
 					
 					// Set texture parameters
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -148,6 +203,17 @@ namespace Rapture
 				// Attach texture to framebuffer
 				glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, 
 					multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, m_colorAttachments[i], 0);
+			}
+			
+			// Set up draw buffers for multiple render targets (MRT)
+			if (m_colorAttachments.size() > 1)
+			{
+				GLenum drawBuffers[8] = { GL_NONE }; // Max 8 color attachments in OpenGL
+				for (size_t i = 0; i < m_colorAttachments.size(); i++)
+					drawBuffers[i] = GL_COLOR_ATTACHMENT0 + i;
+					
+				glDrawBuffers(m_colorAttachments.size(), drawBuffers);
+                GE_CORE_INFO("Set up {0} draw buffers for multiple render targets", m_colorAttachments.size());
 			}
 		}
 

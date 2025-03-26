@@ -72,8 +72,17 @@ namespace Rapture {
 		case GL_FLOAT: case GL_UNSIGNED_INT: componentStride = 4; break;
 		}
 
-		// For VVVVNNNNCCCC format, stride is the size of the component * number of elements
-		GLuint stride = componentStride * size;
+		// Calculate stride based on layout type
+		GLsizei stride;
+		size_t attributeOffset = el.offset;
+		
+		if (m_buffer_layout.isInterleaved) {
+			// For interleaved format (PNTPNTPNT...), stride is the size of a complete vertex
+			stride = (GLsizei)m_buffer_layout.vertexSize;
+		} else {
+			// For non-interleaved format (PPP...NNN...TTT...), stride is just the size of this component
+			stride = componentStride * size;
+		}
 
 		if (m_vertexBuffer == nullptr) {
 			GE_CORE_ERROR("VertexArray: Cannot set attribute layout without a vertex buffer");
@@ -87,21 +96,24 @@ namespace Rapture {
 				glVertexArrayAttribBinding(m_rendererId, POSITION_ATTRIB_PTR, POSITION_ATTRIB_PTR);
 				glVertexArrayAttribFormat(m_rendererId, POSITION_ATTRIB_PTR, size,
 					(GLenum)el.componentType, GL_FALSE, 0);
-				glVertexArrayVertexBuffer(m_rendererId, POSITION_ATTRIB_PTR, m_vertexBuffer->getID(), el.offset, stride);
+				glVertexArrayVertexBuffer(m_rendererId, POSITION_ATTRIB_PTR, m_vertexBuffer->getID(), 
+                     attributeOffset, stride);
 				
 			} else if (el.name == "NORMAL") {
 				glEnableVertexArrayAttrib(m_rendererId, NORMAL_ATTRIB_PTR);
 				glVertexArrayAttribBinding(m_rendererId, NORMAL_ATTRIB_PTR, NORMAL_ATTRIB_PTR);
 				glVertexArrayAttribFormat(m_rendererId, NORMAL_ATTRIB_PTR, size, 
 					(GLenum)el.componentType, GL_FALSE, 0);
-				glVertexArrayVertexBuffer(m_rendererId, NORMAL_ATTRIB_PTR, m_vertexBuffer->getID(), el.offset, stride);
+				glVertexArrayVertexBuffer(m_rendererId, NORMAL_ATTRIB_PTR, m_vertexBuffer->getID(), 
+                     attributeOffset, stride);
 
 			} else if (el.name == "TEXCOORD_0") {
 				glEnableVertexArrayAttrib(m_rendererId, TEXCOORD_0_ATTRIB_PTR);
 				glVertexArrayAttribBinding(m_rendererId, TEXCOORD_0_ATTRIB_PTR, TEXCOORD_0_ATTRIB_PTR);
 				glVertexArrayAttribFormat(m_rendererId, TEXCOORD_0_ATTRIB_PTR, size, 
 					(GLenum)el.componentType, GL_FALSE, 0);
-				glVertexArrayVertexBuffer(m_rendererId, TEXCOORD_0_ATTRIB_PTR, m_vertexBuffer->getID(), el.offset, stride);
+				glVertexArrayVertexBuffer(m_rendererId, TEXCOORD_0_ATTRIB_PTR, m_vertexBuffer->getID(), 
+                     attributeOffset, stride);
 
 			} else if (el.name == "TRANSFORM_MAT") {
 				// Handle matrix attribute (instanced)
@@ -112,28 +124,32 @@ namespace Rapture {
 						GL_FLOAT, GL_FALSE, i * sizeof(glm::vec4));
 				}
 				glVertexArrayBindingDivisor(m_rendererId, TRANSFORM_ATTRIB_PTR, 1);
-				glVertexArrayVertexBuffer(m_rendererId, TRANSFORM_ATTRIB_PTR, m_vertexBuffer->getID(), el.offset, sizeof(glm::mat4));
+				glVertexArrayVertexBuffer(m_rendererId, TRANSFORM_ATTRIB_PTR, m_vertexBuffer->getID(), 
+                     attributeOffset, stride);
 
 			} else if (el.name == "TANGENT") {
 				glEnableVertexArrayAttrib(m_rendererId, TANGENT_ATTRIB_PTR);
 				glVertexArrayAttribBinding(m_rendererId, TANGENT_ATTRIB_PTR, TANGENT_ATTRIB_PTR);
 				glVertexArrayAttribFormat(m_rendererId, TANGENT_ATTRIB_PTR, size, 
 					(GLenum)el.componentType, GL_FALSE, 0);
-				glVertexArrayVertexBuffer(m_rendererId, TANGENT_ATTRIB_PTR, m_vertexBuffer->getID(), el.offset, stride);
+				glVertexArrayVertexBuffer(m_rendererId, TANGENT_ATTRIB_PTR, m_vertexBuffer->getID(), 
+                     attributeOffset, stride);
 
 			} else if (el.name == "JOINTS_0") {
 				glEnableVertexArrayAttrib(m_rendererId, JOINTS_0_ATTRIB_PTR);
 				glVertexArrayAttribBinding(m_rendererId, JOINTS_0_ATTRIB_PTR, JOINTS_0_ATTRIB_PTR);
 				glVertexArrayAttribFormat(m_rendererId, JOINTS_0_ATTRIB_PTR, size, 
 					(GLenum)el.componentType, GL_FALSE, 0);
-				glVertexArrayVertexBuffer(m_rendererId, JOINTS_0_ATTRIB_PTR, m_vertexBuffer->getID(), el.offset, stride);
+				glVertexArrayVertexBuffer(m_rendererId, JOINTS_0_ATTRIB_PTR, m_vertexBuffer->getID(), 
+                     attributeOffset, stride);
 
 			} else if (el.name == "WEIGHTS_0") {
 				glEnableVertexArrayAttrib(m_rendererId, WEIGTHS_0_ATTRIB_PTR);
 				glVertexArrayAttribBinding(m_rendererId, WEIGTHS_0_ATTRIB_PTR, WEIGTHS_0_ATTRIB_PTR);
 				glVertexArrayAttribFormat(m_rendererId, WEIGTHS_0_ATTRIB_PTR, size, 
 					(GLenum)el.componentType, GL_FALSE, 0);
-				glVertexArrayVertexBuffer(m_rendererId, WEIGTHS_0_ATTRIB_PTR, m_vertexBuffer->getID(), el.offset, stride);
+				glVertexArrayVertexBuffer(m_rendererId, WEIGTHS_0_ATTRIB_PTR, m_vertexBuffer->getID(), 
+                    attributeOffset, stride);
 			}
 		} else {
 			// For non-DSA fallback
@@ -147,7 +163,7 @@ namespace Rapture {
 					(GLenum)el.componentType,
 					GL_FALSE,
 					stride,
-					(const void*)el.offset);
+					(const void*)(attributeOffset));
 			} else if (el.name == "NORMAL") {
 				glEnableVertexAttribArray(NORMAL_ATTRIB_PTR);
 				glVertexAttribPointer(NORMAL_ATTRIB_PTR,
@@ -155,7 +171,7 @@ namespace Rapture {
 					(GLenum)el.componentType,
 					GL_FALSE,
 					stride,
-					(const void*)el.offset);
+					(const void*)(attributeOffset));
 			} else if (el.name == "TEXCOORD_0") {
 				glEnableVertexAttribArray(TEXCOORD_0_ATTRIB_PTR);
 				glVertexAttribPointer(TEXCOORD_0_ATTRIB_PTR,
@@ -163,7 +179,7 @@ namespace Rapture {
 					(GLenum)el.componentType,
 					GL_FALSE,
 					stride,
-					(const void*)el.offset);
+					(const void*)(attributeOffset));
 			} else if (el.name == "TRANSFORM_MAT") {
 				// Handle matrix attribute (instanced)
 				glEnableVertexAttribArray(TRANSFORM_ATTRIB_PTR);
@@ -172,7 +188,7 @@ namespace Rapture {
 					GL_FLOAT,
 					GL_FALSE,
 					sizeof(glm::mat4),
-					(const void*)el.offset);
+					(const void*)(attributeOffset));
 
 				glEnableVertexAttribArray(TRANSFORM_ATTRIB_PTR+1);
 				glVertexAttribPointer(TRANSFORM_ATTRIB_PTR+1,
@@ -180,7 +196,7 @@ namespace Rapture {
 					GL_FLOAT,
 					GL_FALSE,
 					sizeof(glm::mat4),
-					(const void*)(el.offset + sizeof(glm::vec4)));
+					(const void*)(attributeOffset + sizeof(glm::vec4)));
 
 				glEnableVertexAttribArray(TRANSFORM_ATTRIB_PTR + 2);
 				glVertexAttribPointer(TRANSFORM_ATTRIB_PTR + 2,
@@ -188,7 +204,7 @@ namespace Rapture {
 					GL_FLOAT,
 					GL_FALSE,
 					sizeof(glm::mat4),
-					(const void*)(el.offset + (2 * sizeof(glm::vec4))));
+					(const void*)(attributeOffset + (2 * sizeof(glm::vec4))));
 
 				glEnableVertexAttribArray(TRANSFORM_ATTRIB_PTR + 3);
 				glVertexAttribPointer(TRANSFORM_ATTRIB_PTR + 3,
@@ -196,12 +212,36 @@ namespace Rapture {
 					GL_FLOAT,
 					GL_FALSE,
 					sizeof(glm::mat4),
-					(const void*)(el.offset + (3 * sizeof(glm::vec4))));
+					(const void*)(attributeOffset + (3 * sizeof(glm::vec4))));
 					
 				glVertexAttribDivisor(TRANSFORM_ATTRIB_PTR, 1);
 				glVertexAttribDivisor(TRANSFORM_ATTRIB_PTR+1, 1);
 				glVertexAttribDivisor(TRANSFORM_ATTRIB_PTR+2, 1);
 				glVertexAttribDivisor(TRANSFORM_ATTRIB_PTR+3, 1);
+			} else if (el.name == "TANGENT") {
+				glEnableVertexAttribArray(TANGENT_ATTRIB_PTR);
+				glVertexAttribPointer(TANGENT_ATTRIB_PTR,
+					size,
+					(GLenum)el.componentType,
+					GL_FALSE,
+					stride,
+					(const void*)(attributeOffset));
+			} else if (el.name == "JOINTS_0") {
+				glEnableVertexAttribArray(JOINTS_0_ATTRIB_PTR);
+				glVertexAttribPointer(JOINTS_0_ATTRIB_PTR,
+					size,
+					(GLenum)el.componentType,
+					GL_FALSE,
+					stride,
+					(const void*)(attributeOffset));
+			} else if (el.name == "WEIGHTS_0") {
+				glEnableVertexAttribArray(WEIGTHS_0_ATTRIB_PTR);
+				glVertexAttribPointer(WEIGTHS_0_ATTRIB_PTR,
+					size,
+					(GLenum)el.componentType,
+					GL_FALSE,
+					stride,
+					(const void*)(attributeOffset));
 			}
 			
 			glBindVertexArray(0);
@@ -212,11 +252,17 @@ namespace Rapture {
 	{
 		m_buffer_layout = el;
 		
+		// If interleaved, ensure the vertex size is calculated
+		if (m_buffer_layout.isInterleaved && m_buffer_layout.vertexSize == 0) {
+			m_buffer_layout.calculateVertexSize();
+		}
+		
 		// For each attribute, set up the layout
 		for (int i = 0; i < el.buffer_attribs.size(); i++)
 		{
 			setAttribLayout(const_cast<BufferAttribute&>(el.buffer_attribs[i]));
 		}
+		
 	}
 
 	void VertexArray::setVertexBuffer(const std::shared_ptr<VertexBuffer>& vertexBuffer)

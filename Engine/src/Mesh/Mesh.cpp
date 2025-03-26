@@ -5,7 +5,6 @@
 
 #include "../Buffers/Buffers.h"
 #include "../Buffers/VertexArray.h"
-#include "../Buffers/BufferLayout.h"
 
 //#include "../File Loaders/glTF/glTFLoader.h"
 //#include "../File Loaders/glTF/glTF2Loader.h"
@@ -38,10 +37,29 @@ namespace Rapture
 	{
 	}
 
+    bool Mesh::setMeshData(BufferLayout layout, const void* vertexData, size_t vertexDataSize, const void* indexData, size_t indexDataSize, size_t indexCount, unsigned int indexType)
+    {
 
+        BufferPoolManager& bufferPoolManager = BufferPoolManager::getInstance();
+        m_meshBufferData = bufferPoolManager.allocateMeshData(layout, vertexData, vertexDataSize, indexData, indexDataSize, indexCount, indexType);
 
-	std::shared_ptr<Mesh> Mesh::createCube(float size)
-	{
+        if (m_meshBufferData.vao == nullptr) {
+            GE_CORE_ERROR("Failed to allocate mesh data");
+            return false;
+        }
+
+        //GE_CORE_INFO("========== Mesh::setMeshData {} ==========", m_meshBufferData.vao->getID());
+        //bufferPoolManager.printBufferAllocations();
+        //m_meshBufferData.vao->getBufferLayout().print();
+        //GE_CORE_INFO("Mesh::setMeshData hash: {0}", m_meshBufferData.vao->getBufferLayout().hash());
+        //m_meshBufferData.indexAllocation->print();
+        //m_meshBufferData.vertexAllocation->print();
+        m_meshBufferData.print();
+        return true;
+    }
+
+    std::shared_ptr<Mesh> Mesh::createCube(float size)
+    {
 		GE_CORE_INFO("Creating test cube mesh with size {0}", size);
 		
 		std::shared_ptr<Mesh> mesh = std::make_shared<Mesh>();
