@@ -53,19 +53,31 @@ void ImGuiLayer::onAttach()
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 410");
     
+    // Initialize the SettingsPanel with the window context
+    m_SettingsPanel = new SettingsPanel(&Rapture::Application::getInstance().getWindowContext());
+    
     // Initialize the AssetsPanel with the project root directory
     // Use a valid absolute path that exists to avoid crashes
     std::string currentPath = std::filesystem::current_path().string();
-    Rapture::GE_INFO("Setting assets panel root directory to: {0}", currentPath);
-    m_AssetsPanel.setRootDirectory(currentPath);
+    
+    // Standard ImGui style overrides
+    style.Colors[ImGuiCol_Header] = ImVec4(0.2f, 0.4f, 0.8f, 0.45f);
+    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.2f, 0.4f, 0.8f, 0.65f);
+    style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.2f, 0.4f, 0.8f, 0.80f);
+    
 }
 
 void ImGuiLayer::onDetach()
 {
-    // Cleanup ImGui
+    // Clean up
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+    
+    if (m_SettingsPanel) {
+        delete m_SettingsPanel;
+        m_SettingsPanel = nullptr;
+    }
     
     Rapture::GE_INFO("ImGui Layer Detached");
 }
@@ -167,6 +179,7 @@ void ImGuiLayer::onUpdate(float ts)
         {
             if (ImGui::MenuItem("Scene Viewport", nullptr, true)) { /* Toggle Scene Viewport */ }
             if (ImGui::MenuItem("Properties", nullptr, true)) { /* Toggle Properties Panel */ }
+            if (ImGui::MenuItem("Settings", nullptr, true)) { /* Toggle Settings Panel */ }
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -176,16 +189,30 @@ void ImGuiLayer::onUpdate(float ts)
     m_ViewportPanel.renderSceneViewport(testLayer);
     m_ViewportPanel.renderDepthBufferViewport(testLayer);
     m_StatsPanel.render(ts);
-    m_EntityBrowserPanel.render(testLayer);
-    m_PropertiesPanel.render(testLayer, &m_EntityBrowserPanel);
+    m_EntityBrowserPanel.render(testLayer->getActiveScene().get(), 
+        [this](Rapture::Entity entity) {
+            if (entity) {
+                m_SelectedEntity = entity;
+            } else {
+                Rapture::GE_WARN("No valid entity selected");
+            }
+        });
+    m_PropertiesPanel.render(m_SelectedEntity);
+    
     m_LogPanel.render();
     m_AssetsPanel.render(testLayer);
+    
+    // Render the settings panel
+    if (m_SettingsPanel) {
+        m_SettingsPanel->render();
+    }
     
     ImGui::End(); // End DockSpace Demo
     
     // Finish ImGui frame
     end();
 }
+
 
 void ImGuiLayer::onEvent(Rapture::Event& event)
 {

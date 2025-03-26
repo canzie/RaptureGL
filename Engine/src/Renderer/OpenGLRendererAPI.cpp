@@ -69,6 +69,7 @@ namespace Rapture {
 
 		glDrawElementsBaseVertex(GL_TRIANGLES, indexCount, (GLenum)comp_type, (void*)offset, vertexOffset);
         
+        /*
         GLenum error = glGetError();
         if (error != GL_NO_ERROR) {
             GE_CORE_ERROR("OpenGL error during draw call: {0} (0x{1:x})", error, error);
@@ -87,7 +88,7 @@ namespace Rapture {
             }
             
             return;
-        }
+        }*/
         
 	}
 

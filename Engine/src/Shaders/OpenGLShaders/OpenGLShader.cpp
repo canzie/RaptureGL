@@ -197,13 +197,15 @@ bool OpenGLShader::compile(const std::string& variantName) {
 
 void OpenGLShader::bind()
 {
-	glUseProgram(m_programID);
+    RAPTURE_PROFILE_SCOPE("Shader Bind");
+    glUseProgram(m_programID);
 }
 
 void OpenGLShader::unBind()
-	{
-		glUseProgram(0);
-	}
+{
+    RAPTURE_PROFILE_SCOPE("Shader Unbind");
+    glUseProgram(0);
+}
 
 // deprecated
 void OpenGLShader::setUniformMat4f(const std::string& name, glm::mat4& matrix)

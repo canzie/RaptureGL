@@ -14,6 +14,9 @@
 #include "../../Materials/Material.h"
 #include "../../Debug/Profiler.h"
 
+#include "../../Scenes/Systems/BoundingBoxSystem.h"
+
+
 
 #define DIRNAME "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/build/bin/Debug/assets/models/"
 
@@ -32,10 +35,13 @@ namespace Rapture {
         cleanUp();
     }
 
-    bool glTF2Loader::loadModel(const std::string& filepath, bool isAbsolute)
+    bool glTF2Loader::loadModel(const std::string& filepath, bool isAbsolute, bool calculateBoundingBoxes)
     {
         // Reset state to ensure clean loading
         cleanUp();
+        
+        // Set the bounding box calculation flag
+        m_calculateBoundingBoxes = true;
         
         // Report initial progress
         reportProgress(0.0f);
@@ -404,6 +410,9 @@ namespace Rapture {
         
         // Create buffer layout for interleaved data
         size_t currentOffset = 0;
+        size_t positionOffset = 0;
+        bool foundPosition = false;
+        
         for (size_t i = 0; i < attributeData.size(); i++) {
             const auto& [name, data] = attributeData[i];
             unsigned int accessorIdx = primitive["attributes"][name];
@@ -414,6 +423,12 @@ namespace Rapture {
             
             // For interleaved data, the offset is the relative position within a single vertex
             bufferLayout.buffer_attribs.push_back({name, componentType, type, attrOffsets[i]});
+            
+            // Find position attribute and record its offset
+            if (name == "POSITION") {
+                positionOffset = attrOffsets[i] / sizeof(float);
+                foundPosition = true;
+            }
         }
         
         // Set interleaved flag to true
@@ -442,14 +457,31 @@ namespace Rapture {
             }
         }
         
-        // Upload interleaved data to the GPU
-        //vertexBuffer->setData(interleavedData.data(), interleavedData.size(), 0);
+        // Calculate bounding box from the interleaved vertex data if position data is available
+        BoundingBox localBoundingBox;
+        if (m_calculateBoundingBoxes && foundPosition) {
+            RAPTURE_PROFILE_SCOPE("Calculate Bounding Box");
+            
+            // Calculate bounding box directly from vertex data in RAM
+            size_t floatStride = vertexStride / sizeof(float);
+            localBoundingBox = BoundingBoxSystem::calculateFromVertexData(
+                interleavedData.data(), 
+                totalVertexDataSize, 
+                floatStride, 
+                positionOffset
+            );
+            
+            if (localBoundingBox.isValid()) {
+                GE_CORE_INFO("Calculated bounding box during mesh loading");
+                localBoundingBox.logBounds();
+            }
+        }
         
+        // Process indices if present
         std::vector<unsigned char> indexData;
         unsigned int compType = 0;
         unsigned int indCount = 0;
 
-        // Process indices if present
         if (primitive.contains("indices")) {
             unsigned int indicesIdx = primitive["indices"];
             
@@ -463,16 +495,9 @@ namespace Rapture {
                 // Get index component type
                 compType = m_accessors[indicesIdx]["componentType"];
                 indCount = m_accessors[indicesIdx]["count"];
-                
-                // Create and set index buffer
-                //auto indexBuffer = std::make_shared<IndexBuffer>(indexData.size(), compType, BufferUsage::Static);
-                //indexBuffer->setData(indexData.data(), indexData.size());
-                //vao->setIndexBuffer(indexBuffer);
-                
-                // Set up draw parameters
-                //entity.getComponent<MeshComponent>().mesh->setIndexCount(indCount);
             }
         }
+        
         {
             RAPTURE_PROFILE_SCOPE("Set Mesh Data");
             if (indexData.size() > 0) {
@@ -483,8 +508,6 @@ namespace Rapture {
                     indexData.size(), 
                     indCount, 
                     compType);
-                interleavedData.clear();
-                indexData.clear();
             } else {
                 GE_CORE_ERROR("glTF2Loader: Vertex data only not supported yet");
                 entity.removeComponent<MeshComponent>();
@@ -496,7 +519,6 @@ namespace Rapture {
         if (primitive.contains("material")) {
             unsigned int materialIdx = primitive["material"];
             if (materialIdx < m_materials.size()) {
-                // Check if entity has MaterialComponent
                 if (!entity.hasComponent<MaterialComponent>()) {
                     GE_CORE_WARN("Entity missing MaterialComponent for material index {}", materialIdx);
                 }
@@ -530,7 +552,13 @@ namespace Rapture {
             }
         }
 
-        entity.getComponent<MeshComponent>().isLoading = false;
+        // Mark the mesh as loaded
+        meshComp.isLoading = false;
+        
+        // Add the bounding box component if we calculated one
+        if (m_calculateBoundingBoxes && localBoundingBox.isValid()) {
+            BoundingBoxSystem::addBoundingBoxToEntity(entity, localBoundingBox);
+        }
     }
 
     std::shared_ptr<Material> glTF2Loader::processSpecularGlossinessMaterial(json& materialJSON)

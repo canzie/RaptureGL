@@ -5,6 +5,7 @@
 #include "MaterialInstance.h"
 #include "../Logger/Log.h"
 #include "../Textures/Texture.h"
+#include "../Debug/Profiler.h"
 #include <glad/glad.h>
 
 namespace Rapture
@@ -76,51 +77,61 @@ namespace Rapture
 	void Material::setFloat(const std::string& name, float value)
 	{
 		m_parameters[name] = MaterialParameter::createFloat(value);
+		markDirty();
 	}
 
 	void Material::setInt(const std::string& name, int value)
 	{
 		m_parameters[name] = MaterialParameter::createInt(value);
+		markDirty();
 	}
 
 	void Material::setBool(const std::string& name, bool value)
 	{
 		m_parameters[name] = MaterialParameter::createBool(value);
+		markDirty();
 	}
 
 	void Material::setVec2(const std::string& name, const glm::vec2& value)
 	{
 		m_parameters[name] = MaterialParameter::createVec2(value);
+		markDirty();
 	}
 
 	void Material::setVec3(const std::string& name, const glm::vec3& value)
 	{
 		m_parameters[name] = MaterialParameter::createVec3(value);
+		markDirty();
 	}
 
 	void Material::setVec4(const std::string& name, const glm::vec4& value)
 	{
 		m_parameters[name] = MaterialParameter::createVec4(value);
+		markDirty();
 	}
 
 	void Material::setMat3(const std::string& name, const glm::mat3& value)
 	{
 		m_parameters[name] = MaterialParameter::createMat3(value);
+		markDirty();
 	}
 
 	void Material::setMat4(const std::string& name, const glm::mat4& value)
 	{
 		m_parameters[name] = MaterialParameter::createMat4(value);
+		markDirty();
 	}
 
 	void Material::setTexture(const std::string& name, std::shared_ptr<Texture2D> texture)
 	{
 		m_parameters[name] = MaterialParameter::createTexture(texture);
+		markDirty();
 	}
 
 	void Material::setParameter(const std::string& name, const MaterialParameter& parameter)
 	{
 		m_parameters[name] = parameter;
+		markDirty();
 	}
 
 	bool Material::hasParameter(const std::string& name) const
@@ -141,6 +152,7 @@ namespace Rapture
 
 	void Material::bind()
 	{
+		RAPTURE_PROFILE_SCOPE("Material Bind");
 		if (m_shader)
 		{
             m_shader->bind();
@@ -154,6 +166,7 @@ namespace Rapture
 
 	void Material::unbind()
 	{
+		RAPTURE_PROFILE_SCOPE("Material Unbind");
 		if (m_shader)
 			m_shader->unBind();
 
@@ -219,14 +232,18 @@ namespace Rapture
 		}
 	
 		// Update uniform data from parameters
-		if (hasParameter("baseColor"))
+		if (hasParameter("baseColor") ) {
 			m_uniformData.baseColorFactor = getParameter("baseColor").asVec4();
-		if (hasParameter("roughness")) 
+		}
+		if (hasParameter("roughness") ) {
 			m_uniformData.roughnessFactor = getParameter("roughness").asFloat();
-		if (hasParameter("metallic"))
+		}
+		if (hasParameter("metallic") ) {
 			m_uniformData.metallicFactor = getParameter("metallic").asFloat();
-		if (hasParameter("specular"))
+		}
+		if (hasParameter("specular") ) {
 			m_uniformData.specularFactor = getParameter("specular").asFloat();
+		}
         
 
         // Bind all PBR textures to their respective slots
@@ -313,11 +330,15 @@ namespace Rapture
 		// Explicitly bind UBO to binding point before updating
 		m_uniformBuffer->bindBase(PBR_BINDING_POINT_IDX);
 		
-		// Now update the data
-		m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
-		
-		// Force flush to ensure data is sent to GPU
-		m_uniformBuffer->flush();
+		// Only update the data if the material is dirty
+		if (m_isDirty) {
+			// Now update the data
+			m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
+			// Force flush to ensure data is sent to GPU
+			m_uniformBuffer->flush();
+			// Reset the dirty flag
+			m_isDirty = false;
+		}
 	}
 
     // default constructor
@@ -386,11 +407,15 @@ namespace Rapture
 		// Explicitly bind UBO to binding point before updating
 		m_uniformBuffer->bindBase(PHONG_BINDING_POINT_IDX);
 		
-		// Now update the data
-		m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
-		
-		// Force flush to ensure data is sent to GPU
-		m_uniformBuffer->flush();
+		// Only update the data if the material is dirty
+		if (m_isDirty) {
+			// Now update the data
+			m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
+			// Force flush to ensure data is sent to GPU
+			m_uniformBuffer->flush();
+			// Reset the dirty flag
+			m_isDirty = false;
+		}
 	}
 
 	// default constructor
@@ -441,27 +466,31 @@ namespace Rapture
 			glm::vec3 color = getParameter("color").asVec3();
 			m_uniformData.baseColorFactor = glm::vec4(color, 1.0f);
 		}
-                if (hasParameter("albedoMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("albedoMap").asTexture();
-            if (texture) {
-                texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
-            }
-        }
-        if (hasParameter("normalMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("normalMap").asTexture();
-            if (texture) {
-                texture->bind(static_cast<uint32_t>(TextureActiveSlot::NORMAL));
-            }
-        }
+		if (hasParameter("albedoMap")) {
+			std::shared_ptr<Texture2D> texture = getParameter("albedoMap").asTexture();
+			if (texture) {
+				texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
+			}
+		}
+		if (hasParameter("normalMap")) {
+			std::shared_ptr<Texture2D> texture = getParameter("normalMap").asTexture();
+			if (texture) {
+				texture->bind(static_cast<uint32_t>(TextureActiveSlot::NORMAL));
+			}
+		}
 		
 		// Explicitly bind UBO to binding point before updating
 		m_uniformBuffer->bindBase(SOLID_BINDING_POINT_IDX);
 		
-		// Now update the data
-		m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
-		
-		// Force flush to ensure data is sent to GPU
-		m_uniformBuffer->flush();
+		// Only update the data if the material is dirty
+		if (m_isDirty) {
+			// Now update the data
+			m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
+			// Force flush to ensure data is sent to GPU
+			m_uniformBuffer->flush();
+			// Reset the dirty flag
+			m_isDirty = false;
+		}
 	}
 
     // Default constructor for SpecularGlossinessMaterial
@@ -597,10 +626,14 @@ namespace Rapture
         // Explicitly bind UBO to binding point before updating
         m_uniformBuffer->bindBase(SPECULAR_GLOSSINESS_BINDING_POINT_IDX);
         
-        // Now update the data
-        m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
-        
-        // Force flush to ensure data is sent to GPU
-        m_uniformBuffer->flush();
+        // Only update the data if the material is dirty
+        if (m_isDirty) {
+            // Now update the data
+            m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
+            // Force flush to ensure data is sent to GPU
+            m_uniformBuffer->flush();
+            // Reset the dirty flag
+            m_isDirty = false;
+        }
     }
 }

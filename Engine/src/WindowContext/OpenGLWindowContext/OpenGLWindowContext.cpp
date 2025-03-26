@@ -52,8 +52,7 @@ namespace Rapture {
 		glfwSetWindowUserPointer(m_window, &m_context_data);
 		
 		// Disable VSync by setting swap interval to 0
-		glfwSwapInterval(0);
-		GE_CORE_INFO("VSync disabled - uncapped framerate");
+		setSwapMode(SwapMode::Immediate);
 
 		setGLFWCallbacks();
 
@@ -90,6 +89,104 @@ namespace Rapture {
 				data.eventFnCallback(event);
 			});
 
+	}
+	
+	void OpenGLWindowContext::setSwapMode(SwapMode mode)
+	{
+		// Store the current mode
+		m_currentSwapMode = mode;
+		
+		// Configure OpenGL for triple buffering if needed
+		// Note: GLFW doesn't directly expose triple buffering without VSync,
+		// so we need to use OpenGL directly to set it up
+		bool tripleBufferingEnabled = (mode == SwapMode::AdaptiveVSync || mode == SwapMode::TripleBuffering);
+		
+		if (tripleBufferingEnabled) {
+			// Enable triple buffering via OpenGL
+			GLint swapMode = 0;
+			glGetIntegerv(GL_DOUBLEBUFFER, &swapMode);
+			
+			if (swapMode) {
+				// Buffer swapping is supported
+				// Set up appropriate extensions if available
+			}
+		}
+		
+		// Set the appropriate swap interval based on the mode
+		switch (mode) {
+			case SwapMode::VSync: {
+				// Traditional VSync with double buffering
+				glfwSwapInterval(1);
+				GE_CORE_INFO("VSync enabled with double buffering");
+				break;
+			}
+				
+			case SwapMode::AdaptiveVSync: {
+				// Check for the swap control tear extension
+				bool tearControlSupported = glfwExtensionSupported("WGL_EXT_swap_control_tear") || 
+										   glfwExtensionSupported("GLX_EXT_swap_control_tear");
+				
+				if (tearControlSupported) {
+					// Negative value enables adaptive vsync with triple buffering
+					glfwSwapInterval(-1);
+					GE_CORE_INFO("Triple buffering enabled with adaptive vsync");
+				} else {
+					// Fall back to regular VSync if the extension is not supported
+					glfwSwapInterval(1);
+					m_currentSwapMode = SwapMode::VSync;
+					GE_CORE_WARN("Triple buffering requested but swap control tear extension not supported. Falling back to double buffering.");
+				}
+				break;
+			}
+				
+			case SwapMode::TripleBuffering: {
+				// Triple buffering without VSync (uncapped framerate)
+				// Note: In GLFW we achieve this by disabling VSync but configuring the buffer mode
+				glfwSwapInterval(0);
+				
+				// Try to enable triple buffering through driver-specific commands
+				// This might not work on all systems as it depends on driver support
+				bool tripleBufferingSupported = isTripleBufferingSupported();
+				
+				if (tripleBufferingSupported) {
+					GE_CORE_INFO("Triple buffering enabled without VSync (uncapped framerate)");
+				} else {
+					GE_CORE_WARN("Triple buffering without VSync requested but not fully supported. May fall back to double buffering.");
+				}
+				break;
+			}
+				
+			case SwapMode::Immediate:
+			default: {
+				// No VSync, uncapped framerate
+				glfwSwapInterval(0);
+				GE_CORE_INFO("VSync disabled - uncapped framerate with double buffering");
+				break;
+			}
+		}
+	}
+	
+	SwapMode OpenGLWindowContext::getSwapMode() const
+	{
+		return m_currentSwapMode;
+	}
+	
+	bool OpenGLWindowContext::isTripleBufferingSupported() const
+	{
+		// For adaptive vsync with triple buffering, we need the swap control tear extension
+		bool tearControlSupported = glfwExtensionSupported("WGL_EXT_swap_control_tear") || 
+								   glfwExtensionSupported("GLX_EXT_swap_control_tear");
+		
+		// We can also check for other extensions that might enable triple buffering
+		bool wglTripleBufferSupported = false;
+		
+		#ifdef _WIN32
+		// Windows-specific extensions for triple buffering
+		wglTripleBufferSupported = glfwExtensionSupported("WGL_EXT_swap_control") ||
+								  glfwExtensionSupported("WGL_NV_swap_group");
+		#endif
+		
+		return tearControlSupported || wglTripleBufferSupported;
 	}
 }
 

@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <functional>
 
 #include <glm/glm.hpp>
 #include "json.hpp"
@@ -43,9 +44,10 @@ namespace Rapture
 		 * @brief Load a model from a glTF file and populate the scene with entities
 		 * 
 		 * @param filepath Path to the .gltf file
+		 * @param calculateBoundingBoxes If true, bounding boxes will be calculated for all primitives
 		 * @return true if loading was successful, false otherwise
 		 */
-		bool loadModel(const std::string& filepath, bool isAbsolute=false);
+		bool loadModel(const std::string& filepath, bool isAbsolute=false, bool calculateBoundingBoxes = false);
 
 	private:
 		/**
@@ -145,6 +147,9 @@ namespace Rapture
 		json m_textures;
 		json m_images;
 		json m_samplers;
+
+		bool m_calculateBoundingBoxes = false;
+
 
 		// Raw binary data from the .bin file
 		std::vector<unsigned char> m_binVec;

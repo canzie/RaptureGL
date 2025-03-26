@@ -7,6 +7,13 @@
 
 namespace Rapture {
 
+	// Buffer swap mode enumeration
+	enum class SwapMode {
+		Immediate,        // No VSync, uncapped framerate (double buffering)
+		VSync,            // Traditional VSync with double buffering
+		AdaptiveVSync,    // Adaptive VSync with triple buffering (if supported)
+		TripleBuffering   // Triple buffering without VSync (uncapped framerate)
+	};
 
 	class WindowContext {
 
@@ -24,6 +31,11 @@ namespace Rapture {
 		}
 
 		virtual void* getNativeWindowContext() = 0;
+		
+		// Buffer swap control functions (implemented by derived classes)
+		virtual void setSwapMode(SwapMode mode) {}
+		virtual SwapMode getSwapMode() const { return static_cast<SwapMode>(0); } // Default implementation
+		virtual bool isTripleBufferingSupported() const { return false; }
 
 		static WindowContext* createWindow();
 

@@ -2,11 +2,11 @@
 #include "Logger/Log.h"
 
 
-void EntityBrowserPanel::render(TestLayer* testLayer) {
+void EntityBrowserPanel::render(Rapture::Scene* scene, EntitySelectionCallback callback) {
     ImGui::Begin("Entity Browser");
-    
-    if (testLayer) {
-        auto& registry = testLayer->getActiveScene()->getRegistry();
+    m_entitySelectionCallback = callback;
+    if (scene) {
+        auto& registry = scene->getRegistry();
         
         // Get all entities with tag components
         auto view = registry.view<Rapture::TagComponent>();
@@ -15,20 +15,25 @@ void EntityBrowserPanel::render(TestLayer* testLayer) {
         ImGui::Text("Total Entities: %d", static_cast<int>(view.size()));
         ImGui::Separator();
         
-        // Create collections for different entity types
-        std::vector<entt::entity> independentEntities; // Entities without EntityNodeComponent
-        std::vector<entt::entity> rootEntities;        // Root entities with EntityNodeComponent
+        // Set to keep track of processed entities to avoid duplicates
+        std::unordered_set<entt::entity> processedEntities;
         
-        // First pass: collect all entity nodes
+        // Collections for different entity types
+        std::vector<entt::entity> rootEntities;        // Root entities (no parent)
+        std::vector<entt::entity> independentEntities; // Entities without EntityNodeComponent
+        
+        // First scan: collect all entities and find roots
         for (auto entityHandle : view) {
-            Rapture::Entity entity(entityHandle, testLayer->getActiveScene().get());
+            Rapture::Entity entity(entityHandle, scene);
             
             if (entity.hasComponent<Rapture::EntityNodeComponent>()) {
-                auto& nodeComp = entity.getComponent<Rapture::EntityNodeComponent>();
+                // For entities with EntityNodeComponent, trace up to find the root
+                entt::entity rootHandle = findRootEntity(entityHandle, scene);
                 
-                // If this entity has no parent, it's a root entity
-                if (!nodeComp.entity_node->getParent()) {
-                    rootEntities.push_back(entityHandle);
+                // Add root to our list if not already added
+                if (scene->getRegistry().valid(rootHandle) && processedEntities.find(rootHandle) == processedEntities.end()) {
+                    rootEntities.push_back(rootHandle);
+                    processedEntities.insert(rootHandle);
                 }
             } else {
                 // Entities without EntityNodeComponent are independent
@@ -42,22 +47,28 @@ void EntityBrowserPanel::render(TestLayer* testLayer) {
                 ImGui::Indent(10.0f);
                 
                 for (auto entityHandle : independentEntities) {
-                    Rapture::Entity entity(entityHandle, testLayer->getActiveScene().get());
+                    Rapture::Entity entity(entityHandle, scene);
                     std::string entityName = entity.hasComponent<Rapture::TagComponent>() ? 
                         entity.getComponent<Rapture::TagComponent>().tag : 
                         std::to_string((uint32_t)entityHandle);
                         
                     // Display as a selectable item with highlighting for the selected entity
-                    bool isSelected = (_selectedEntity == entityHandle);
+                    bool isSelected = (m_selectedEntity.m_EntityHandle == entityHandle);
                     if (ImGui::Selectable(entityName.c_str(), isSelected)) {
-                        _selectedEntity = entityHandle;
+                        m_selectedEntity = entity;
+                        if (m_entitySelectionCallback) {
+                            m_entitySelectionCallback(m_selectedEntity);
+                        }
                         Rapture::GE_INFO("Selected entity: {}", entityName);
                     }
                     
                     // Context menu for actions
                     if (ImGui::BeginPopupContextItem()) {
                         if (ImGui::MenuItem("Properties")) {
-                            _selectedEntity = entityHandle;
+                            m_selectedEntity = entity;
+                            if (m_entitySelectionCallback) {
+                                m_entitySelectionCallback(m_selectedEntity);
+                            }
                         }
                         ImGui::EndPopup();
                     }
@@ -70,14 +81,13 @@ void EntityBrowserPanel::render(TestLayer* testLayer) {
         // Section 2: Entity Hierarchies
         if (!rootEntities.empty()) {
             if (ImGui::CollapsingHeader("Entity Hierarchies", ImGuiTreeNodeFlags_DefaultOpen)) {
-                ImGui::Indent(10.0f);
+                // Create a fresh set for tracking displayed entities within the hierarchy
+                std::unordered_set<entt::entity> displayedEntities;
                 
                 // Display each root entity and its hierarchy
                 for (auto rootEntity : rootEntities) {
-                    displayEntityHierarchy(rootEntity, 0, testLayer->getActiveScene().get());
+                    displayEntityHierarchy(rootEntity, 0, scene, displayedEntities);
                 }
-                
-                ImGui::Unindent(10.0f);
             }
         }
     } else {
@@ -87,16 +97,72 @@ void EntityBrowserPanel::render(TestLayer* testLayer) {
     ImGui::End();
 }
 
-void EntityBrowserPanel::displayEntityHierarchy(entt::entity entityHandle, int depth, Rapture::Scene* scene) {
+// Helper method to find the root entity by traversing up the hierarchy
+entt::entity EntityBrowserPanel::findRootEntity(entt::entity entityHandle, Rapture::Scene* scene) {
     Rapture::Entity entity(entityHandle, scene);
     
-    // Get the entity's name from TagComponent
-    std::string entityName = entity.hasComponent<Rapture::TagComponent>() ? 
-        entity.getComponent<Rapture::TagComponent>().tag : 
-        std::to_string((uint32_t)entityHandle);
+    // If entity doesn't have a node component, it's not part of a hierarchy
+    if (!entity.hasComponent<Rapture::EntityNodeComponent>()) {
+        return entt::null;
+    }
     
-    // Indentation based on depth
-    ImGui::Indent(depth * 20.0f);
+    // Get the entity node component
+    auto& nodeComp = entity.getComponent<Rapture::EntityNodeComponent>();
+    
+    // If no parent, this is a root
+    if (!nodeComp.entity_node->getParent()) {
+        return entityHandle;
+    }
+    
+    // Otherwise, recursively find the parent's root
+    auto parentNode = nodeComp.entity_node->getParent();
+    if (!parentNode) {
+        return entityHandle; // Safeguard against inconsistent state
+    }
+    
+    auto parentEntity = parentNode->getEntity();
+    if (!parentEntity) {
+        return entityHandle; // Another safeguard against corrupted hierarchy
+    }
+    
+    // Recursive call to find the ultimate root
+    return findRootEntity(parentEntity->m_EntityHandle, scene);
+}
+
+void EntityBrowserPanel::displayEntityHierarchy(entt::entity entityHandle, int depth, Rapture::Scene* scene, 
+                                              std::unordered_set<entt::entity>& displayedEntities) {
+    // Skip if already displayed to avoid cycles and duplicates
+    if (displayedEntities.find(entityHandle) != displayedEntities.end()) {
+        return;
+    }
+    
+    // Validate entity exists in registry
+    if (!scene->getRegistry().valid(entityHandle)) {
+        Rapture::GE_WARN("Invalid entity handle encountered in hierarchy: {}", (uint32_t)entityHandle);
+        return;
+    }
+    
+    // Mark as displayed
+    displayedEntities.insert(entityHandle);
+    
+    Rapture::Entity entity(entityHandle, scene);
+    
+    // Validate entity has required components
+    if (!entity.hasComponent<Rapture::TagComponent>()) {
+        Rapture::GE_WARN("Entity missing TagComponent: {}", (uint32_t)entityHandle);
+        return;
+    }
+    
+    // Get the entity's name from TagComponent
+    std::string entityName = entity.getComponent<Rapture::TagComponent>().tag;
+    
+    // Base indentation for all entities (including root)
+    ImGui::Indent(10.0f);
+    
+    // Additional indentation based on depth for non-root entities
+    if (depth > 0) {
+        ImGui::Indent(depth * 20.0f);
+    }
     
     // Check if entity has children for tree node display
     bool hasChildren = false;
@@ -104,13 +170,29 @@ void EntityBrowserPanel::displayEntityHierarchy(entt::entity entityHandle, int d
     
     if (entity.hasComponent<Rapture::EntityNodeComponent>()) {
         auto& nodeComp = entity.getComponent<Rapture::EntityNodeComponent>();
+        
+        // Validate node component
+        if (!nodeComp.entity_node) {
+            Rapture::GE_WARN("Invalid EntityNodeComponent for entity: {}", entityName);
+            return;
+        }
+        
         auto children = nodeComp.entity_node->getChildren();
         hasChildren = !children.empty();
         
-        // Collect child entity handles
+        // Collect child entity handles with validation
         for (auto& child : children) {
+            if (!child) {
+                Rapture::GE_WARN("Invalid child node in entity: {}", entityName);
+                continue;
+            }
+            
             if (auto childEntity = child->getEntity()) {
-                childrenHandles.push_back(childEntity->m_EntityHandle);
+                if (scene->getRegistry().valid(childEntity->m_EntityHandle)) {
+                    childrenHandles.push_back(childEntity->m_EntityHandle);
+                } else {
+                    Rapture::GE_WARN("Invalid child entity handle in entity: {}", entityName);
+                }
             }
         }
     }
@@ -121,7 +203,7 @@ void EntityBrowserPanel::displayEntityHierarchy(entt::entity entityHandle, int d
         flags |= ImGuiTreeNodeFlags_Leaf; // No arrow for leaf nodes
     
     // Add selected flag if this entity is currently selected
-    if (_selectedEntity == entityHandle)
+    if (m_selectedEntity.m_EntityHandle == entityHandle)
         flags |= ImGuiTreeNodeFlags_Selected;
     
     // Display tree node for this entity
@@ -129,51 +211,51 @@ void EntityBrowserPanel::displayEntityHierarchy(entt::entity entityHandle, int d
     
     // Handle selection when clicked
     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-        _selectedEntity = entityHandle;
-        Rapture::GE_INFO("Selected entity: {}", entityName);
+        // Validate entity before selection
+        if (scene->getRegistry().valid(entityHandle) && 
+            entity.hasComponent<Rapture::TagComponent>() && 
+            entity.hasComponent<Rapture::EntityNodeComponent>()) {
+            m_selectedEntity = entity;
+            if (m_entitySelectionCallback) {
+                m_entitySelectionCallback(m_selectedEntity);
+            }
+            Rapture::GE_INFO("Selected entity: {}", entityName);
+        } else {
+            Rapture::GE_WARN("Attempted to select invalid entity: {}", entityName);
+        }
     }
     
     // Handle right-click menu
     if (ImGui::BeginPopupContextItem()) {
         if (ImGui::MenuItem("Properties")) {
-            _selectedEntity = entityHandle;
+            // Validate entity before selection
+            if (scene->getRegistry().valid(entityHandle) && 
+                entity.hasComponent<Rapture::TagComponent>() && 
+                entity.hasComponent<Rapture::EntityNodeComponent>()) {
+                m_selectedEntity = entity;
+                if (m_entitySelectionCallback) {
+                    m_entitySelectionCallback(m_selectedEntity);
+                }
+            } else {
+                Rapture::GE_WARN("Attempted to show properties for invalid entity: {}", entityName);
+            }
         }
         ImGui::EndPopup();
     }
     
-    // Display entity details if node is open
+    // Display children if node is open
     if (nodeOpen) {
-        // List components
-        if (ImGui::TreeNode("Components")) {
-            // Check for and list common components
-            if (entity.hasComponent<Rapture::TransformComponent>())
-                ImGui::BulletText("TransformComponent");
-            
-            if (entity.hasComponent<Rapture::MeshComponent>())
-                ImGui::BulletText("MeshComponent");
-            
-            if (entity.hasComponent<Rapture::MaterialComponent>()) {
-                auto& material = entity.getComponent<Rapture::MaterialComponent>();
-                ImGui::BulletText("MaterialComponent (%s)", material.materialName.c_str());
-            }
-            
-            if (entity.hasComponent<Rapture::CameraControllerComponent>())
-                ImGui::BulletText("CameraControllerComponent");
-            
-            if (entity.hasComponent<Rapture::EntityNodeComponent>())
-                ImGui::BulletText("EntityNodeComponent");
-            
-            ImGui::TreePop();
-        }
-        
-        // Display children recursively
+        // Process and display children recursively
         for (auto childHandle : childrenHandles) {
-            displayEntityHierarchy(childHandle, depth + 1, scene); // Increment depth for proper indentation
+            displayEntityHierarchy(childHandle, depth + 1, scene, displayedEntities);
         }
         
         ImGui::TreePop();
     }
     
     // Reset indentation
-    ImGui::Indent(-depth * 20.0f);
+    if (depth > 0) {
+        ImGui::Unindent(depth * 20.0f);
+    }
+    ImGui::Unindent(10.0f);
 }

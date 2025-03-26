@@ -8,6 +8,7 @@
 #include "../../Camera/PerspectiveCamera.h"
 #include "../../Scenes/EntityNode.h"
 #include "Transforms.h"
+#include "BoundingBox.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -93,7 +94,9 @@ namespace Rapture {
 		}
 
 	};
-
+    
+    // Note: BoundingBoxComponent is now defined in BoundingBox.h
+    
 	struct MaterialComponent
 	{
 		std::shared_ptr<Material> material;
@@ -150,19 +153,19 @@ namespace Rapture {
 		// Methods to modify material properties after creation
 		
 		// Set base color (works for both PBR and Solid materials)
-		void setBaseColor(const glm::vec3& color)
+		void setBaseColor(const glm::vec4& color)
 		{
 			if (material)
 			{
 				// For PBR materials, the parameter name is typically "baseColor"
 				if (material->getType() == MaterialType::PBR)
 				{
-					material->setVec3("baseColor", color);
+					material->setVec4("baseColor", color);
 				}
 				// For solid materials, it might be called "color"
 				else if (material->getType() == MaterialType::SOLID)
 				{
-					material->setVec3("color", color);
+					material->setVec4("color", color);
 				}
 			}
 		}
@@ -199,7 +202,7 @@ namespace Rapture {
 		{
 			if (material && material->getType() == MaterialType::PBR)
 			{
-				material->setVec3("baseColor", baseColor);
+				material->setVec4("baseColor", glm::vec4(baseColor, 1.0f));
 				material->setFloat("roughness", roughness);
 				material->setFloat("metallic", metallic);
 				material->setFloat("specular", specular);
@@ -213,11 +216,11 @@ namespace Rapture {
 			{
 				if (material->getType() == MaterialType::PBR && material->hasParameter("baseColor"))
 				{
-					return material->getParameter("baseColor").asVec3();
+					return glm::vec3(material->getParameter("baseColor").asVec4());
 				}
 				else if (material->getType() == MaterialType::SOLID && material->hasParameter("color"))
 				{
-					return material->getParameter("color").asVec3();
+					return glm::vec3(material->getParameter("color").asVec4());
 				}
 			}
 			return glm::vec3(0.0f);

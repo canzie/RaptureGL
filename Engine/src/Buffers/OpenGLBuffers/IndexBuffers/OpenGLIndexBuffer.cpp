@@ -2,6 +2,7 @@
 #include "glad/glad.h"
 #include "../../../logger/Log.h"
 #include "../../BufferConversionHelpers.h"
+#include "../../../Debug/Profiler.h"
 
 namespace Rapture {
 
@@ -55,10 +56,12 @@ namespace Rapture {
 	}
 
 	void IndexBuffer::bind() {
+		RAPTURE_PROFILE_SCOPE("IndexBuffer Bind");
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_rendererId);
 	}
 
 	void IndexBuffer::unbind() {
+		RAPTURE_PROFILE_SCOPE("IndexBuffer Unbind");
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	}
 

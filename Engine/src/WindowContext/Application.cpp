@@ -17,17 +17,21 @@ namespace Rapture {
 
 	Application::Application()
 	{
-		// Initialize profiler before any other operations
-		Profiler::init();
-		GPUProfiler::init();
-		
 
-        TextureLibrary::init(4);
 
 		// creates openGL windows context, change it so its dynamic
 		m_window = std::unique_ptr<WindowContext>(WindowContext::createWindow());
 		m_window->setWindowEventCallback(std::bind(&Application::onEvent, this, std::placeholders::_1));
 		s_instance = this;
+
+		// Initialize profiler before any other operations
+		Profiler::init();
+		GPUProfiler::init();
+
+        TextureLibrary::init(4);
+	    Rapture::MaterialLibrary::init();
+
+
         BufferPoolManager::init();
 		Renderer::init();
 	}
@@ -55,6 +59,7 @@ namespace Rapture {
 			Profiler::beginFrame();
 			GPUProfiler::beginFrame();
 			
+            
             TextureLibrary::processLoadingQueue();
 
 

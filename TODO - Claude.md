@@ -238,10 +238,10 @@ A robust mesh system should use a hierarchical structure with support for instan
 
 
 
-- improved buffer management trough 16-64mb pre-allocated buffers
+- bounding box calculations and rendering
+- deffered renderer
 - instanced meshes
 - particle system
-- deffered renderer
 - mouse picking
 - Physics
 - Audio

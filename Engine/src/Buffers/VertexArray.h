@@ -10,15 +10,6 @@
 namespace Rapture {
 
 
-
-    struct BufferLayoutElement {
-        std::string name;          // Name of the element (e.g., "POSITION", "NORMAL", "TEXCOORD")
-        unsigned int componentType; // Data type (GL_FLOAT, GL_INT, etc.)
-        std::string type;          // Component structure (SCALAR, VEC2, VEC3, VEC4, etc.)
-        unsigned int stride;       // Bytes between consecutive vertices
-        size_t offset;             // Byte offset within the vertex
-    };
-
 	struct BufferAttribute
 	{
 		std::string name;

@@ -26,7 +26,6 @@ void TestLayer::onAttach()
     m_framebuffer = Rapture::Framebuffer::create(fbSpec);
 
     // Initialize the material library
-	Rapture::MaterialLibrary::init();
 	//Rapture::TextureLibrary::init();
     
     Rapture::TextureLibrary::add("albedoMap", Rapture::TextureLibrary::load("./assets/models/adamHead/Assets/Models/PBR/Adam/Textures/Adam_Head_a.jpg"));
@@ -47,9 +46,10 @@ void TestLayer::onAttach()
     
 	//loader.loadModel("sphere.gltf");
     
-    loader.loadModel("Sponza/glTF/Sponza.gltf");
+    //loader.loadModel("Sponza/glTF/Sponza.gltf");
 
 	//loader.loadModel("sphere.gltf");
+	//loader.loadModel("donut.gltf");
 
 	// Add a custom red material to the cube
 	// Create a bright red metal material (1,0,0 for RGB red, 0.2 roughness, 0.8 metallic)

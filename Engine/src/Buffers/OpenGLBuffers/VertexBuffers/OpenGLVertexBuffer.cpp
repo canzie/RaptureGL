@@ -1,8 +1,8 @@
-	
 #include "OpenGLVertexBuffer.h"
 #include "glad/glad.h"
 #include "../../../logger/Log.h"
 #include "../../BufferConversionHelpers.h"
+#include "../../../Debug/Profiler.h"
 
 namespace Rapture {
 
@@ -47,10 +47,12 @@ namespace Rapture {
 	}
 
 	void VertexBuffer::bind() {
+		RAPTURE_PROFILE_SCOPE("VertexBuffer Bind");
 		glBindBuffer(GL_ARRAY_BUFFER, m_rendererId);
 	}
 
 	void VertexBuffer::unbind() {
+		RAPTURE_PROFILE_SCOPE("VertexBuffer Unbind");
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 

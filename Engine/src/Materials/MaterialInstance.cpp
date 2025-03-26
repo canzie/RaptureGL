@@ -29,51 +29,61 @@ MaterialInstance::MaterialInstance(const std::shared_ptr<Material>& material, co
 void MaterialInstance::setFloat(const std::string& name, float value)
 {
     m_parameterOverrides[name] = MaterialParameter::createFloat(value);
+    if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
 void MaterialInstance::setInt(const std::string& name, int value)
 {
     m_parameterOverrides[name] = MaterialParameter::createInt(value);
+    if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
 void MaterialInstance::setBool(const std::string& name, bool value)
 {
     m_parameterOverrides[name] = MaterialParameter::createBool(value);
+    if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
 void MaterialInstance::setVec2(const std::string& name, const glm::vec2& value)
 {
     m_parameterOverrides[name] = MaterialParameter::createVec2(value);
+    if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
 void MaterialInstance::setVec3(const std::string& name, const glm::vec3& value)
 {
     m_parameterOverrides[name] = MaterialParameter::createVec3(value);
+    if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
 void MaterialInstance::setVec4(const std::string& name, const glm::vec4& value)
 {
     m_parameterOverrides[name] = MaterialParameter::createVec4(value);
+    if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
 void MaterialInstance::setMat3(const std::string& name, const glm::mat3& value)
 {
     m_parameterOverrides[name] = MaterialParameter::createMat3(value);
+    if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
 void MaterialInstance::setMat4(const std::string& name, const glm::mat4& value)
 {
     m_parameterOverrides[name] = MaterialParameter::createMat4(value);
+    if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
 void MaterialInstance::setTexture(const std::string& name, std::shared_ptr<Texture2D> texture)
 {
     m_parameterOverrides[name] = MaterialParameter::createTexture(texture);
+    if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
 void MaterialInstance::setParameter(const std::string& name, const MaterialParameter& parameter)
 {
     m_parameterOverrides[name] = parameter;
+    if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
 bool MaterialInstance::hasParameterOverride(const std::string& name) const
@@ -96,6 +106,7 @@ void MaterialInstance::clearParameterOverride(const std::string& name)
     auto it = m_parameterOverrides.find(name);
     if (it != m_parameterOverrides.end()) {
         m_parameterOverrides.erase(it);
+        if (m_baseMaterial) m_baseMaterial->markAsDirty();
     }
 }
 
@@ -124,11 +135,14 @@ void MaterialInstance::bind()
         // Explicitly bind to the right binding point
         m_uniformBuffer->bindBase(bindingPoint);
 
-        // Update the buffer with our overrides
-        updateUniformBufferFromOverrides();
-        
-        // Ensure changes are flushed to GPU
-        m_uniformBuffer->flush();
+        // Only update if parameters have changed
+        if (m_baseMaterial->isDirty() || !m_parameterOverrides.empty()) {
+            // Update the buffer with our overrides
+            updateUniformBufferFromOverrides();
+            
+            // Ensure changes are flushed to GPU
+            m_uniformBuffer->flush();
+        }
     }
     else {
         // If we don't have our own UBO, bind the base material's data
@@ -185,6 +199,11 @@ void MaterialInstance::unbind()
 void MaterialInstance::updateUniformBufferFromOverrides()
 {
     if (!m_uniformBuffer || !m_baseMaterial) {
+        return;
+    }
+    
+    // If the material isn't marked as dirty, we can skip the update
+    if (!m_baseMaterial->isDirty()) {
         return;
     }
     
@@ -252,6 +271,11 @@ void MaterialInstance::updateUniformBufferFromOverrides()
         default: {
             
         }
+    }
+    
+    // Reset the dirty flag after the update
+    if (m_baseMaterial) {
+        const_cast<Material*>(m_baseMaterial.get())->markAsDirty(); // This will reset in bindData()
     }
 }
 } // namespace Rapture 

@@ -1,6 +1,7 @@
 #include "VertexArray.h"
 #include "glad/glad.h"
 #include "../logger/Log.h"
+#include "../Debug/Profiler.h"
 
 namespace Rapture {
 
@@ -31,6 +32,7 @@ namespace Rapture {
 	
 	void VertexArray::bind() const
 	{
+		RAPTURE_PROFILE_SCOPE("VAO Bind");
 		glBindVertexArray(m_rendererId);
 		// When using DSA, we don't need to explicitly bind buffers here
 		if (!GLCapabilities::hasDSA()) {
@@ -43,6 +45,7 @@ namespace Rapture {
 
 	void VertexArray::unbind() const
 	{
+		RAPTURE_PROFILE_SCOPE("VAO Unbind");
 		glBindVertexArray(0);
 	}
 

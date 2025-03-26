@@ -83,6 +83,10 @@ class Material : public std::enable_shared_from_this<Material> {
         // Derived classes need to implement this to upload specific uniform data
         virtual void bindData() = 0;
 
+        // Public method to force a material data update on next bind
+        void markAsDirty() { m_isDirty = true; }
+        bool isDirty() const { return m_isDirty; }
+
     protected:
         std::string m_name;
         MaterialType m_type;
@@ -90,6 +94,10 @@ class Material : public std::enable_shared_from_this<Material> {
         std::shared_ptr<UniformBuffer> m_uniformBuffer = nullptr;
         char m_renderFlags = 0;
         MaterialParameterMap m_parameters;
+        bool m_isDirty = true;
+        
+        void markDirty() { m_isDirty = true; }
+
 };
 
 // Existing material classes

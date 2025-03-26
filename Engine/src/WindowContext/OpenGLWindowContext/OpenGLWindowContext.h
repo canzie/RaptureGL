@@ -1,3 +1,5 @@
+#pragma once
+
 #include "../WindowContext.h"
 
 #include <glad/glad.h>
@@ -17,6 +19,11 @@ namespace Rapture {
 		virtual void onUpdate(void) override;
 
 		virtual void* getNativeWindowContext() override { return m_window; };
+		
+		// Swap mode control functions
+		void setSwapMode(SwapMode mode) override;
+		SwapMode getSwapMode() const override;
+		bool isTripleBufferingSupported() const override;
 
 
 	private:
@@ -24,6 +31,7 @@ namespace Rapture {
 
 	private:
 		GLFWwindow* m_window;
+		SwapMode m_currentSwapMode = SwapMode::Immediate;
 
 
 	};

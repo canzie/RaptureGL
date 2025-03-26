@@ -1,78 +1,83 @@
 # LiDAR Game
 
-## External Libraries Setup
+A modern 3D game engine built with C++ and OpenGL.
 
-This project uses several external libraries for OpenGL rendering and other functionality. All libraries are configured in the Engine/vendor directory.
 
-### Setting up the Vendor Directory
 
-The project expects the following directory structure:
+### Rendering
+- PBR (Physically Based Rendering) with support for:
+  - Metallic-roughness workflow
+  - Specular-glossiness workflow
+  - Full PBR texture maps (albedo, normal, metallic, roughness, AO, emissive)
+- Material instance system with runtime parameter overrides
+- Efficient material library with serialization support
 
+### Scene Management
+- Flexible entity hierarchy system for complex scenes
+- Efficient bounding box system for collision detection
+- Smart scene serialization
+
+### Asset Pipeline
+- Efficient mesh loading with support for glTF
+- Multi-threaded asset loading
+- Material library with instance management
+- Advanced texture management with automatic resource pooling
+- Buffer pool management for optimal memory usage
+
+## TODO's
+
+### High Priority
+- [ ] Deferred rendering pipeline
+- [ ] Instanced mesh rendering for large scenes
+- [ ] Advanced particle system with GPU acceleration
+- [ ] Mouse picking system for editor interaction
+- [ ] Post-processing pipeline
+
+### Future Plans
+- [ ] Physics engine integration
+- [ ] Audio system
+- [ ] Advanced serialization system
+- [ ] Scripting system for runtime behavior
+- [ ] Resource streaming system
+
+## Getting Started
+
+### Requirements
+- C++17/20 compiler
+- CMake 3.15+
+- OpenGL 4.6 Core Profile
+- External libraries (see below)
+
+### Dependencies
+We use some great open-source libraries:
+- GLFW for window management
+- GLAD for OpenGL loading
+- GLM for math
+- ImGui for UI
+- EnTT for ECS
+- spdlog for logging
+- stb_image for image loading
+- YAML for serialization
+
+### Building
+```bash
+# Build
+mkdir build && cd build
+cmake ..
+cmake --build .
 ```
-Engine/
-  vendor/
-    GLFW/
-      include/
-        GLFW/
-          glfw3.h
-          glfw3native.h
-      lib/
-        glfw3.lib (static library) 
-        # or alternatively:
-        # glfw3dll.lib (dynamic library)
-      bin/ (only needed if using dynamic library)
-        glfw3.dll
-    glad/
-      include/
-        glad/
-          glad.h
-        KHR/
-          khrplatform.h
-      src/
-        glad.c
-    glm/
-      glm/
-        glm.hpp
-        # other GLM headers
-    imgui/
-      # ImGui source files
-      backends/
-        imgui_impl_opengl3.cpp
-        imgui_impl_glfw.cpp
-    entt/
-      include/
-        entt/
-          entt.hpp
-    spdlog/
-      include/
-        spdlog/
-          spdlog.h
-    stb_image/
-      stb_image.h
-```
-
-### Obtaining External Libraries
-
-1. **GLFW**: Download from [the official website](https://www.glfw.org/download.html)
-2. **GLAD**: Generate from [the GLAD web service](https://glad.dav1d.de/) (OpenGL 4.6 Core profile)
-3. **GLM**: Download from [GitHub](https://github.com/g-truc/glm)
-4. **ImGui**: Download from [GitHub](https://github.com/ocornut/imgui)
-5. **EnTT**: Download from [GitHub](https://github.com/skypjack/entt)
-6. **spdlog**: Download from [GitHub](https://github.com/gabime/spdlog)
-7. **stb_image**: Download from [GitHub](https://github.com/nothings/stb)
-
-### Building with CMake
-
-Once the vendor directories are set up correctly:
-
-1. Create a build directory: `mkdir build && cd build`
-2. Configure the project: `cmake ..`
-3. Build the project: `cmake --build .`
 
 ## Project Structure
-
-- `Engine/`: Core engine code
-  - `src/`: Engine source files
-  - `vendor/`: External dependencies
-- `Editor/`: Editor application code
-- `build/`: Build output directory
+```
+Engine/
+  ├── src/
+  │   ├── Buffers/        # Advanced buffer management
+  │   ├── Camera/         # Camera system
+  │   ├── Materials/      # PBR material system
+  │   ├── Mesh/          # Mesh loading
+  │   ├── Renderer/      # Core rendering
+  │   ├── Scenes/        # Scene management
+  │   ├── Shaders/       # Shader system
+  │   └── Textures/      # Texture management
+  └── vendor/            # External dependencies
+```

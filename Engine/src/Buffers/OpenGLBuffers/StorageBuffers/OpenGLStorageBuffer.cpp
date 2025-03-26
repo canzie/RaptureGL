@@ -2,13 +2,9 @@
 #include "glad/glad.h"
 #include "../../../logger/Log.h"
 #include "../../BufferConversionHelpers.h"
-
-
+#include "../../../Debug/Profiler.h"
 
 namespace Rapture {
-
-
-
 
 	// ShaderStorageBuffer implementation
 	ShaderStorageBuffer::ShaderStorageBuffer(size_t size, BufferUsage usage, const void* data)
@@ -45,14 +41,17 @@ namespace Rapture {
 	}
 
 	void ShaderStorageBuffer::bind() {
+		RAPTURE_PROFILE_SCOPE("StorageBuffer Bind");
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_rendererId);
 	}
 
 	void ShaderStorageBuffer::unbind() {
+		RAPTURE_PROFILE_SCOPE("StorageBuffer Unbind");
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 	}
 
 	void ShaderStorageBuffer::bindBase(unsigned int index) {
+		RAPTURE_PROFILE_SCOPE("StorageBuffer BindBase");
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, index, m_rendererId);
 	}
 

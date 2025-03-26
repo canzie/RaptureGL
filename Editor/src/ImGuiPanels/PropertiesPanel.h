@@ -3,7 +3,6 @@
 #include "Scenes/Scene.h"
 #include "Scenes/Entity.h"
 #include "Scenes/Components/Components.h"
-#include "TestLayer.h"
 #include "ImGuiPanels/EntityBrowserPanel.h"
 #include <glm/gtc/type_ptr.hpp>
 
@@ -15,7 +14,9 @@ public:
     PropertiesPanel() = default;
     ~PropertiesPanel() = default;
 
-    void render(TestLayer* testLayer, EntityBrowserPanel* entityBrowser);
+    // Original method that gets entity from EntityBrowserPanel
+    void render(Rapture::Entity entity);
+    void render();
 
 private:
     bool positionLocked = false;
@@ -29,7 +30,10 @@ private:
     // Light component editor state
     int selectedLightType = 0;
     
-    void drawMaterialTextures(Rapture::Entity& entity);
+    void drawMaterialTextures(Rapture::Entity entity);
     const char* getLightTypeString(int type);
+    
+    // Helper method to render entity properties
+    void renderEntityProperties(Rapture::Entity entity);
 };
 
