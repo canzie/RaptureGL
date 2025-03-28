@@ -7,7 +7,13 @@
 #include "../Materials/MaterialUniformLayouts.h"
 #include "../Buffers/BufferPools.h"
 #include "glad/glad.h"
-#include "../Debug/Profiler.h"
+#include "../Debug/TracyProfiler.h"
+#include "Raycast.h"
+#include "PrimitiveShapes.h"
+#include "../Materials/MaterialLibrary.h"
+#include <algorithm>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 namespace Rapture
 {
@@ -28,9 +34,7 @@ namespace Rapture
 	uint32_t Renderer::s_cachedLightCount = 0;
 	bool Renderer::s_lightsDirty = true;
 	
-	// Bounding box visualization
-	std::shared_ptr<Mesh> Renderer::s_boundingBoxMesh = nullptr;
-	std::shared_ptr<Material> Renderer::s_boundingBoxMaterial = nullptr;
+
 	glm::vec3 Renderer::s_boundingBoxColor = glm::vec3(0.0f, 1.0f, 0.0f); // Default green
 
 	// Frustum culling
@@ -38,10 +42,14 @@ namespace Rapture
 	bool Renderer::s_frustumCullingEnabled = true; // Enabled by default
 	uint32_t Renderer::s_entitiesCulled = 0;
 
+	std::vector<Rapture::Entity> Renderer::s_visibleEntities;
+
 	void Renderer::init()
 	{
 		RAPTURE_PROFILE_FUNCTION();
 		GE_RENDER_INFO("Renderer: Initializing renderer");
+
+		Raycast::init();
 		
 		// Create camera UBO with persistent mapping capability
 		s_cameraUBO = std::make_shared<UniformBuffer>(sizeof(CameraUniform), BufferUsage::Stream, nullptr, BASE_BINDING_POINT_IDX);
@@ -63,55 +71,25 @@ namespace Rapture
 			GE_CORE_ERROR("Failed to create persistent mapping for lights buffer");
 		}
 		
-		// Initialize bounding box mesh
-		s_boundingBoxMesh = createBoundingBoxMesh();
-		if (!s_boundingBoxMesh) {
-			GE_CORE_ERROR("Failed to create bounding box mesh");
-		}
+		// Initialize the shared resources for BoundingBoxComponent
+		BoundingBoxComponent::initSharedResources();
 		
-		// Initialize bounding box material
-		try {
-			// Create solid material with base color vector
-			s_boundingBoxMaterial = MaterialLibrary::createSolidMaterial("BoundingBoxMaterial", s_boundingBoxColor);
-			if (!s_boundingBoxMaterial) {
-				GE_CORE_ERROR("Failed to create bounding box material");
-			}
-			else {
-				// Verify the material has a valid shader
-				if (!s_boundingBoxMaterial->getShader()) {
-					GE_CORE_ERROR("Bounding box material has null shader");
-				}
-				else {
-					// Force set the initial color to ensure it's set properly
-					if (s_boundingBoxMaterial->hasParameter("color")) {
-						// Use the correct setter based on what the material expects
-						// Check if the parameter is a vec3 or vec4
-						try {
-							// Try to get current value as vec3
-							s_boundingBoxMaterial->getParameter("color").asVec3();
-							// If we get here, it's a vec3
-							s_boundingBoxMaterial->setVec3("color", s_boundingBoxColor);
-						}
-						catch (...) {
-							// If asVec3 throws, it's not a vec3, assume vec4
-							s_boundingBoxMaterial->setVec4("color", glm::vec4(s_boundingBoxColor, 1.0f));
-						}
-					} else {
-						GE_CORE_ERROR("Bounding box material doesn't have a 'color' parameter");
-					}
-					GE_RENDER_INFO("Successfully initialized bounding box resources");
-				}
-			}
-		}
-		catch (const std::exception& e) {
-			GE_CORE_ERROR("Exception creating bounding box material: {0}", e.what());
-		}
+		// Set the default bounding box color
+		setBoundingBoxColor(glm::vec3(0.0f, 1.0f, 0.0f)); // Default green
+		
+
+		
 
 	}
 
 	void Renderer::shutdown()
 	{
 		GE_RENDER_INFO("Renderer: Shutting down renderer");
+
+		Raycast::shutdown();
+		
+		// Shutdown the shared resources for BoundingBoxComponent
+		BoundingBoxComponent::shutdownSharedResources();
 		
 		// Unmap persistent buffers before destroying them
 		if (s_persistentCameraBufferPtr && s_cameraUBO) {
@@ -128,14 +106,13 @@ namespace Rapture
 		s_cameraUBO.reset();
 		s_lightsUBO.reset();
 		
-		// Reset bounding box resources
-		s_boundingBoxMesh.reset();
-		s_boundingBoxMaterial.reset();
+
 	}
 
 	void Renderer::sumbitScene(const std::shared_ptr<Scene> s)
 	{
-		RAPTURE_PROFILE_FUNCTION();
+
+        RAPTURE_PROFILE_GPU_SCOPE("Renderer::SubmitScene");
 
 		// Reset culling counter for this frame
 		s_entitiesCulled = 0;
@@ -149,9 +126,13 @@ namespace Rapture
 		meshEntities.clear();
 		lightEntities.clear();
 		cameraEntity = entt::null;
-		
+		s_visibleEntities.clear();
+
 		// Extract entities from scene
-		extractSceneData(s, meshEntities, cameraEntity, lightEntities);
+		{
+			RAPTURE_PROFILE_SCOPE("Scene Data Extraction");
+			extractSceneData(s, meshEntities, cameraEntity, lightEntities);
+		}
 		
 		// Skip if no camera
 		if (cameraEntity == entt::null) {
@@ -161,21 +142,35 @@ namespace Rapture
 
 		// Setup camera uniforms and get camera position for shaders
 		glm::vec3 camPos;
-		if (!setupCameraUniforms(s, cameraEntity, camPos)) {
-			return;
+		{
+			RAPTURE_PROFILE_SCOPE("Camera Setup");
+			if (!setupCameraUniforms(s, cameraEntity, camPos)) {
+				return;
+			}
 		}
 
 		// Update frustum for culling
 		if (s_frustumCullingEnabled) {
+			RAPTURE_PROFILE_SCOPE("Frustum Update");
 			s_frustum.update(s_cachedProjectionMatrix, s_cachedViewMatrix);
 		}
 
 		// Setup lights - will be skipped if no changes detected
-		setupLightsUniforms(s, lightEntities);
+		{
+			RAPTURE_PROFILE_SCOPE("Lights Setup");
+			setupLightsUniforms(s, lightEntities);
+		}
 
 		// Render all meshes
-		renderMeshes(s, meshEntities, camPos);
+		{
+			RAPTURE_PROFILE_SCOPE("Mesh Rendering");
+			renderMeshes(s, meshEntities, camPos);
+		}
 
+        Raycast::onFrameEnd(s_visibleEntities);
+
+        
+        /*
 		// Log culling stats occasionally
 		static int frameCounter = 0;
 		if (s_frustumCullingEnabled && ++frameCounter % 300 == 0) {
@@ -184,6 +179,7 @@ namespace Rapture
 				meshEntities.size() > 0 ? (100.0f * s_entitiesCulled / meshEntities.size()) : 0.0f);
 			frameCounter = 0;
 		}
+        */
 	}
 
 	void Renderer::showBoundingBox(Entity entity, bool show)
@@ -238,30 +234,7 @@ namespace Rapture
 	{
 		s_boundingBoxColor = color;
 		
-		// Update the material color
-		if (s_boundingBoxMaterial) {
-			try {
-				// Check what parameter type is expected for the color
-				if (s_boundingBoxMaterial->hasParameter("color")) {
-					// Use the correct setter based on what the material expects
-					try {
-						// Try to get current value as vec3
-						s_boundingBoxMaterial->getParameter("color").asVec3();
-						// If we get here, it's a vec3
-						s_boundingBoxMaterial->setVec3("color", color);
-					}
-					catch (...) {
-						// If asVec3 throws, it's not a vec3, assume vec4
-						s_boundingBoxMaterial->setVec4("color", glm::vec4(color, 1.0f));
-					}
-				} else {
-					GE_RENDER_ERROR("Cannot update color - material doesn't have a 'color' parameter");
-				}
-			}
-			catch (const std::exception& e) {
-				GE_RENDER_ERROR("Exception setting bounding box color: {0}", e.what());
-			}
-		}
+
 	}
 	
 	glm::vec3 Renderer::getBoundingBoxColor()
@@ -293,27 +266,37 @@ namespace Rapture
 	}
 
 	void Renderer::extractSceneData(const std::shared_ptr<Scene> s, 
-                                std::vector<entt::entity>& meshEntities,
-                                entt::entity& cameraEntity,
-                                std::vector<entt::entity>& lightEntities)
+								  std::vector<entt::entity>& meshEntities,
+								  entt::entity& cameraEntity,
+								  std::vector<entt::entity>& lightEntities)
 	{
 		RAPTURE_PROFILE_SCOPE("Scene Data Access");
 		auto& reg = s->getRegistry();
-		auto meshes = reg.view<TransformComponent, MeshComponent>();
-		auto cams = reg.view<CameraControllerComponent>();
-		auto lights = reg.view<TransformComponent, LightComponent>();
 		
-		// Cache entity IDs to avoid registry lookups during rendering
-		for (auto ent : meshes) {
-			meshEntities.push_back(ent);
-		}
-		
-		if (!cams.empty()) {
-			cameraEntity = cams.front();
-		}
-		
-		for (auto ent : lights) {
-			lightEntities.push_back(ent);
+		{
+			RAPTURE_PROFILE_SCOPE("Mesh View Creation");
+			auto meshes = reg.view<TransformComponent, MeshComponent>();
+			auto cams = reg.view<CameraControllerComponent>();
+			auto lights = reg.view<TransformComponent, LightComponent>();
+			
+			// Cache entity IDs to avoid registry lookups during rendering
+			{
+				RAPTURE_PROFILE_SCOPE("Mesh Entity Collection");
+				for (auto ent : meshes) {
+					meshEntities.push_back(ent);
+				}
+			}
+			
+			if (!cams.empty()) {
+				cameraEntity = cams.front();
+			}
+			
+			{
+				RAPTURE_PROFILE_SCOPE("Light Entity Collection");
+				for (auto ent : lights) {
+					lightEntities.push_back(ent);
+				}
+			}
 		}
 	}
 
@@ -481,6 +464,7 @@ namespace Rapture
 		
 		// Check if the bounding box needs to be updated
 		if (boundingBoxComp.needsUpdate && e.hasComponent<TransformComponent>()) {
+			RAPTURE_PROFILE_SCOPE("Bounding Box Update");
 			// Get transform and mesh components
 			auto& transform = e.getComponent<TransformComponent>();
 			
@@ -493,30 +477,37 @@ namespace Rapture
 		}
 		
 		// Test if the bounding box is visible in the frustum
-		FrustumResult result = s_frustum.testBoundingBox(boundingBoxComp.worldBoundingBox);
-		
-		// Count culled entities for stats
-		if (result == FrustumResult::Outside) {
-			s_entitiesCulled++;
-			return false;
+		{
+			RAPTURE_PROFILE_SCOPE("Frustum Test");
+			FrustumResult result = s_frustum.testBoundingBox(boundingBoxComp.worldBoundingBox);
+			
+			// Count culled entities for stats
+			if (result == FrustumResult::Outside) {
+				s_entitiesCulled++;
+				return false;
+			}
 		}
 		
+		s_visibleEntities.push_back(e);
 		return true;
 	}
 
 	void Renderer::renderMeshes(const std::shared_ptr<Scene> s, 
-                             const std::vector<entt::entity>& meshEntities, 
-                             const glm::vec3& camPos)
+							 const std::vector<entt::entity>& meshEntities, 
+							 const glm::vec3& camPos)
 	{
-		RAPTURE_PROFILE_SCOPE("Mesh Rendering");
 		
 		// Count for stats
 		int totalDrawCalls = 0;
 		int skippedMeshes = 0;
 		int boundingBoxesDrawn = 0;
+		int processedEntities = 0;
+		int culledEntities = 0;
 		
 		for (auto ent : meshEntities)
 		{
+			processedEntities++;
+			
 			// In EnTT, entity 0 is not null, but entt::null is FFFFFFFF
 			if ((uint32_t)ent == 0xFFFFFFFF) {
 				GE_RENDER_ERROR("Entity is null (0xFFFFFFFF), skipping");
@@ -527,10 +518,9 @@ namespace Rapture
 			// Entity validation
 			{
 				RAPTURE_PROFILE_SCOPE("Entity Validation");
-
-                Entity mesh(ent, s.get());
+				Entity mesh(ent, s.get());
 				
-                if (!mesh.hasComponent<MeshComponent>()) {
+				if (!mesh.hasComponent<MeshComponent>()) {
 					GE_RENDER_ERROR("Entity doesn't have MeshComponent, skipping");
 					skippedMeshes++;
 					continue;
@@ -538,6 +528,7 @@ namespace Rapture
 
 				// Perform frustum culling
 				if (!isEntityVisible(s, ent)) {
+					culledEntities++;
 					skippedMeshes++;
 					continue;
 				}
@@ -579,7 +570,6 @@ namespace Rapture
 					material->bind();
 				}
 				
-				
 				// Per-object uniform setup
 				{
 					RAPTURE_PROFILE_SCOPE("Per-Object Uniforms");
@@ -612,18 +602,20 @@ namespace Rapture
 				}
 
 				// Draw bounding box if enabled for this entity
-				if (mesh.hasComponent<BoundingBoxComponent>() && 
-					mesh.getComponent<BoundingBoxComponent>().isVisible) {
-					
+				if (auto& boundingBoxComp = mesh.getComponent<BoundingBoxComponent>();
+					boundingBoxComp.isVisible) {
+					RAPTURE_PROFILE_SCOPE("Bounding Box Draw");
+                    RAPTURE_PROFILE_GPU_SCOPE("Bounding Box Draw");
 					// Bind the bounding box material
-					if (s_boundingBoxMaterial) {
-						s_boundingBoxMaterial->bind();
-						
+					if (boundingBoxComp.s_visualizationMesh) {
+						boundingBoxComp.s_visualizationMaterial->bind();
+						auto meshdata = boundingBoxComp.s_visualizationMesh->getMeshData();
+                        meshdata.vao->bind();
 						// Draw the bounding box
 						drawBoundingBox(s, mesh);
-						
+						meshdata.vao->unbind();
 						// Unbind the material
-						s_boundingBoxMaterial->unbind();
+						boundingBoxComp.s_visualizationMaterial->unbind();
 						
 						boundingBoxesDrawn++;
 					}
@@ -631,119 +623,14 @@ namespace Rapture
 			}
 		}
 		
-		// Log render stats occasionally
-		static int frameCounter = 0;
-		if (++frameCounter % 300 == 0) { // Every 300 frames, log stats
-			GE_RENDER_INFO("Renderer stats: {0} draw calls, {1} skipped meshes, {2} bounding boxes", 
-				totalDrawCalls, skippedMeshes, boundingBoxesDrawn);
-			frameCounter = 0;
-		}
+
 	}
 	
-	std::shared_ptr<Mesh> Renderer::createBoundingBoxMesh()
-	{
-		// Keep this log since it only runs once during initialization
-		GE_RENDER_INFO("Creating bounding box mesh");
-		
-		// Create a unit cube mesh for bounding box visualization
-		auto mesh = std::make_shared<Mesh>();
-		if (!mesh) {
-			GE_RENDER_ERROR("Failed to create bounding box mesh");
-			return nullptr;
-		}
-		
-		try {
-			// Vertices for a unit cube (centered at origin with size 1)
-			std::vector<float> vertices = {
-				// Front face
-				-0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f, // Bottom-left
-				 0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 0.0f, // Bottom-right
-				 0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f, // Top-right
-				-0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 1.0f, // Top-left
-				
-				// Back face
-				-0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f, // Bottom-left
-				 0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f, // Bottom-right
-				 0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f, // Top-right
-				-0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 1.0f  // Top-left
-			};
-			
-			// Indices for a cube
-			std::vector<uint32_t> indices = {
-				// Front face
-				0, 1, 2, 2, 3, 0,
-				// Back face
-				4, 5, 6, 6, 7, 4,
-				// Left face
-				0, 3, 7, 7, 4, 0,
-				// Right face
-				1, 5, 6, 6, 2, 1,
-				// Bottom face
-				0, 4, 5, 5, 1, 0,
-				// Top face
-				2, 6, 7, 7, 3, 2
-			};
-			
-			// Create a buffer layout
-			BufferLayout layout;
-			layout.buffer_attribs = {
-				{ "POSITION", GL_FLOAT, "VEC3", 0 },
-				{ "NORMAL", GL_FLOAT, "VEC3", sizeof(float) * 3 },
-				{ "TEXCOORD_0", GL_FLOAT, "VEC2", sizeof(float) * 6 }
-			};
-			layout.isInterleaved = true;
-			layout.vertexSize = sizeof(float) * 8;
-			
-			// Verify data is valid
-			if (vertices.empty() || indices.empty()) {
-				GE_RENDER_ERROR("Bounding box mesh data is empty");
-				return nullptr;
-			}
-			
-			// Set mesh data
-			mesh->setMeshData(
-				layout,
-				vertices.data(),
-				vertices.size() * sizeof(float),
-				indices.data(),
-				indices.size() * sizeof(uint32_t),
-				indices.size(),
-				GL_UNSIGNED_INT
-			);
-			
-			// Verify that the mesh data was set correctly
-			auto meshData = mesh->getMeshData();
-			if (!meshData.vao) {
-				GE_RENDER_ERROR("Bounding box mesh VAO is null after creation");
-				return nullptr;
-			}
-			
-			if (meshData.indexCount == 0) {
-				GE_RENDER_ERROR("Bounding box mesh has zero indices after creation");
-				return nullptr;
-			}
-			
-			// Keep this success log as it only runs once during initialization
-			GE_RENDER_INFO("Successfully created bounding box mesh with {0} vertices, {1} indices", 
-				vertices.size() / 8, meshData.indexCount);
-				
-			return mesh;
-		}
-		catch (const std::exception& e) {
-			GE_RENDER_ERROR("Exception creating bounding box mesh: {0}", e.what());
-			return nullptr;
-		}
-	}
 	
 	void Renderer::drawBoundingBox(const std::shared_ptr<Scene> s, Entity entity)
 	{
 		if (!entity || !entity.hasComponent<BoundingBoxComponent>()) {
 			GE_RENDER_ERROR("Entity missing BoundingBoxComponent in drawBoundingBox");
-			return;
-		}
-		
-		if (!s_boundingBoxMesh || !s_boundingBoxMaterial) {
-			GE_RENDER_ERROR("Bounding box resources not properly initialized");
 			return;
 		}
 		
@@ -775,39 +662,150 @@ namespace Rapture
 			return;
 		}
 		
-		// Create a scaling and translation matrix for the unit cube
-		glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), center) * glm::scale(glm::mat4(1.0f), size);
-		
-		// Set the model matrix in the shader
-		Shader* shader = s_boundingBoxMaterial->getShader();
-		if (!shader) {
-			GE_RENDER_ERROR("Null shader in drawBoundingBox");
+		// Check if the shared resources are available
+		if (!BoundingBoxComponent::s_visualizationMesh || !BoundingBoxComponent::s_visualizationMaterial) {
+			GE_RENDER_ERROR("Bounding box visualization resources not initialized");
 			return;
 		}
 		
-		shader->setMat4("u_model", modelMatrix);
+		// Update material color to match the current bounding box color
+		BoundingBoxComponent::s_visualizationMaterial->setVec3("color", s_boundingBoxColor);
 		
-		// Get mesh data safely
-		auto meshdata = s_boundingBoxMesh->getMeshData();
-		if (!meshdata.vao || meshdata.indexCount == 0) {
-			GE_RENDER_ERROR("Invalid mesh data in drawBoundingBox");
-			return;
-		}
+		// Set up transformation matrix directly
+		glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), center) * 
+							   glm::scale(glm::mat4(1.0f), size);
 		
-		// Draw the cube
+		// Draw the cube in wireframe mode
 		try {
-			// Remove verbose coordinates log
-			// GE_RENDER_INFO("Drawing bounding box: min({0},{1},{2}), max({3},{4},{5})",
-			//	min.x, min.y, min.z, max.x, max.y, max.z);
-			
-			OpenGLRendererAPI::drawIndexed(
-				meshdata.indexCount, 
-				meshdata.indexType, 
-				meshdata.indexAllocation->offsetBytes, 
-				meshdata.vertexOffsetInVertices);
+			auto material = BoundingBoxComponent::s_visualizationMaterial;
+			auto mesh = BoundingBoxComponent::s_visualizationMesh;
+			auto vao = mesh->getMeshData().vao;
+			if (vao && material) {
+				material->bind();
+				material->getShader()->setMat4("u_model", modelMatrix);
+				vao->bind();
+
+				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+				glDrawElements(GL_LINES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes);
+				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+				
+				vao->unbind();
+				material->unbind();
+			}
 		}
 		catch (const std::exception& e) {
-			GE_RENDER_ERROR("Exception in drawIndexed: {0}", e.what());
+			GE_RENDER_ERROR("Exception in drawBoundingBox: {0}", e.what());
 		}
 	}
+
+    void Renderer::drawLine(const Line& line) {
+        RAPTURE_PROFILE_FUNCTION();
+        
+
+        auto mesh = line.getMesh();
+        auto material = line.getMaterial();
+        if (!material || !mesh) {
+            GE_RENDER_ERROR("Cannot draw line: null material or mesh");
+            return;
+        }
+        
+        material->bind();
+        auto shader = material->getShader();
+        
+        // We need to manually set the projection and view matrices
+        // because primitive shapes don't go through the standard rendering pipeline
+        shader->setMat4("u_proj", s_cachedProjectionMatrix); 
+        shader->setMat4("u_view", s_cachedViewMatrix);
+        
+        // The line vertices are in world space, so we use identity model matrix
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+        shader->setMat4("u_model", modelMatrix);
+        
+        // Draw the line using GL_LINES
+        auto vao = mesh->getMeshData().vao;
+        if (vao) {
+            vao->bind();
+                glDrawElementsBaseVertex(GL_LINES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes, mesh->getMeshData().vertexOffsetInVertices);
+            vao->unbind();
+        }
+
+    }
+
+    void Renderer::drawCube(const Cube& cube) {
+        RAPTURE_PROFILE_FUNCTION();
+        
+        // Bind the material
+        auto material = cube.getMaterial();
+        if (material) {
+            material->bind();
+            
+            // Create transformation matrix
+            glm::mat4 modelMatrix = glm::mat4(1.0f);
+            
+            // Apply translation, rotation, and scale
+            modelMatrix = glm::translate(modelMatrix, cube.getPosition());
+            
+            // Apply rotation (X, Y, Z order)
+            modelMatrix = glm::rotate(modelMatrix, glm::radians(cube.getRotation().x), glm::vec3(1.0f, 0.0f, 0.0f));
+            modelMatrix = glm::rotate(modelMatrix, glm::radians(cube.getRotation().y), glm::vec3(0.0f, 1.0f, 0.0f));
+            modelMatrix = glm::rotate(modelMatrix, glm::radians(cube.getRotation().z), glm::vec3(0.0f, 0.0f, 1.0f));
+            
+            modelMatrix = glm::scale(modelMatrix, cube.getScale());
+            
+            // Set the model matrix
+            material->getShader()->setMat4("u_model", modelMatrix);
+        }
+        
+        // Draw the cube
+        auto mesh = cube.getMesh();
+        if (mesh) {
+            auto vao = mesh->getMeshData().vao;
+            if (vao) {
+                vao->bind();
+                if (cube.isFilled()) {
+                    glDrawElements(GL_TRIANGLES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes);
+                } else {
+                    glDrawElements(GL_LINES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes);
+                }
+                vao->unbind();
+            }
+        }
+    }
+
+    void Renderer::drawQuad(const Quad& quad) {
+        RAPTURE_PROFILE_FUNCTION();
+        
+        // Bind the material
+        auto material = quad.getMaterial();
+        if (material) {
+            material->bind();
+            
+            // Create transformation matrix
+            glm::mat4 modelMatrix = glm::mat4(1.0f);
+            
+            // Apply translation, rotation, and scale
+            modelMatrix = glm::translate(modelMatrix, quad.getPosition());
+            
+            // Apply rotation (X, Y, Z order)
+            modelMatrix = glm::rotate(modelMatrix, glm::radians(quad.getRotation().x), glm::vec3(1.0f, 0.0f, 0.0f));
+            modelMatrix = glm::rotate(modelMatrix, glm::radians(quad.getRotation().y), glm::vec3(0.0f, 1.0f, 0.0f));
+            modelMatrix = glm::rotate(modelMatrix, glm::radians(quad.getRotation().z), glm::vec3(0.0f, 0.0f, 1.0f));
+            
+            modelMatrix = glm::scale(modelMatrix, quad.getScale());
+            
+            // Set the model matrix
+            material->getShader()->setMat4("u_model", modelMatrix);
+        }
+        
+        // Draw the quad
+        auto mesh = quad.getMesh();
+        if (mesh) {
+            auto vao = mesh->getMeshData().vao;
+            if (vao) {
+                vao->bind();
+                glDrawElements(GL_TRIANGLES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes);
+                vao->unbind();
+            }
+        }
+    }
 }

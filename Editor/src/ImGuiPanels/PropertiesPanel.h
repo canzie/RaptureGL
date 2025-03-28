@@ -3,6 +3,7 @@
 #include "Scenes/Scene.h"
 #include "Scenes/Entity.h"
 #include "Scenes/Components/Components.h"
+#include "Scenes/Components/BoundingBox.h"
 #include "ImGuiPanels/EntityBrowserPanel.h"
 #include <glm/gtc/type_ptr.hpp>
 

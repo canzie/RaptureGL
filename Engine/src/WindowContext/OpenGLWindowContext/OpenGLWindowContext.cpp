@@ -1,6 +1,7 @@
 #include "OpenGLWindowContext.h"
 
 #include "../../logger/Log.h"
+#include "../../Debug/TracyProfiler.h"
 
 
 namespace Rapture {
@@ -65,8 +66,34 @@ namespace Rapture {
 
 	void OpenGLWindowContext::onUpdate()
 	{
-		glfwPollEvents();
-		glfwSwapBuffers(m_window);
+		RAPTURE_PROFILE_FUNCTION();
+		
+		// Profile any rendering that happens before the swap
+		{
+			RAPTURE_PROFILE_SCOPE("Pre-SwapBuffers");
+			RAPTURE_PROFILE_GPU_SCOPE("Pre-SwapBuffers");
+			
+			// Any rendering code that happens here
+		}
+		
+		// Profile the actual buffer swap
+		{
+			RAPTURE_PROFILE_SCOPE("SwapBuffers");
+			RAPTURE_PROFILE_GPU_SCOPE("SwapBuffers");
+			
+			// Your actual swap buffers call
+			glfwPollEvents();
+			glfwSwapBuffers(m_window);
+		}
+		
+		// Profile the time immediately after the swap
+		{
+			RAPTURE_PROFILE_SCOPE("Post-SwapBuffers");
+			RAPTURE_PROFILE_GPU_SCOPE("Post-SwapBuffers");
+			
+			// Any code that happens after the swap
+		}
+		
 	}
 
 	void OpenGLWindowContext::setGLFWCallbacks()

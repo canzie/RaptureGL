@@ -12,7 +12,7 @@
 #include "../../Logger/Log.h"
 #include "../../Textures/Texture.h"
 #include "../../Materials/Material.h"
-#include "../../Debug/Profiler.h"
+#include "../../Debug/TracyProfiler.h"
 
 #include "../../Scenes/Systems/BoundingBoxSystem.h"
 
@@ -341,8 +341,6 @@ namespace Rapture {
     {
         // Add mesh component to the entity
         entity.addComponent<MeshComponent>(true);
-        // Create a new vertex array for this primitive
-        auto vao = std::make_shared<VertexArray>();
         entity.addComponent<MaterialComponent>();
         
         // Check if entity has MeshComponent before accessing it
@@ -351,7 +349,6 @@ namespace Rapture {
             return;
         }
         auto& meshComp = entity.getComponent<MeshComponent>();
-        meshComp.mesh->SetVAO(vao);
 
         BufferLayout bufferLayout;
         
@@ -557,7 +554,9 @@ namespace Rapture {
         
         // Add the bounding box component if we calculated one
         if (m_calculateBoundingBoxes && localBoundingBox.isValid()) {
+            
             BoundingBoxSystem::addBoundingBoxToEntity(entity, localBoundingBox);
+
         }
     }
 

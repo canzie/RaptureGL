@@ -1,6 +1,6 @@
 #include "OpenGLTexture.h"
 #include "../../Logger/Log.h"
-#include "../../Debug/Profiler.h"
+#include "../../Debug/TracyProfiler.h"
 #include <stb_image.h>
 
 namespace Rapture {
@@ -101,6 +101,7 @@ OpenGLTexture2D::~OpenGLTexture2D()
 
 void OpenGLTexture2D::bind(uint32_t slot) const
 {
+    RAPTURE_PROFILE_GPU_SCOPE("OpenGLTexture2D::bind");
     glActiveTexture(GL_TEXTURE0 + slot);
     glBindTexture(GL_TEXTURE_2D, m_rendererID);
 }

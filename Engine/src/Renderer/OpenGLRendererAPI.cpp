@@ -2,18 +2,21 @@
 
 #include <glad/glad.h>
 #include "../Logger/Log.h"
-
+#include "../Debug/TracyProfiler.h"
 
 namespace Rapture {
 
 	
 	void OpenGLRendererAPI::setClearColor(const glm::vec4& color)
 	{
+		RAPTURE_PROFILE_FUNCTION();
 		glClearColor(color.r, color.g, color.b, color.a);
 	}
 
 	void OpenGLRendererAPI::clear()
 	{
+		RAPTURE_PROFILE_FUNCTION();
+		RAPTURE_PROFILE_GPU_SCOPE("Clear Buffers");
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glEnable(GL_DEPTH_TEST);
 		glDepthFunc(GL_LESS);  // Make sure depth test is using GL_LESS function
@@ -35,6 +38,7 @@ namespace Rapture {
 	{
         // Clear any previous errors
         //while (glGetError() != GL_NO_ERROR);
+        RAPTURE_PROFILE_GPU_SCOPE("GPU Draw Call");
 
         // Check index count
         if (indexCount <= 0) {
@@ -69,33 +73,17 @@ namespace Rapture {
 
 		glDrawElementsBaseVertex(GL_TRIANGLES, indexCount, (GLenum)comp_type, (void*)offset, vertexOffset);
         
-        /*
-        GLenum error = glGetError();
-        if (error != GL_NO_ERROR) {
-            GE_CORE_ERROR("OpenGL error during draw call: {0} (0x{1:x})", error, error);
-            
-            // Provide more details on specific errors
-            switch (error) {
-                case GL_INVALID_ENUM:
-                    GE_CORE_ERROR("  GL_INVALID_ENUM: Probably invalid primitive type or component type");
-                    break;
-                case GL_INVALID_VALUE:
-                    GE_CORE_ERROR("  GL_INVALID_VALUE: Probably invalid count or offset");
-                    break;
-                case GL_INVALID_OPERATION:
-                    GE_CORE_ERROR("  GL_INVALID_OPERATION: Operation not valid in current state (VAO might be invalid)");
-                    break;
-            }
-            
-            return;
-        }*/
         
 	}
 
-	
-	void OpenGLRendererAPI::drawNonIndexed(int vertexCount)
-	{
-		glDrawArrays(GL_TRIANGLES, 0, vertexCount);
-	}
+    void OpenGLRendererAPI::drawLine(glm::vec3 start, glm::vec3 end, glm::vec4 color)
+    {
+        RAPTURE_PROFILE_FUNCTION();
+        RAPTURE_PROFILE_GPU_SCOPE("GPU Draw Line");
+
+        // Create a Line object and call the overloaded function
+    }
+
+    
 	
 }

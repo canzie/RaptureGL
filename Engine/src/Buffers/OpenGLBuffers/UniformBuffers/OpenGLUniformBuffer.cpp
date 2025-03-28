@@ -2,7 +2,7 @@
 #include "glad/glad.h"
 #include "../../../logger/Log.h"
 #include "../../BufferConversionHelpers.h"
-#include "../../../Debug/Profiler.h"
+#include "../../../Debug/TracyProfiler.h"
 
 
 
@@ -226,11 +226,11 @@ namespace Rapture {
 
 	void UniformBuffer::flush() const {
 		// Make sure we're bound
-		glBindBuffer(GL_UNIFORM_BUFFER, m_rendererId);
+		//glBindBuffer(GL_UNIFORM_BUFFER, m_rendererId);
 		
 		// Issue synchronization for GPU-side changes
-		glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
-		glFlush();
+		//glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+		//glFlush();
 	}
 
 	void UniformBuffer::setDebugLabel(const std::string& label) {

@@ -1,4 +1,5 @@
 #include "Transforms.h"
+#include "../../Debug/TracyProfiler.h"
 
 
 namespace Rapture {
@@ -84,6 +85,7 @@ void Transforms::setScale(const glm::vec3& scale)
 
 void Transforms::recalculateTransform()
 {
+    RAPTURE_PROFILE_FUNCTION();
     
     glm::mat4 transformMatrix = glm::mat4(1.0f);
     transformMatrix = glm::translate(transformMatrix, m_translation);
@@ -96,6 +98,7 @@ void Transforms::recalculateTransform()
 
 void Transforms::decomposeTransform()
 {
+    RAPTURE_PROFILE_FUNCTION();
     // 1. Extract translation directly - always accurate and efficient
     m_translation = glm::vec3(m_transform[3]);
     

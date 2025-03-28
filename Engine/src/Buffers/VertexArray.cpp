@@ -1,7 +1,7 @@
 #include "VertexArray.h"
 #include "glad/glad.h"
 #include "../logger/Log.h"
-#include "../Debug/Profiler.h"
+#include "../Debug/TracyProfiler.h"
 
 namespace Rapture {
 

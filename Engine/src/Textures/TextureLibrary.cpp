@@ -1,6 +1,6 @@
 #include "Texture.h"
 #include "../Logger/Log.h"
-#include "../Debug/Profiler.h"
+#include "../Debug/TracyProfiler.h"
 #include <filesystem>
 #include <stb_image.h>
 

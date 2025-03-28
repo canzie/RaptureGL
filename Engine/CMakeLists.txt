@@ -12,6 +12,7 @@ file(GLOB_RECURSE ENGINE_SOURCES
 list(APPEND ENGINE_SOURCES 
     src/Debug/Profiler.cpp
     src/Debug/GPUProfiler.cpp
+    src/Debug/TracyProfiler.cpp
 )
 
 # Debug mode settings - check in multiple ways
@@ -19,14 +20,21 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR RAPTURE_DEBUG)
     message(STATUS "Debug build detected - Enabling debug flags")
     add_definitions(-DRAPTURE_DEBUG)
     add_definitions(-D_DEBUG)
+    add_definitions(-DRAPTURE_TRACY_PROFILING_ENABLED=1)
+    add_definitions(-DTRACY_ENABLE)
 elseif(MSVC)
     # For MSVC, check if we're in debug configuration
     add_compile_definitions($<$<CONFIG:Debug>:RAPTURE_DEBUG>)
     add_compile_definitions($<$<CONFIG:Debug>:_DEBUG>)
+    add_compile_definitions($<$<CONFIG:Debug>:RAPTURE_TRACY_PROFILING_ENABLED=1>)
+    add_compile_definitions($<$<CONFIG:Debug>:TRACY_ENABLE>)
     
     message(STATUS "MSVC build - Debug flags will be enabled in Debug configuration only")
 else()
     message(STATUS "Release build - Debug flags disabled")
+    # Tracy can still be enabled in release mode if desired
+    # add_definitions(-DRAPTURE_TRACY_PROFILING_ENABLED=1)
+    # add_definitions(-DTRACY_ENABLE)
 endif()
 
 # Create engine library

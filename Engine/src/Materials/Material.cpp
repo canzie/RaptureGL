@@ -5,7 +5,7 @@
 #include "MaterialInstance.h"
 #include "../Logger/Log.h"
 #include "../Textures/Texture.h"
-#include "../Debug/Profiler.h"
+#include "../Debug/TracyProfiler.h"
 #include <glad/glad.h>
 
 namespace Rapture
@@ -226,6 +226,7 @@ namespace Rapture
 
 	void PBRMaterial::bindData()
 	{
+		RAPTURE_PROFILE_GPU_SCOPE("PBR Material Bind Data");
 		if (!m_uniformBuffer) {
 			GE_CORE_ERROR("PBR material {0} has no uniform buffer!", m_name);
 			return;
@@ -387,6 +388,7 @@ namespace Rapture
 
 	void PhongMaterial::bindData()
 	{
+		RAPTURE_PROFILE_GPU_SCOPE("Phong Material Bind Data");
 		if (!m_uniformBuffer) {
 			GE_CORE_ERROR("Phong material {0} has no uniform buffer!", m_name);
 			return;
@@ -456,6 +458,7 @@ namespace Rapture
 
 	void SolidMaterial::bindData()
 	{
+		RAPTURE_PROFILE_GPU_SCOPE("Solid Material Bind Data");
 		if (!m_uniformBuffer) {
 			GE_CORE_ERROR("Solid material {0} has no uniform buffer!", m_name);
 			return;
@@ -536,6 +539,7 @@ namespace Rapture
 
     void SpecularGlossinessMaterial::bindData()
     {
+		RAPTURE_PROFILE_GPU_SCOPE("Specular-Glossiness Material Bind Data");
         if (!m_uniformBuffer) {
             GE_CORE_ERROR("Specular-Glossiness material {0} has no uniform buffer!", m_name);
             return;

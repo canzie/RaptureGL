@@ -28,6 +28,15 @@ namespace Rapture
 		return state == GLFW_PRESS;
 	}
 
+    bool Input::isMouseBtnReleased(int btn)
+    {
+        auto window = static_cast<GLFWwindow*>(Application::getInstance().getWindowContext().getNativeWindowContext());
+
+        auto state = glfwGetMouseButton(window, btn);
+
+        return state == GLFW_RELEASE;
+    }
+
 
 	std::pair<double, double> Input::getMousePos()
 	{

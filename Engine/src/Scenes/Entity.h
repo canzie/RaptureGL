@@ -82,6 +82,8 @@ namespace Rapture
 			return m_Scene->m_Registry.all_of<T>(m_EntityHandle);
 		}
 
+        
+
         // Check if entity has all of the specified components
         template<typename... T>
         bool hasAllComponents()

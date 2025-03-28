@@ -1,5 +1,5 @@
 #include "BoundingBoxSystem.h"
-#include "../../Debug/Profiler.h"
+#include "../../Debug/TracyProfiler.h"
 
 namespace Rapture {
 
@@ -78,6 +78,7 @@ namespace Rapture {
         if (localBounds.isValid()) {
             // Add the bounding box component to the entity
             entity.addComponent<BoundingBoxComponent>(localBounds);
+            entity.getComponent<BoundingBoxComponent>().initSharedResources();
             GE_CORE_INFO("Added BoundingBoxComponent to entity '{}'", 
                 entity.hasComponent<TagComponent>() ? entity.getComponent<TagComponent>().tag : "unnamed");
             

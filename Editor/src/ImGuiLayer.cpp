@@ -13,6 +13,7 @@
 #include "backends/imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
 
+#include "Debug/TracyProfiler.h"
 
 ImGuiLayer::ImGuiLayer()
     : Layer("ImGuiLayer")
@@ -111,7 +112,8 @@ void ImGuiLayer::onUpdate(float ts)
 {
     // Start ImGui frame
     begin();
-    
+    RAPTURE_PROFILE_GPU_SCOPE("ImGui Layer");
+    RAPTURE_PROFILE_SCOPE("ImGui Layer");
     // Get access to the TestLayer to retrieve its framebuffer
     TestLayer* testLayer = nullptr;
     for (Rapture::Layer* layer : Rapture::Application::getInstance().getLayerStack())
@@ -119,6 +121,17 @@ void ImGuiLayer::onUpdate(float ts)
         if (TestLayer* tl = dynamic_cast<TestLayer*>(layer))
         {
             testLayer = tl;
+            // Set the ViewportPanel reference in TestLayer
+            testLayer->setViewportPanel(&m_ViewportPanel);
+            
+            // Set up a callback for entity selection
+            testLayer->setEntitySelectedCallback([this](Rapture::Entity entity) {
+                if (entity) {
+                    // Update our selected entity when TestLayer selects something via raycast
+                    m_SelectedEntity = entity;
+                }
+            });
+            
             break;
         }
     }
@@ -188,15 +201,28 @@ void ImGuiLayer::onUpdate(float ts)
     // Render all panels using our panel classes
     m_ViewportPanel.renderSceneViewport(testLayer);
     m_ViewportPanel.renderDepthBufferViewport(testLayer);
-    m_StatsPanel.render(ts);
+    
+    //m_StatsPanel.render(ts);
+    
     m_EntityBrowserPanel.render(testLayer->getActiveScene().get(), 
-        [this](Rapture::Entity entity) {
+        [this, testLayer](Rapture::Entity entity) {
             if (entity) {
                 m_SelectedEntity = entity;
+                
+                // Keep TestLayer's selection in sync
+                if (testLayer) {
+                    testLayer->setSelectedEntity(entity);
+                }
             } else {
                 Rapture::GE_WARN("No valid entity selected");
+                
+                // Clear TestLayer's selection too
+                if (testLayer) {
+                    testLayer->setSelectedEntity({});
+                }
             }
         });
+    
     m_PropertiesPanel.render(m_SelectedEntity);
     
     m_LogPanel.render();

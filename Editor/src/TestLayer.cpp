@@ -8,10 +8,39 @@
 #include "Input/KeyBindings.h"
 #include "Scenes/Components/Components.h"
 #include "Mesh/Mesh.h"
+#include "ImGuiPanels/ViewportPanel.h"
 
 #include "File Loaders/glTF/glTF2Loader.h"
 #include "File Loaders/ModelLoader.h"
 #include "Textures/Texture.h"
+#include "Debug/Profiler.h"
+#include "Renderer/Raycast.h"
+
+void TestLayer::setSelectedEntity(Rapture::Entity entity)
+{
+    // If we had a previous selection, hide its bounding box
+    if (m_selectedEntity) {
+        Rapture::Renderer::hideBoundingBox(m_selectedEntity);
+    }
+    
+    m_selectedEntity = entity;
+    
+    // Show bounding box for the new selection
+    if (entity) {
+        // Show the bounding box of the selected entity with a distinctive color
+        auto* bb = entity.tryGetComponent<Rapture::BoundingBoxComponent>();
+        if (bb) bb->isVisible = true;
+        
+    } else if (m_selectedEntity) {
+        auto* bb = m_selectedEntity.tryGetComponent<Rapture::BoundingBoxComponent>();
+        if (bb) bb->isVisible = false;
+    }
+    
+    // Call the callback if one is set
+    if (m_entitySelectedCallback) {
+        m_entitySelectedCallback(entity);
+    }
+}
 
 void TestLayer::onAttach()
 {
@@ -28,7 +57,6 @@ void TestLayer::onAttach()
     // Initialize the material library
 	//Rapture::TextureLibrary::init();
     
-    Rapture::TextureLibrary::add("albedoMap", Rapture::TextureLibrary::load("./assets/models/adamHead/Assets/Models/PBR/Adam/Textures/Adam_Head_a.jpg"));
 
 	// Initialize keybindings from config file
 	KeyBindings::init("keybindings.cfg");
@@ -44,12 +72,11 @@ void TestLayer::onAttach()
 	Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
 	loader.loadModel("adamHead/adamHead.gltf");
     
-	//loader.loadModel("sphere.gltf");
-    
+  
     //loader.loadModel("Sponza/glTF/Sponza.gltf");
 
-	//loader.loadModel("sphere.gltf");
-	//loader.loadModel("donut.gltf");
+	loader.loadModel("sphere.gltf");
+	loader.loadModel("donut.gltf");
 
 	// Add a custom red material to the cube
 	// Create a bright red metal material (1,0,0 for RGB red, 0.2 roughness, 0.8 metallic)
@@ -105,7 +132,7 @@ void TestLayer::onAttach()
 	// Create camera controller
 	Rapture::Entity camera_controller = m_activeScene->createEntity("Camera Controller");
 	camera_controller.addComponent<Rapture::CameraControllerComponent>(60.0f, 1920.0f / 1080.0f, 0.1f, 1000.0f);
-	
+    m_cameraEntity = std::make_shared<Rapture::Entity>(camera_controller);
 	// Initialize the camera controller
 	CameraController::init(camera_controller);
 	
@@ -151,12 +178,117 @@ void TestLayer::onUpdate(float ts)
 	// Update the camera controller
 	CameraController::update(ts);
 
+    if (Rapture::Input::isMouseBtnPressed(0))
+    {
+        m_wasMouseBtnPressedLastFrame = true;
+    }
+
+    if (Rapture::Input::isMouseBtnReleased(0) && m_wasMouseBtnPressedLastFrame)
+    {
+        m_wasMouseBtnPressedLastFrame = false;
+            // Make sure we have valid framebuffer and camera
+            if (m_framebuffer && m_cameraEntity && m_viewportPanel)
+            {
+                // Get global window mouse position
+                float windowMouseX = Rapture::Input::getMousePos().first;
+                float windowMouseY = Rapture::Input::getMousePos().second;
+                
+                // Convert to viewport coordinates
+                float viewportMouseX, viewportMouseY;
+                bool isInViewport = m_viewportPanel->windowToViewportCoordinates(
+                    windowMouseX, windowMouseY, viewportMouseX, viewportMouseY);
+                
+                // Only process clicks inside the viewport
+                if (isInViewport)
+                {
+                    float width = static_cast<float>(m_framebuffer->getSpecification().width);
+                    float height = static_cast<float>(m_framebuffer->getSpecification().height);
+                    
+                    
+                    // Get camera position (ray origin)
+                    const auto& cameraComponent = m_cameraEntity->getComponent<Rapture::CameraControllerComponent>();
+                    glm::mat4 viewMatrix = cameraComponent.camera.getViewMatrix();
+                    glm::mat4 invView = glm::inverse(viewMatrix);
+                    glm::vec3 cameraPosition = glm::vec3(invView[3]);
+                    
+                    // Generate ray direction
+                    glm::vec3 rayDirection = Rapture::Raycast::screenToWorldRay(
+                        viewportMouseX, viewportMouseY,
+                        width, height,
+                        cameraComponent.camera.getProjectionMatrix(),
+                        viewMatrix);
+                    
+                    // Normalize ray direction (important!)
+                    rayDirection = glm::normalize(rayDirection);
+                    
+                    if (m_showDebugRay) {
+                        // Create a debug ray that extends far into the scene
+                        const float RAY_LENGTH = 100.0f; // Arbitrary large distance
+                        glm::vec3 rayEnd = cameraPosition + rayDirection * RAY_LENGTH;
+                        
+                        // Create and store the debug ray line
+                        m_debugRayLine = std::make_shared<Rapture::Line>(
+                            cameraPosition,    // Start at camera position
+                            rayEnd,            // End at a point far along the ray direction
+                            glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)  // Red color
+                        );
+                        
+                        // Set the timer to show the ray for 2 seconds
+                        m_showDebugRay = true;
+                    }
+                    
+                    // Queue the raycast with a callback
+                    Rapture::Raycast::queueRaycast(
+                        viewportMouseX, 
+                        viewportMouseY,
+                        width, height,
+                        m_activeScene.get(),
+                        cameraComponent.camera.getProjectionMatrix(),
+                        viewMatrix,
+                        [this, cameraPosition, rayDirection](const std::optional<Rapture::RaycastHit>& hit) {
+                            // This callback will be called when the raycast is processed
+                            if (hit.has_value()) {
+                                Rapture::GE_INFO("Queued raycast hit entity with ID: {}", hit->entity.getID());
+
+                                // Set this entity as the selected entity
+                                setSelectedEntity(hit->entity);
+                                
+                                // Update the debug ray line to end at the hit point
+                                if (m_debugRayLine && m_showDebugRay) {
+                                    // Create a new debug ray that extends to the hit point
+                                    m_debugRayLine = std::make_shared<Rapture::Line>(
+                                        cameraPosition,    // Start at camera position
+                                        hit->hitPoint,     // End at the hit point
+                                        glm::vec4(0.0f, 1.0f, 0.0f, 1.0f)  // Green color for hits
+                                    );
+                                    // Reset timer to ensure it stays visible
+                                    m_rayDisplayTimer = 2.0f;
+                                }
+                            } else {
+                                Rapture::GE_INFO("Queued raycast did not hit any entity");
+                            }
+                        }
+                    );
+                }
+            }
+            else
+        {
+            Rapture::GE_ERROR("Cannot perform raycast - framebuffer or camera is null");
+        }
+    }
+    
+
 	// Bind the framebuffer to render the scene to a texture
 	m_framebuffer->bind();
 	
 
 	// Render the scene to the framebuffer
 	Rapture::Renderer::sumbitScene(m_activeScene);
+    
+    // Draw the debug ray if active
+    if (m_showDebugRay && m_debugRayLine) {
+        Rapture::Renderer::drawLine(*m_debugRayLine);
+    }
 
 	// Unbind the framebuffer to return to the default framebuffer
 	m_framebuffer->unBind();
@@ -172,7 +304,27 @@ void TestLayer::onEvent(Rapture::Event& event)
         // Mouse button 0 is usually left mouse button
         if (mouseEvent.getMouseButton() == 0)
         {
-            CameraController::onWindowClicked();
+            // Only capture the mouse if it's inside the viewport
+            if (m_viewportPanel)
+            {
+                float windowMouseX = Rapture::Input::getMousePos().first;
+                float windowMouseY = Rapture::Input::getMousePos().second;
+                
+                // Only handle clicks inside the viewport
+                if (m_viewportPanel->isMouseInViewport(windowMouseX, windowMouseY))
+                {
+                    CameraController::onWindowClicked();
+                    m_wasMouseBtnPressedLastFrame = true;
+                }
+            }
+            else
+            {
+                // Fallback if viewport panel is not available
+                CameraController::onWindowClicked();
+                m_wasMouseBtnPressedLastFrame = true;
+            }
         }
     }
 }
+
+

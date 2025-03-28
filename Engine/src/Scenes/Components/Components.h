@@ -9,6 +9,7 @@
 #include "../../Scenes/EntityNode.h"
 #include "Transforms.h"
 #include "BoundingBox.h"
+#include "../../Debug/Profiler.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -69,11 +70,7 @@ namespace Rapture {
         }
         
         // Constructor that takes a mesh shared_ptr
-        MeshComponent(const std::shared_ptr<Mesh>& existingMesh) 
-        {
-            mesh = existingMesh;
-            GE_CORE_INFO("Created MeshComponent with existing mesh");
-        }
+        MeshComponent(std::shared_ptr<Mesh> meshPtr) : mesh(meshPtr), isLoading(false) {}
         
         MeshComponent(bool isEmpty)
 		{

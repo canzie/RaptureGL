@@ -15,7 +15,7 @@
 #include <unistd.h>
 #endif
 
-#include "../../Debug/Profiler.h"
+#include "../../Debug/TracyProfiler.h"
 
 namespace Rapture {
 

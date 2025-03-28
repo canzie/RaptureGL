@@ -1,8 +1,47 @@
 #include "BoundingBox.h"
+#include "../../Debug/TracyProfiler.h"
 #include "../../Logger/Log.h"
+#include "../../Renderer/PrimitiveShapes.h"
+#include "../../Materials/MaterialLibrary.h"
 #include <glm/gtc/matrix_transform.hpp>
+#include <algorithm>
 
 namespace Rapture {
+
+    // Initialize static members
+    std::shared_ptr<Mesh> BoundingBoxComponent::s_visualizationMesh = nullptr;
+    std::shared_ptr<Material> BoundingBoxComponent::s_visualizationMaterial = nullptr;
+    
+    void BoundingBoxComponent::initSharedResources() {
+        // Create a cube mesh if it doesn't exist
+        if (!s_visualizationMesh) {
+            // Create a static cube for visualization
+            // This will be transformed to match the bounding box dimensions and position
+            Cube visualizationCube(
+                glm::vec3(0.0f),       // position at origin (transformed during rendering)
+                glm::vec3(0.0f),       // no rotation
+                glm::vec3(1.0f),       // unit size (scaled during rendering)
+                glm::vec4(0.0f, 1.0f, 0.0f, 1.0f), // default green color
+                false                   // wireframe mode
+            );
+            
+            // Store the mesh for reuse
+            s_visualizationMesh = visualizationCube.getMesh();
+            
+            // Store the material for reuse
+            s_visualizationMaterial = visualizationCube.getMaterial();
+            
+            GE_CORE_INFO("BoundingBoxComponent: Initialized shared visualization resources");
+        }
+    }
+    
+    void BoundingBoxComponent::shutdownSharedResources() {
+        // Reset shared resources
+        s_visualizationMesh.reset();
+        s_visualizationMaterial.reset();
+        
+        GE_CORE_INFO("BoundingBoxComponent: Shutdown shared visualization resources");
+    }
 
     void BoundingBox::reset() {
         _min = glm::vec3(std::numeric_limits<float>::max());
@@ -11,38 +50,34 @@ namespace Rapture {
     }
 
     BoundingBox BoundingBox::calculateFromVertices(const std::vector<float>& vertices, size_t stride, size_t offset) {
-        if (vertices.empty() || stride < 3) {
+        RAPTURE_PROFILE_FUNCTION();
+        
+        if (vertices.empty()|| stride < 3) {
             return BoundingBox(); // Return invalid bounding box
         }
-
+        
         glm::vec3 min(std::numeric_limits<float>::max());
         glm::vec3 max(std::numeric_limits<float>::lowest());
         
-        // Iterate through each vertex
+        // Process each vertex
         for (size_t i = offset; i < vertices.size(); i += stride) {
-            // Make sure we don't go out of bounds
-            if (i + 2 >= vertices.size()) {
-                break;
-            }
+            // Ensure we have enough data for a position
+            if (i + 2 >= vertices.size()) break;
             
-            float x = vertices[i];
-            float y = vertices[i + 1];
-            float z = vertices[i + 2];
+            // Get the position from the vertex data
+            glm::vec3 pos(vertices[i], vertices[i + 1], vertices[i + 2]);
             
             // Update min and max
-            min.x = std::min(min.x, x);
-            min.y = std::min(min.y, y);
-            min.z = std::min(min.z, z);
-            
-            max.x = std::max(max.x, x);
-            max.y = std::max(max.y, y);
-            max.z = std::max(max.z, z);
+            min = glm::min(min, pos);
+            max = glm::max(max, pos);
         }
         
         return BoundingBox(min, max);
     }
 
     BoundingBox BoundingBox::transform(const glm::mat4& matrix) const {
+        RAPTURE_PROFILE_FUNCTION();
+        
         if (!_isValid) {
             return BoundingBox(); // Return invalid bounding box
         }

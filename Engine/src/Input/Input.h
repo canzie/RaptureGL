@@ -12,6 +12,8 @@ namespace Rapture
 
 		static bool isMouseBtnPressed(int btn);
 
+		static bool isMouseBtnReleased(int btn);
+
 		static void disableMouseCursor();
 		static void enableMouseCursor();
 

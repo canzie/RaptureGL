@@ -100,6 +100,11 @@ void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
         
         // If position changed, update the transform
         if (positionChanged) {
+
+            if (entity.hasComponent<Rapture::BoundingBoxComponent>()) {
+                entity.getComponent<Rapture::BoundingBoxComponent>().needsUpdate = true;
+            }
+
             transform.transforms.setTranslation(position);
             transform.transforms.recalculateTransform();
         }
@@ -155,6 +160,10 @@ void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
         if (rotationChanged) {
             transform.transforms.setRotation(rotation);
             transform.transforms.recalculateTransform();
+
+            if (entity.hasComponent<Rapture::BoundingBoxComponent>()) {
+                entity.getComponent<Rapture::BoundingBoxComponent>().needsUpdate = true;
+            }
         }
         
         ImGui::SameLine();
@@ -231,6 +240,9 @@ void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
             transform.transforms.setScale(scale);
             lastScale = scale;
             transform.transforms.recalculateTransform();
+            if (entity.hasComponent<Rapture::BoundingBoxComponent>()) {
+                entity.getComponent<Rapture::BoundingBoxComponent>().needsUpdate = true;
+            }
         }
 
         ImGui::SameLine();
@@ -242,6 +254,37 @@ void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
             ImGui::SetTooltip("Lock scale (maintain aspect ratio)");
         
         ImGui::EndGroup();
+    }
+
+    // Add section for BoundingBox component
+    bool hasBoundingBox = entity.hasComponent<Rapture::BoundingBoxComponent>();
+    
+    if (hasBoundingBox && ImGui::CollapsingHeader("Bounding Box", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto& boundingBoxComp = entity.getComponent<Rapture::BoundingBoxComponent>();
+        
+        // Toggle visibility
+        bool isVisible = boundingBoxComp.isVisible;
+        if (ImGui::Checkbox("Visible", &isVisible)) {
+            boundingBoxComp.isVisible = isVisible;
+        }
+        
+        // Display bounding box information
+        if (boundingBoxComp.worldBoundingBox.isValid()) {
+            glm::vec3 min = boundingBoxComp.worldBoundingBox.getMin();
+            glm::vec3 max = boundingBoxComp.worldBoundingBox.getMax();
+            glm::vec3 size = boundingBoxComp.worldBoundingBox.getSize();
+            
+            ImGui::Text("Min: (%.2f, %.2f, %.2f)", min.x, min.y, min.z);
+            ImGui::Text("Max: (%.2f, %.2f, %.2f)", max.x, max.y, max.z);
+            ImGui::Text("Size: (%.2f, %.2f, %.2f)", size.x, size.y, size.z);
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Bounding box is not valid");
+        }
+        
+        // Force update button
+        if (ImGui::Button("Update Bounding Box")) {
+            boundingBoxComp.markForUpdate();
+        }
     }
 
     // Edit Material component if it exists

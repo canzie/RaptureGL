@@ -3,8 +3,14 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <limits>
+#include <memory>
 
 namespace Rapture {
+
+    // Forward declarations
+    class Mesh;
+    class Material;
+    class Cube;
 
     class BoundingBox {
     private:
@@ -71,6 +77,12 @@ namespace Rapture {
         // Flag to indicate if this bounding box should be rendered
         bool isVisible = false;
         
+        // Shared visualization Mesh (can be shared among components)
+        static std::shared_ptr<Mesh> s_visualizationMesh;
+        
+        // Shared visualization Material (can be shared among components)
+        static std::shared_ptr<Material> s_visualizationMaterial;
+        
         // Constructor
         BoundingBoxComponent() = default;
         
@@ -90,6 +102,12 @@ namespace Rapture {
         void markForUpdate() {
             needsUpdate = true;
         }
+        
+        // Initialize the shared visualization resources
+        static void initSharedResources();
+        
+        // Cleanup the shared visualization resources
+        static void shutdownSharedResources();
     };
 
 } // namespace Rapture 

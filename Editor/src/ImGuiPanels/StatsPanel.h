@@ -6,7 +6,7 @@
 #include <vector>
 #include <unordered_map>
 #include <set>
-#include "../../Engine/src/Debug/Profiler.h"
+#include "../../Engine/src/Debug/TracyProfiler.h"
 
 class StatsPanel {
 public:
@@ -19,70 +19,56 @@ private:
     // Tabs
     enum class TabType {
         Overview,
-        CPU,
-        GPU,
-        Memory,
-        Rendering
+        Tracy
     };
     TabType m_activeTab = TabType::Overview;
     
     // Cached data for performance
     void updateCachedData();
     void renderOverviewTab();
-    void renderCPUTab();
-    void renderGPUTab();
-    void renderMemoryTab();
-    void renderRenderingTab();
+    void renderTracyTab();
     
     // Helpers for sections
     void renderHistoryGraph(const std::array<float, 100>& history, const char* label, float maxValue);
-    void renderTimingTable(const std::vector<std::pair<std::string, Rapture::ProfileTimingData>>& data, 
-                          const char* title, bool hierarchical = false);
-    void renderTimingRow(const std::pair<std::string, Rapture::ProfileTimingData>& row, bool isPinned);
-    void renderTimingGraph(const std::string& name, const std::array<float, 30>& history, 
-                          float currentValue, float maxValue);
-    void renderFrameTimeBreakdown();
     void renderColoredValue(float value, float warningThreshold, float errorThreshold, 
                            const char* format, bool lowerIsBetter = true, const char* customText = nullptr);
+    
+    // Tracy-specific functionality
+    void renderTracyEmbeddedView();  // Renders Tracy UI directly in ImGui
+    void renderTracyServerStatus();  // Shows connection status with Tracy server
+    void renderTracyControlPanel();  // Control panel for Tracy settings
 
     // Stats update timing
-    static constexpr float UPDATE_INTERVAL = 0.5f; // Shorter update interval
+    static constexpr float UPDATE_INTERVAL = 0.5f; // Update interval
     float m_updateTimer = 0.0f;
     
-    // Search functionality
-    char m_searchBuffer[128] = "";
-    bool m_searchActive = false;
+    // Simple performance history (we'll keep this even without the old profilers)
+    std::array<float, 100> m_frameTimeHistory = {};
+    int m_frameTimeHistoryIndex = 0;
     
-    // Pinned components
-    std::set<std::string> m_pinnedComponents;
-    
-    // Cached performance data
-    float m_cachedCPUFrameTime = 0.0f;
-    float m_cachedGPUFrameTime = 0.0f;
-    float m_cachedAverageFrameTime = 0.0f;
-    float m_cachedMinFrameTime = 0.0f;
-    float m_cachedMaxFrameTime = 0.0f;
-    int m_cachedFPS = 0;
-    std::array<float, 100> m_cachedCPUHistory = {};
-    std::array<float, 100> m_cachedGPUHistory = {};
-    std::vector<std::pair<std::string, Rapture::ProfileTimingData>> m_cachedProfileData;
-    std::vector<std::pair<std::string, Rapture::ProfileTimingData>> m_filteredProfileData;
-    std::unordered_map<std::string, std::array<float, 30>> m_componentHistories;
-    
-    // Rendering stats
+    // Rendering stats (placeholder values)
     int m_drawCalls = 0;
     int m_triangleCount = 0;
     int m_batchCount = 0;
     int m_shaderBinds = 0;
     
-    // Memory stats
+    // Memory stats (placeholder values)
     size_t m_totalMemoryUsage = 0;
     size_t m_textureMemoryUsage = 0;
     size_t m_meshMemoryUsage = 0;
     
-    // GPU timing data
-    std::vector<std::pair<std::string, float>> m_gpuTimings;
-
+    // Tracy-specific data
+    bool m_tracyEnabled = false;
+    bool m_tracyConnected = false;
+    ImVec2 m_tracyViewSize = ImVec2(0, 400);
+    
+    // Performance data
+    float m_lastFrameTimeMs = 0.0f;
+    float m_minFrameTimeMs = 0.0f;
+    float m_maxFrameTimeMs = 0.0f;
+    float m_avgFrameTimeMs = 0.0f;
+    int m_fps = 0;
+    
     // Performance thresholds
     static constexpr float FRAMETIME_WARNING_MS = 16.0f;  // ~60 FPS
     static constexpr float FRAMETIME_ERROR_MS = 33.0f;    // ~30 FPS

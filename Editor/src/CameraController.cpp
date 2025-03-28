@@ -3,6 +3,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+
 // Initialize static members
 Rapture::Entity CameraController::s_cameraEntity;
 float CameraController::s_lastMouseX = 0.0f;

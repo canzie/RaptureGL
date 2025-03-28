@@ -6,6 +6,7 @@
 #include "../Buffers/OpenGLBuffers/UniformBuffers/OpenGLUniformBuffer.h"
 #include "../Mesh/Mesh.h"
 #include "../Materials/Material.h"
+#include "PrimitiveShapes.h"
 #include <memory>
 #include <vector>
 #include <unordered_set>
@@ -27,6 +28,11 @@ namespace Rapture
 
 		static void sumbitScene(const std::shared_ptr<Scene> s);
 		
+		// Drawing functions that take shape objects as parameters
+        static void drawLine(const Line& line);
+        static void drawCube(const Cube& cube);
+        static void drawQuad(const Quad& quad);
+
 		// Bounding box rendering methods
 		// Show a bounding box for an entity
 		static void showBoundingBox(Entity entity, bool show = true);
@@ -60,55 +66,52 @@ namespace Rapture
 			std::vector<entt::entity>& lightEntities);
 
 		// Setup camera uniform buffer
-		static bool setupCameraUniforms(const std::shared_ptr<Scene> s, entt::entity cameraEntity, glm::vec3& camPos);
-		
+		static bool setupCameraUniforms(const std::shared_ptr<Scene> s, 
+			entt::entity cameraEntity, 
+			glm::vec3& camPos);
+			
 		// Setup lights uniform buffer
-		static void setupLightsUniforms(const std::shared_ptr<Scene> s, const std::vector<entt::entity>& lightEntities);
+		static void setupLightsUniforms(const std::shared_ptr<Scene> s, 
+			const std::vector<entt::entity>& lightEntities);
 		
-		// Render all meshes in the scene
+		// Check if an entity is visible (frustum culling)
+		static bool isEntityVisible(const std::shared_ptr<Scene>& s, entt::entity entity);
+		
+		// Render all meshes
 		static void renderMeshes(const std::shared_ptr<Scene> s, 
 			const std::vector<entt::entity>& meshEntities, 
 			const glm::vec3& camPos);
-			
-		// Render visible bounding boxes
-		static void renderBoundingBoxes(const std::shared_ptr<Scene> s,
-			const glm::vec3& camPos);
-			
-		// Create a wireframe cube mesh for bounding box visualization
-		static std::shared_ptr<Mesh> createBoundingBoxMesh();
 		
-		// Draw a single bounding box
+		// Draw a bounding box for a specific entity
 		static void drawBoundingBox(const std::shared_ptr<Scene> s, Entity entity);
-
-		// Uniform buffers
+		
+		// Uniform buffers for camera and lights
 		static std::shared_ptr<UniformBuffer> s_cameraUBO;
 		static std::shared_ptr<UniformBuffer> s_lightsUBO;
 		
-		// Camera data caching for optimization
+		// Camera uniform caching
 		static bool s_cameraDataInitialized;
 		static glm::mat4 s_cachedProjectionMatrix;
 		static glm::mat4 s_cachedViewMatrix;
 		static void* s_persistentCameraBufferPtr;
 		
-		// Lights data caching for optimization
+		// Lights uniform caching
 		static bool s_lightsDataInitialized;
 		static void* s_persistentLightsBufferPtr;
 		static std::vector<entt::entity> s_cachedLightEntities;
 		static uint32_t s_cachedLightCount;
 		static bool s_lightsDirty;
 		
-		// Bounding box visualization
-		static std::shared_ptr<Mesh> s_boundingBoxMesh;
-		static std::shared_ptr<Material> s_boundingBoxMaterial;
+		// Bounding box visualization color
 		static glm::vec3 s_boundingBoxColor;
-
+		
 		// Frustum culling
 		static Frustum s_frustum;
 		static bool s_frustumCullingEnabled;
-		static uint32_t s_entitiesCulled; // Counter for debug/stats
-
-		// Helper methods for rendering
-		static bool isEntityVisible(const std::shared_ptr<Scene>& s, entt::entity entity);
+		static uint32_t s_entitiesCulled;
+		
+		// Visible entities for the current frame
+		static std::vector<Rapture::Entity> s_visibleEntities;
 	};
 
-}
+} // namespace Rapture

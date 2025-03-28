@@ -34,11 +34,13 @@ namespace Rapture
         _planes[3].z = viewProj[2][3] - viewProj[2][1];
         _planes[3].w = viewProj[3][3] - viewProj[3][1];
 
-        // Near plane
-        _planes[4].x = viewProj[0][3] + viewProj[0][2];
-        _planes[4].y = viewProj[1][3] + viewProj[1][2];
-        _planes[4].z = viewProj[2][3] + viewProj[2][2];
-        _planes[4].w = viewProj[3][3] + viewProj[3][2];
+        // Near plane - Fixed to avoid culling objects close to the camera
+        // Instead of adding the z component, we're taking just the pure z component
+        // This creates a more accurate near plane
+        _planes[4].x = viewProj[0][2];
+        _planes[4].y = viewProj[1][2];
+        _planes[4].z = viewProj[2][2];
+        _planes[4].w = viewProj[3][2];
 
         // Far plane
         _planes[5].x = viewProj[0][3] - viewProj[0][2];
@@ -77,8 +79,10 @@ namespace Rapture
         bool fullyInside = true;
 
         // Test against each frustum plane
-        for (const auto& plane : _planes)
+        for (int i = 0; i < _planes.size(); i++)
         {
+            const auto& plane = _planes[i];
+            
             // Find the point that is furthest along the normal direction (positive vertex)
             glm::vec3 positiveVertex;
             positiveVertex.x = (plane.x > 0.0f) ? max.x : min.x;
@@ -91,14 +95,29 @@ namespace Rapture
             negativeVertex.y = (plane.y > 0.0f) ? min.y : max.y;
             negativeVertex.z = (plane.z > 0.0f) ? min.z : max.z;
 
+            // Calculate distance
+            float negDistance = plane.x * negativeVertex.x + plane.y * negativeVertex.y + 
+                                plane.z * negativeVertex.z + plane.w;
+            
+            // Apply a small bias/epsilon for the near plane (index 4)
+            // This prevents objects close to the camera from being culled incorrectly
+            if (i == 4) { // Near plane index
+                constexpr float NEAR_PLANE_EPSILON = 0.05f; // Adjust as needed
+                negDistance += NEAR_PLANE_EPSILON;
+            }
+            
             // If the negative vertex is outside, the box is outside
-            if (plane.x * negativeVertex.x + plane.y * negativeVertex.y + plane.z * negativeVertex.z + plane.w < 0.0f)
+            if (negDistance < 0.0f)
             {
                 return FrustumResult::Outside;
             }
 
+            // Calculate positive vertex distance for inside/intersect determination
+            float posDistance = plane.x * positiveVertex.x + plane.y * positiveVertex.y + 
+                                plane.z * positiveVertex.z + plane.w;
+                                
             // If the positive vertex is outside, the box is intersecting
-            if (plane.x * positiveVertex.x + plane.y * positiveVertex.y + plane.z * positiveVertex.z + plane.w < 0.0f)
+            if (posDistance < 0.0f)
             {
                 fullyInside = false;
             }

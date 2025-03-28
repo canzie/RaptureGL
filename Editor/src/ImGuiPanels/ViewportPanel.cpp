@@ -8,6 +8,9 @@ void ViewportPanel::renderSceneViewport(TestLayer* testLayer) {
     // Get the size of the ImGui window viewport
     ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
     
+    // Store the current cursor position - this is the top-left corner of the viewport
+    m_viewportPosition = ImGui::GetCursorScreenPos();
+    
     if (testLayer) {
         // Get the framebuffer from the test layer
         unsigned int textureID = testLayer->getFramebuffer()->getColorAttachmentRendererID();
@@ -59,5 +62,27 @@ void ViewportPanel::renderDepthBufferViewport(TestLayer* testLayer) {
     }
     
     ImGui::End();
+}
+
+bool ViewportPanel::windowToViewportCoordinates(float windowX, float windowY, float& viewportX, float& viewportY) const {
+    // Check if the point is inside the viewport
+    if (!isMouseInViewport(windowX, windowY)) {
+        viewportX = -1.0f;
+        viewportY = -1.0f;
+        return false;
+    }
+    
+    // Convert from window coordinates to viewport-local coordinates
+    viewportX = windowX - m_viewportPosition.x;
+    viewportY = windowY - m_viewportPosition.y;
+    return true;
+}
+
+bool ViewportPanel::isMouseInViewport(float windowX, float windowY) const {
+    // Check if the given window coordinates are inside the viewport
+    return (windowX >= m_viewportPosition.x && 
+            windowX < m_viewportPosition.x + lastSize.x &&
+            windowY >= m_viewportPosition.y && 
+            windowY < m_viewportPosition.y + lastSize.y);
 }
 
