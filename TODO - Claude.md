@@ -238,17 +238,72 @@ A robust mesh system should use a hierarchical structure with support for instan
 
 
 
-- bounding box calculations and rendering
+
+
+- asset manager
+- propegate changed in an entities hierarchy
+
+
 - deffered renderer
+- material boolean operations, to comapre materials -> sorting
+- allow for static/normal meshes to be created, static should bake in the transforms and will be 1 entity (current issue is materials)
+    material slots???
+
+    ```
+    // Fragment shader
+    #version 430 core
+
+    // UBO for materials
+    layout(std140, binding = 0) uniform MaterialBuffer {
+        // Each material is 32 bytes (matching your C++ struct)
+        vec4 baseColor[64];    // 16 bytes
+        float roughness[64];   // 4 bytes
+        float metallic[64];    // 4 bytes
+        float specular[64];    // 4 bytes
+        float padding[64];     // 4 bytes
+    } materials;
+
+    // Or using SSBO for more flexibility
+    /*
+    layout(std430, binding = 0) buffer MaterialBuffer {
+        MaterialData materials[];
+    } materialBuffer;
+
+    struct MaterialData {
+        vec4 baseColor;
+        float roughness;
+        float metallic;
+        float specular;
+        float padding;
+    };
+    */
+
+    // Receive material index from vertex shader
+    flat in uint vMaterialIndex;
+
+    out vec4 fragColor;
+
+    void main() {
+        // Use the material parameters for this fragment
+        vec4 color = materials.baseColor[vMaterialIndex];
+        float rough = materials.roughness[vMaterialIndex];
+        float metal = materials.metallic[vMaterialIndex];
+        
+        // PBR calculation using selected material parameters...
+        
+        fragColor = calculatePBR(color, rough, metal);
+    }
+    ```
+
+- gizmo
 - instanced meshes
 - particle system
-- mouse picking
 - Physics
 - Audio
 - serializer
 - more advanced particle system
 - Scripting
-
+- more multithreading
 
 
 

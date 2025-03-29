@@ -114,6 +114,8 @@ namespace Rapture
 
         RAPTURE_PROFILE_GPU_SCOPE("Renderer::SubmitScene");
 
+        s_frustumCullingEnabled = s->getSettings().frustumCullingEnabled;
+
 		// Reset culling counter for this frame
 		s_entitiesCulled = 0;
 
@@ -197,7 +199,7 @@ namespace Rapture
 		}
 	}
 	
-	void Renderer::hideBoundingBox(Entity entity)
+	void Renderer::hideBoundingBox(Entity& entity)
 	{
 		if (!entity || !entity.hasComponent<BoundingBoxComponent>()) {
 			return;
@@ -686,7 +688,7 @@ namespace Rapture
 				vao->bind();
 
 				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-				glDrawElements(GL_LINES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes);
+				glDrawElementsBaseVertex(GL_LINES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes, mesh->getMeshData().vertexOffsetInVertices);
 				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 				
 				vao->unbind();
@@ -763,16 +765,33 @@ namespace Rapture
             if (vao) {
                 vao->bind();
                 if (cube.isFilled()) {
-                    glDrawElements(GL_TRIANGLES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes);
+                    glDrawElementsBaseVertex(GL_TRIANGLES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes, mesh->getMeshData().vertexOffsetInVertices);
                 } else {
-                    glDrawElements(GL_LINES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes);
+                    glDrawElementsBaseVertex(GL_LINES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes, mesh->getMeshData().vertexOffsetInVertices);
                 }
                 vao->unbind();
             }
         }
     }
 
-    void Renderer::drawQuad(const Quad& quad) {
+    void Renderer::drawSprites(const std::shared_ptr<Scene> s) {
+        RAPTURE_PROFILE_FUNCTION();
+
+        auto view = s->getRegistry().view<SpriteComponent>();
+        for (auto entity : view) {
+            auto ent = Entity(entity, s.get());
+            auto sprite = ent.getComponent<SpriteComponent>();
+            if (ent.hasComponent<TransformComponent>()) {
+                drawQuad(sprite.quad, ent.getComponent<TransformComponent>().transformMatrix());
+            } else {
+                drawQuad(sprite.quad);
+            }
+        }
+   
+    
+    }
+
+    void Renderer::drawQuad(const Quad& quad, const glm::mat4& transform) {
         RAPTURE_PROFILE_FUNCTION();
         
         // Bind the material
@@ -781,7 +800,7 @@ namespace Rapture
             material->bind();
             
             // Create transformation matrix
-            glm::mat4 modelMatrix = glm::mat4(1.0f);
+            glm::mat4 modelMatrix = transform;
             
             // Apply translation, rotation, and scale
             modelMatrix = glm::translate(modelMatrix, quad.getPosition());
@@ -803,7 +822,7 @@ namespace Rapture
             auto vao = mesh->getMeshData().vao;
             if (vao) {
                 vao->bind();
-                glDrawElements(GL_TRIANGLES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes);
+                glDrawElementsBaseVertex(GL_TRIANGLES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes, mesh->getMeshData().vertexOffsetInVertices);
                 vao->unbind();
             }
         }

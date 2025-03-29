@@ -6,6 +6,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include "../Scenes/Components/BoundingBox.h"
+#include "../Scenes/Systems/BoundingBoxSystem.h"
 
 namespace Rapture
 {
@@ -52,45 +53,86 @@ namespace Rapture
             float closestDistance = std::numeric_limits<float>::max();
             std::optional<RaycastHit> closestHit;
             
-            // Only test against visible entities
-            for (auto entity : visibleEntities) {
-                if (!entity.hasComponent<BoundingBoxComponent>()) {
-                    continue;
+            if (!scene->getSettings().frustumCullingEnabled) {
+                auto Entities = scene->getRegistry().view<BoundingBoxComponent>();
+
+                // test agains all entities, no culling
+                for (auto entity : Entities) {
+                    Entity ent(entity, scene);
+
+                    if (!ent.hasComponent<BoundingBoxComponent>()) {
+                        continue;
+                    }
+                    
+                    float distance = 0.0f;
+                    glm::vec3 hitPoint;
+                    
+                    if (testRaycastHelper(pendingRaycast, hitPoint, distance, ent))
+                    {
+                        // Only update if this hit is closer than previous hits
+                        if (distance < closestDistance) {
+                            closestDistance = distance;
+                            
+                            RaycastHit hit;
+                            hit.entity = ent;
+                            hit.distance = distance;
+                            hit.hitPoint = hitPoint;
+                            closestHit = hit;
+                        }
+                    }
                 }
+
+            } else {
                 
-                auto& boundingBoxComponent = entity.getComponent<BoundingBoxComponent>();
-                
-                // Skip if the bounding box needs update
-                if (boundingBoxComponent.needsUpdate) {
-                    continue;
-                }
-                
-                float distance = 0.0f;
-                glm::vec3 hitPoint;
-                
-                if (rayIntersectsBoundingBox(
-                    pendingRaycast.origin, 
-                    pendingRaycast.direction, 
-                    boundingBoxComponent.worldBoundingBox, 
-                    distance, 
-                    hitPoint))
-                {
-                    // Only update if this hit is closer than previous hits
-                    if (distance < closestDistance) {
-                        closestDistance = distance;
-                        
-                        RaycastHit hit;
-                        hit.entity = entity;
-                        hit.distance = distance;
-                        hit.hitPoint = hitPoint;
-                        closestHit = hit;
+                // Only test against visible entities
+                for (auto entity : visibleEntities) {
+                    if (!entity.hasComponent<BoundingBoxComponent>()) {
+                        continue;
+                    }
+                    
+                    float distance = 0.0f;
+                    glm::vec3 hitPoint;
+                    
+                    if (testRaycastHelper(pendingRaycast, hitPoint, distance, entity))
+                    {
+                        // Only update if this hit is closer than previous hits
+                        if (distance < closestDistance) {
+                            closestDistance = distance;
+                            
+                            RaycastHit hit;
+                            hit.entity = entity;
+                            hit.distance = distance;
+                            hit.hitPoint = hitPoint;
+                            closestHit = hit;
+                        }
                     }
                 }
             }
+
+
+
+            
             
             // Invoke the callback with the result
             pendingRaycast.callback(closestHit);
         }
+    }
+
+    bool Raycast::testRaycastHelper(PendingRaycast& pendingRaycast, glm::vec3& hitPoint, float& distance, Entity entity)
+    {
+        auto& boundingBoxComponent = entity.getComponent<BoundingBoxComponent>();
+                
+        // Skip if the bounding box needs update
+        if (boundingBoxComponent.needsUpdate) {
+            BoundingBoxSystem::updateBoundingBox(entity);
+        }
+                
+        return rayIntersectsBoundingBox(
+            pendingRaycast.origin, 
+            pendingRaycast.direction, 
+            boundingBoxComponent.worldBoundingBox, 
+            distance, 
+            hitPoint);
     }
 
     glm::vec3 Raycast::screenToWorldRay(

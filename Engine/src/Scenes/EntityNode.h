@@ -30,6 +30,21 @@ namespace Rapture
         std::vector<std::shared_ptr<EntityNode>> getChildren() const;
         std::shared_ptr<EntityNode> getParent() const;
 
+
+        // helper function to get the parents component
+        template<typename T>
+        T& getParentComponent()
+        {
+            if (m_parent) {
+                auto parentComp = m_parent->getEntity()->tryGetComponent<T>();
+                if (parentComp) {
+                    return *parentComp;
+                }
+                throw std::runtime_error("Component of type T not found in parent entity");
+            }
+            throw std::runtime_error("EntityNode has no parent");
+        }
+
     private:    
         std::shared_ptr<Entity> m_entity;
         std::vector<std::shared_ptr<EntityNode>> m_children;

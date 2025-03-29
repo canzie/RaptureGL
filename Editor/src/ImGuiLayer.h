@@ -12,6 +12,7 @@
 #include "ImGuiPanels/AssetsPanel.h"
 #include "ImGuiPanels/SettingsPanel.h"
 #include "Scenes/Entity.h"
+#include "vendor/ImGuizmo/ImGuizmo.h"
 
 
 class ImGuiLayer : public Rapture::Layer
@@ -43,6 +44,6 @@ private:
     SettingsPanel* m_SettingsPanel = nullptr; // Created after Window context is available
     
     // Currently selected entity (shared between panels through callbacks)
-    Rapture::Entity m_SelectedEntity;
+    std::shared_ptr<Rapture::Entity> m_SelectedEntity;
 };
 

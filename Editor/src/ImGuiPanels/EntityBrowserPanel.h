@@ -13,6 +13,7 @@
 #include <memory>
 
 #include "imgui.h"
+#include "imgui_internal.h" // For ImRect
 
 // Forward declaration
 class HierarchyNode;
@@ -20,10 +21,10 @@ class HierarchyNode;
 // Hierarchy node to cache entity hierarchy data
 class HierarchyNode {
 public:
-    HierarchyNode(entt::entity handle, const std::string& name) 
-        : entityHandle(handle), entityName(name) {}
+    HierarchyNode(std::shared_ptr<Rapture::Entity> entity, const std::string& name) 
+        : entity(entity), entityName(name) {}
     
-    entt::entity entityHandle;
+    std::shared_ptr<Rapture::Entity> entity;
     std::string entityName;
     std::vector<std::shared_ptr<HierarchyNode>> children;
 };
@@ -31,7 +32,7 @@ public:
 class EntityBrowserPanel {
 public:
     // Define the callback type for entity selection
-    using EntitySelectionCallback = std::function<void(Rapture::Entity&)>;
+    using EntitySelectionCallback = std::function<void(std::shared_ptr<Rapture::Entity>)>;
 
     EntityBrowserPanel() = default;
     ~EntityBrowserPanel() = default;
@@ -39,21 +40,21 @@ public:
     void render(Rapture::Scene* scene, EntitySelectionCallback callback);
     
     // Get the currently selected entity
-    Rapture::Entity getSelectedEntity() const { return m_selectedEntity; }
+    std::shared_ptr<Rapture::Entity> getSelectedEntity() const { return m_selectedEntity; }
     
     // Check if an entity is selected
-    bool hasSelectedEntity() const { return m_selectedEntity; }
+    bool hasSelectedEntity() const { return m_selectedEntity != nullptr; }
     
     // Force rebuild of hierarchy cache
     void refreshHierarchyCache() { m_needsHierarchyRebuild = true; }
 
 private:
     // Helper method to find the root entity by traversing up the hierarchy
-    entt::entity findRootEntity(entt::entity entityHandle, Rapture::Scene* scene);
+    std::shared_ptr<Rapture::Entity> findRootEntity(std::shared_ptr<Rapture::Entity> entity, Rapture::Scene* scene);
     
     // Helper function to display an entity and its children recursively
-    void displayEntityHierarchy(entt::entity entityHandle, int depth, Rapture::Scene* scene, 
-                              std::unordered_set<entt::entity>& displayedEntities);
+    void displayEntityHierarchy(std::shared_ptr<Rapture::Entity> entity, int depth, Rapture::Scene* scene, 
+                              std::unordered_set<uint32_t>& displayedEntities);
     
     // Builds the cached hierarchy from scratch
     void buildHierarchyCache(Rapture::Scene* scene);
@@ -61,8 +62,11 @@ private:
     // Display entities from the cached hierarchy
     void displayCachedHierarchy(const std::shared_ptr<HierarchyNode>& node, int depth, Rapture::Scene* scene);
     
+    // Helper function that returns the node rectangle for line drawing
+    ImRect displayCachedHierarchyWithRect(const std::shared_ptr<HierarchyNode>& node, int depth, Rapture::Scene* scene);
+    
     // Currently selected entity
-    Rapture::Entity m_selectedEntity;
+    std::shared_ptr<Rapture::Entity> m_selectedEntity;
     
     // Callback for entity selection
     EntitySelectionCallback m_entitySelectionCallback;

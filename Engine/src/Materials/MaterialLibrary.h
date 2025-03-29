@@ -35,6 +35,8 @@ public:
                                                                      const glm::vec3& specularColor = glm::vec3(1.0f, 1.0f, 1.0f),
                                                                      float glossiness = 0.5f);
 
+    static std::shared_ptr<Material> createCubeMapMaterial(const std::string& name);
+
     // Material instance creation
     static std::shared_ptr<MaterialInstance> createMaterialInstance(const std::string& sourceMaterialName, 
                                                                   const std::string& instanceName);

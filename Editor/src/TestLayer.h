@@ -9,14 +9,18 @@
 #include "Mesh/Mesh.h"
 #include "Renderer/PrimitiveShapes.h"
 
-// Forward declaration
+// Forward declarations
 class ViewportPanel;
+
+// Callback types
+using EntitySelectedCallback = std::function<void(std::shared_ptr<Rapture::Entity>)>;
+using CameraMatricesCallback = std::function<void(const glm::mat4&, const glm::mat4&)>; // view, projection
 
 class TestLayer : public Rapture::Layer
 {
 public:
 	// Define a callback for entity selection changes
-	using EntitySelectedCallback = std::function<void(Rapture::Entity)>;
+	using EntitySelectedCallback = std::function<void(std::shared_ptr<Rapture::Entity>)>;
 
 	TestLayer()
 		: Layer("Test Layer")
@@ -41,10 +45,16 @@ public:
     void setEntitySelectedCallback(EntitySelectedCallback callback) { m_entitySelectedCallback = callback; }
     
     // Get the currently selected entity
-    Rapture::Entity getSelectedEntity() const { return m_selectedEntity; }
+    std::shared_ptr<Rapture::Entity> getSelectedEntity() const { return m_selectedEntity; }
     
     // Set the currently selected entity
-    void setSelectedEntity(Rapture::Entity entity);
+    void setSelectedEntity(std::shared_ptr<Rapture::Entity> entity);
+    
+    // Set callback for camera matrices updates (for ImGuizmo)
+    void setCameraMatricesCallback(CameraMatricesCallback callback) { m_cameraMatricesCallback = callback; }
+    
+    // Call to notify about camera changes
+    void notifyCameraChange();
 
 private:
 	std::shared_ptr<Rapture::Scene> m_activeScene;
@@ -65,10 +75,13 @@ private:
     float m_rayDisplayTimer = 0.0f;
     bool m_showDebugRay = false;
     
-    // Reference to the viewport panel for coordinate conversion
+    // Reference to the UI panels for interaction
     ViewportPanel* m_viewportPanel = nullptr;
     
     // Entity selection
-    Rapture::Entity m_selectedEntity;
+    std::shared_ptr<Rapture::Entity> m_selectedEntity;
     EntitySelectedCallback m_entitySelectedCallback;
+    
+    // Camera matrices callback
+    CameraMatricesCallback m_cameraMatricesCallback;
 };

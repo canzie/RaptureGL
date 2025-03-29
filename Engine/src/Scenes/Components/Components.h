@@ -10,9 +10,14 @@
 #include "Transforms.h"
 #include "BoundingBox.h"
 #include "../../Debug/Profiler.h"
+#include "../../Textures/Texture.h"
+
+#include "../../Renderer/PrimitiveShapes.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+
+#include "../../Animations/Skeleton/Skeleton.h"
 
 #include <vector>
 //#include <string>
@@ -48,6 +53,40 @@ namespace Rapture {
             transforms.setTransform(transformMatrix);
         }
 	};
+
+    struct AnimationComponent
+    {
+        //std::shared_ptr<Animation> animation;
+        //std::string animationName;
+        
+        
+    };
+
+    struct SkeletonComponent
+    {
+        std::shared_ptr<Skeleton> skeleton;
+        
+        SkeletonComponent(std::string& name)
+        {
+            skeleton = std::make_shared<Skeleton>(name);
+        }
+
+        SkeletonComponent()
+        {
+            skeleton = std::make_shared<Skeleton>();
+        }
+        
+        
+    };
+
+
+    struct StaticMeshComponent
+    {
+        std::shared_ptr<Mesh> mesh;
+        bool isLoading = false;
+        
+        
+    };
 
 	struct MeshComponent
 	{
@@ -293,6 +332,41 @@ namespace Rapture {
 		}
 
 	};
+
+    struct SpriteComponent
+    {
+        std::shared_ptr<Texture2D> texture;
+        std::string texturePath;
+        Quad quad;
+
+        SpriteComponent() = default;
+
+        SpriteComponent(std::string texturePath)
+        {
+            this->texturePath = texturePath;
+            texture = TextureLibrary::loadAsync(texturePath);
+            quad = Quad();
+            quad.getMaterial()->setTexture("albedoMap", texture);
+        };
+
+        void setTexture(std::string texturePath)
+        {
+            this->texturePath = texturePath;
+            texture = TextureLibrary::loadAsync(texturePath);
+            quad.getMaterial()->setTexture("albedoMap", texture);
+        }
+        
+
+    };
+
+
+    struct GizmoComponent
+    {
+        bool isActive = false;
+        
+        
+
+    };
 
     struct EntityNodeComponent
     {

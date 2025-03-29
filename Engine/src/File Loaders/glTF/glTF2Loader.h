@@ -19,6 +19,16 @@ using json = nlohmann::json;
 namespace Rapture
 {
 
+
+    enum class NodeType
+    {
+        Empty,
+        Mesh,
+        Bone,
+        Skeleton,
+    };
+
+
 	/**
 	 * @brief Modern loader for glTF 2.0 format 3D models using entity-component architecture
 	 * 
@@ -82,7 +92,15 @@ namespace Rapture
 		 * @param nodeJSON JSON object containing node data
 		 * @return Entity The created entity
 		 */
-		Entity processNode(Entity parentEntity, json& nodeJSON);
+		NodeType processNode(Entity parentEntity, json& nodeJSON);
+
+        /**
+         * @brief Process a skeleton from the glTF file and create entities
+         * 
+         * @param parentEntity Parent entity
+         * @param skinJSON JSON object containing skeleton data
+         */
+        void processSkeleton(Entity parentEntity, json& skinJSON);
 
 		/**
 		 * @brief Process a scene from the glTF file
@@ -129,6 +147,22 @@ namespace Rapture
          * @param progress The progress value between 0.0 and 1.0
          */
         void reportProgress(float progress);
+
+        /**
+         * @brief Get the transform matrix of a node
+         * 
+         * @param nodeJSON JSON object containing node data
+         * @return The transform matrix of the node
+         */
+        glm::mat4 getNodeTransform(json& nodeJSON);
+
+        /**
+         * @brief Process a bone from the glTF file and create an entity
+         * 
+         * @param entity Entity to attach the bone to
+         * @param boneIndex The index of the bone in the glTF file
+         */
+        void processBone(Entity entity, unsigned int boneIndex);
 
 	private:
 		// Reference to the scene being populated

@@ -21,6 +21,9 @@ namespace Rapture
     // Initialize static shader for SpecularGlossiness material
     Shader* SpecularGlossinessMaterial::s_shader = nullptr;
 
+	Shader* CubeMapMaterial::s_shader = nullptr;
+
+
 	//OpenGLShader* Material::s_shader = nullptr;
 
 
@@ -469,12 +472,22 @@ namespace Rapture
 			glm::vec3 color = getParameter("color").asVec3();
 			m_uniformData.baseColorFactor = glm::vec4(color, 1.0f);
 		}
-		if (hasParameter("albedoMap")) {
-			std::shared_ptr<Texture2D> texture = getParameter("albedoMap").asTexture();
-			if (texture) {
-				texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
-			}
-		}
+        // Bind all PBR textures to their respective slots
+        if (hasParameter("albedoMap")) {
+            
+            std::shared_ptr<Texture2D> texture = getParameter("albedoMap").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
+                m_shader->setInt("u_AlbedoMap", static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
+                m_shader->setBool("u_HasAlbedoMap", true);
+            } else {
+                m_shader->setBool("u_HasAlbedoMap", false);
+            }
+        } else {
+            m_shader->setBool("u_HasAlbedoMap", false);
+        }
+
+
 		if (hasParameter("normalMap")) {
 			std::shared_ptr<Texture2D> texture = getParameter("normalMap").asTexture();
 			if (texture) {
@@ -639,5 +652,31 @@ namespace Rapture
             // Reset the dirty flag
             m_isDirty = false;
         }
+    }
+    CubeMapMaterial::CubeMapMaterial()
+    : Material(MaterialType::CUBE_MAP, "CubeMap_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
+    {
+        setShader(s_shader);
+    }
+
+    CubeMapMaterial::CubeMapMaterial(std::shared_ptr<Texture2D> skybox)
+    : Material(MaterialType::CUBE_MAP, "CubeMap_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
+    {
+        setShader(s_shader);
+
+        setTexture("skybox", skybox);
+
+    }
+
+    void CubeMapMaterial::bindData()
+    {
+
+        if (hasParameter("skybox")) {
+            std::shared_ptr<Texture2D> texture = getParameter("skybox").asTexture();
+            if (texture) {
+                texture->bind(static_cast<uint32_t>(TextureActiveSlot::CUBEMAP));
+            }
+        }
+
     }
 }

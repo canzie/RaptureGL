@@ -6,6 +6,12 @@
 
 #include <GLFW/glfw3.h>
 #include <imgui.h>
+#include <algorithm>
+#include <cstring>
+
+// For Windows file dialog
+#include <Windows.h>
+#include <commdlg.h>
 
 SettingsPanel::SettingsPanel(Rapture::WindowContext* context)
     : m_windowContext(context)
@@ -44,40 +50,43 @@ SettingsPanel::SettingsPanel(Rapture::WindowContext* context)
     m_frustumCullingEnabled = Rapture::Renderer::isFrustumCullingEnabled();
 }
 
+bool SettingsPanel::openSkyboxFileDialog(char* outPath, size_t outPathSize) {
+    // Windows file dialog implementation
+    OPENFILENAMEA ofn;
+    char szFile[260] = { 0 };
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = nullptr;
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = sizeof(szFile);
+    ofn.lpstrFilter = "Image Files\0*.png;*.jpg;*.jpeg;*.bmp;*.tga\0All Files\0*.*\0";
+    ofn.nFilterIndex = 1;
+    ofn.lpstrFileTitle = nullptr;
+    ofn.nMaxFileTitle = 0;
+    ofn.lpstrInitialDir = nullptr;
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+    
+    // Show the dialog
+    if (GetOpenFileNameA(&ofn)) {
+        std::strncpy(outPath, ofn.lpstrFile, outPathSize - 1);
+        outPath[outPathSize - 1] = '\0'; // Ensure null termination
+        return true;
+    }
+    return false;
+}
+
 void SettingsPanel::render()
 {
     if (ImGui::Begin("Settings")) {
-        // Tab bar
-        if (ImGui::BeginTabBar("SettingsTabs")) {
-            if (ImGui::BeginTabItem("Graphics")) {
-                m_activeTab = TabType::Graphics;
-                ImGui::EndTabItem();
-            }
-            
-            if (ImGui::BeginTabItem("Performance")) {
-                m_activeTab = TabType::Performance;
-                ImGui::EndTabItem();
-            }
-            
-            if (ImGui::BeginTabItem("Rendering")) {
-                m_activeTab = TabType::Rendering;
-                ImGui::EndTabItem();
-            }
-            
-            ImGui::EndTabBar();
+        // Graphics settings with collapsible header
+        if (ImGui::CollapsingHeader("Graphics Settings")) {
+            renderGraphicsSettings();
         }
         
-        // Render active tab content
-        switch (m_activeTab) {
-            case TabType::Graphics:
-                renderGraphicsSettings();
-                break;
-            case TabType::Performance:
-                renderPerformanceSettings();
-                break;
-            case TabType::Rendering:
-                renderRenderingSettings();
-                break;
+        
+        // Scene settings with collapsible header
+        if (ImGui::CollapsingHeader("Scene Settings")) {
+            renderSceneSettings();
         }
     }
     ImGui::End();
@@ -85,9 +94,6 @@ void SettingsPanel::render()
 
 void SettingsPanel::renderGraphicsSettings()
 {
-    ImGui::Text("Display Settings");
-    ImGui::Separator();
-    
     bool vsyncChanged = false;
     bool tripleBufferingChanged = false;
     
@@ -133,6 +139,32 @@ void SettingsPanel::renderGraphicsSettings()
         ImGui::EndTooltip();
     }
     
+    // Add display of current buffer mode
+    ImGui::Separator();
+    ImGui::Text("Current Buffer Mode: ");
+    ImGui::SameLine();
+    
+    switch (m_currentSwapMode) {
+        case Rapture::SwapMode::Immediate:
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Uncapped (Double Buffering)");
+            break;
+        case Rapture::SwapMode::VSync:
+            ImGui::TextColored(ImVec4(0.0f, 0.7f, 1.0f, 1.0f), "Double Buffered (VSync On)");
+            break;
+        case Rapture::SwapMode::AdaptiveVSync:
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Triple Buffered (Adaptive VSync)");
+            break;
+        case Rapture::SwapMode::TripleBuffering:
+            ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Triple Buffered (Uncapped)");
+            break;
+        default:
+            ImGui::Text("Unknown");
+    }
+    
+    // Display extension support information
+    bool tearControlSupported = m_windowContext->isTripleBufferingSupported();
+    ImGui::Text("Tear Control Extension: %s", tearControlSupported ? "Supported" : "Not Supported");
+    
     // Apply changes
     if (vsyncChanged || tripleBufferingChanged) {
         if (m_windowContext) {
@@ -162,117 +194,178 @@ void SettingsPanel::renderGraphicsSettings()
     }
 }
 
-void SettingsPanel::renderPerformanceSettings()
-{
-    ImGui::Text("Performance Information");
-    ImGui::Separator();
-    
-    // Display current buffer mode
-    ImGui::Text("Buffer Mode: ");
-    ImGui::SameLine();
-    
-    switch (m_currentSwapMode) {
-        case Rapture::SwapMode::Immediate:
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Uncapped (Double Buffering)");
-            break;
-        case Rapture::SwapMode::VSync:
-            ImGui::TextColored(ImVec4(0.0f, 0.7f, 1.0f, 1.0f), "Double Buffered (VSync On)");
-            break;
-        case Rapture::SwapMode::AdaptiveVSync:
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Triple Buffered (Adaptive VSync)");
-            break;
-        case Rapture::SwapMode::TripleBuffering:
-            ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Triple Buffered (Uncapped)");
-            break;
-        default:
-            ImGui::Text("Unknown");
-    }
-    
-    // Display extension support information
-    bool tearControlSupported = m_windowContext->isTripleBufferingSupported();
-    
-    ImGui::Text("Tear Control Extension: %s", tearControlSupported ? "Supported" : "Not Supported");
-    
-    if (tearControlSupported) {
-        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Triple buffering is available on this system");
-    } else {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Triple buffering not available on this system");
-        ImGui::TextWrapped("Your GPU or driver does not support the required extensions (WGL_EXT_swap_control_tear or GLX_EXT_swap_control_tear)");
-    }
-    
-    // Performance tips
-    ImGui::Separator();
-    ImGui::Text("Performance Tips:");
-    
-    switch (m_currentSwapMode) {
-        case Rapture::SwapMode::Immediate:
-            ImGui::BulletText("Current mode provides high performance but may cause screen tearing");
-            ImGui::BulletText("Best for high-FPS competitive gameplay where input latency is critical");
-            break;
-        case Rapture::SwapMode::VSync:
-            ImGui::BulletText("Current mode eliminates tearing but may increase input latency");
-            ImGui::BulletText("Performance will be limited to monitor refresh rate");
-            break;
-        case Rapture::SwapMode::AdaptiveVSync:
-            ImGui::BulletText("Current mode reduces tearing while minimizing input latency");
-            ImGui::BulletText("Best balance between visual quality and responsiveness");
-            break;
-        case Rapture::SwapMode::TripleBuffering:
-            ImGui::BulletText("Current mode provides smoother frame delivery at high framerates");
-            ImGui::BulletText("May have screen tearing, but with reduced stuttering compared to double buffering");
-            ImGui::BulletText("Best for high-FPS gameplay with smoother frame pacing");
-            break;
-    }
-}
 
-void SettingsPanel::renderRenderingSettings()
+void SettingsPanel::renderSceneSettings()
 {
-    ImGui::Text("Rendering Optimizations");
-    ImGui::Separator();
-    
-    // Frustum culling toggle
-    bool frustumCullingChanged = false;
-    if (ImGui::Checkbox("Frustum Culling", &m_frustumCullingEnabled)) {
-        frustumCullingChanged = true;
-        
-        // Apply the change immediately
-        Rapture::Renderer::enableFrustumCulling(m_frustumCullingEnabled);
-        
-        // Log the change
-        Rapture::GE_INFO("Frustum culling {0} from settings panel", 
-                   m_frustumCullingEnabled ? "enabled" : "disabled");
+    if (!m_activeScene) {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "No active scene selected");
+        return;
     }
     
-    ImGui::SameLine();
-    ImGui::TextDisabled("(?)");
-    if (ImGui::IsItemHovered()) {
-        ImGui::BeginTooltip();
-        ImGui::Text("Frustum culling prevents rendering objects that are outside the camera view");
-        ImGui::Text("Improves performance but may introduce popping if bounding boxes are inaccurate");
-        if (m_frustumCullingEnabled) {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Currently: Enabled (Better Performance)");
-        } else {
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Currently: Disabled (Lower Performance)");
+    // Scene Name & Info
+    ImGui::Text("Scene Name: Scene_%p", (void*)m_activeScene.get());  // Using pointer address as unique ID
+    
+    // Display scene settings from the scene's SceneSettings struct
+    Rapture::SceneSettings& settings = m_activeScene->getSettings();
+    
+    ImGui::Separator();
+    ImGui::Text("Scene Options:");
+    
+    // Frustum culling setting (sync with the renderer setting)
+    if (ImGui::Checkbox("Frustum Culling##SceneSetting", &settings.frustumCullingEnabled)) {
+        // Sync with the panel's setting and update renderer
+        m_frustumCullingEnabled = settings.frustumCullingEnabled;
+        Rapture::Renderer::enableFrustumCulling(settings.frustumCullingEnabled);
+    }
+    
+    // Raycast debug option
+    if (ImGui::Checkbox("Raycast Debug", &settings.rayCastDebugEnabled)) {
+        // Toggled raycast debug
+        Rapture::GE_INFO("Raycast debugging {0} from settings panel", 
+                   settings.rayCastDebugEnabled ? "enabled" : "disabled");
+    }
+    
+    // Button to reset scene settings
+    if (ImGui::Button("Reset Scene Settings")) {
+        settings.frustumCullingEnabled = true;
+        settings.rayCastDebugEnabled = false;
+        m_frustumCullingEnabled = true;
+        Rapture::Renderer::enableFrustumCulling(true);
+        
+        Rapture::GE_INFO("Scene settings reset to defaults");
+    }
+    
+    // Skybox Settings
+    ImGui::Separator();
+    
+    if (ImGui::CollapsingHeader("Skybox", ImGuiTreeNodeFlags_DefaultOpen)) {
+        Rapture::SkyBox& skybox = m_activeScene->getSkyBox();
+        
+        // Copy current skybox paths to the editing buffers if they exist and aren't already loaded
+        if (!skybox.texturePaths.empty() && !m_skyboxPathsChanged) {
+            if (skybox.texturePaths.size() >= 6) {
+                std::strncpy(m_skyboxRightPath.data(), skybox.texturePaths[0].c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxLeftPath.data(), skybox.texturePaths[1].c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxTopPath.data(), skybox.texturePaths[2].c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxBottomPath.data(), skybox.texturePaths[3].c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxFrontPath.data(), skybox.texturePaths[4].c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxBackPath.data(), skybox.texturePaths[5].c_str(), MAX_PATH_LENGTH - 1);
+            }
         }
-        ImGui::EndTooltip();
+        
+        ImGui::Text("Skybox Texture Paths:");
+        
+        // Function to create a row with text input and browse button
+        auto drawTextureRow = [this](const char* label, char* buffer, size_t bufferSize) {
+            ImGui::Text("%-7s", label);
+            ImGui::SameLine();
+            
+            // Calculate available width for the input field (leaving space for the button)
+            float availWidth = ImGui::GetContentRegionAvail().x;
+            float buttonWidth = 80.0f;
+            float inputWidth = availWidth - buttonWidth - ImGui::GetStyle().ItemSpacing.x;
+            
+            // Display filename only, but still edit the full path
+            std::string filename = buffer[0] != '\0' ? extractFilename(buffer) : "";
+            char displayBuffer[256];
+            std::strncpy(displayBuffer, filename.c_str(), sizeof(displayBuffer) - 1);
+            displayBuffer[sizeof(displayBuffer) - 1] = '\0';
+            
+            ImGui::PushItemWidth(inputWidth);
+            if (ImGui::InputText(("##" + std::string(label)).c_str(), displayBuffer, sizeof(displayBuffer), ImGuiInputTextFlags_ReadOnly)) {
+                // This won't happen since it's read-only
+            }
+            
+            // Add drop target for image files
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("DND_IMAGE_PATH")) {
+                    // Cast payload data to const char* and copy to buffer
+                    const char* path = static_cast<const char*>(payload->Data);
+                    if (path) {
+                        std::strncpy(buffer, path, bufferSize - 1);
+                        buffer[bufferSize - 1] = '\0'; // Ensure null termination
+                        m_skyboxPathsChanged = true;
+                        
+                        Rapture::GE_INFO("Dropped image file onto {0} skybox slot: {1}", label, buffer);
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
+            
+            ImGui::PopItemWidth();
+            
+            ImGui::SameLine();
+            if (ImGui::Button(("Browse##" + std::string(label)).c_str(), ImVec2(buttonWidth, 0))) {
+                if (openSkyboxFileDialog(buffer, bufferSize)) {
+                    m_skyboxPathsChanged = true;
+                }
+            }
+        };
+        
+        // Text inputs and browse buttons for each face of the cubemap
+        drawTextureRow("Right:", m_skyboxRightPath.data(), MAX_PATH_LENGTH);
+        drawTextureRow("Left:", m_skyboxLeftPath.data(), MAX_PATH_LENGTH);
+        drawTextureRow("Top:", m_skyboxTopPath.data(), MAX_PATH_LENGTH);
+        drawTextureRow("Bottom:", m_skyboxBottomPath.data(), MAX_PATH_LENGTH);
+        drawTextureRow("Front:", m_skyboxFrontPath.data(), MAX_PATH_LENGTH);
+        drawTextureRow("Back:", m_skyboxBackPath.data(), MAX_PATH_LENGTH);
+        
+        // Apply button to update the skybox
+        if (ImGui::Button("Apply Skybox Changes") && m_skyboxPathsChanged) {
+            // Create a vector of the new paths
+            std::vector<std::string> newPaths = {
+                m_skyboxRightPath.data(),
+                m_skyboxLeftPath.data(),
+                m_skyboxTopPath.data(),
+                m_skyboxBottomPath.data(),
+                m_skyboxFrontPath.data(),
+                m_skyboxBackPath.data()
+            };
+            
+            // Update the skybox with the new paths
+            skybox.setTexturePaths(newPaths);
+            
+            m_skyboxPathsChanged = false;
+            Rapture::GE_INFO("Skybox textures updated");
+        }
+        
+        ImGui::SameLine();
+        if (ImGui::Button("Reset to Current")) {
+            // Reset the editing buffers to the current skybox paths
+            if (!skybox.texturePaths.empty() && skybox.texturePaths.size() >= 6) {
+                std::strncpy(m_skyboxRightPath.data(), skybox.texturePaths[0].c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxLeftPath.data(), skybox.texturePaths[1].c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxTopPath.data(), skybox.texturePaths[2].c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxBottomPath.data(), skybox.texturePaths[3].c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxFrontPath.data(), skybox.texturePaths[4].c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxBackPath.data(), skybox.texturePaths[5].c_str(), MAX_PATH_LENGTH - 1);
+                
+                m_skyboxPathsChanged = false;
+            }
+        }
+        
+        // Display the current skybox information
+        ImGui::Separator();
+        ImGui::Text("Current Skybox:");
+        if (!skybox.texturePaths.empty()) {
+            for (size_t i = 0; i < skybox.texturePaths.size() && i < 6; i++) {
+                // Display only filename part for cleaner UI
+                std::string filename = extractFilename(skybox.texturePaths[i]);
+                
+                const char* faceName = nullptr;
+                switch (i) {
+                    case 0: faceName = "Right: "; break;
+                    case 1: faceName = "Left:  "; break;
+                    case 2: faceName = "Top:   "; break;
+                    case 3: faceName = "Bottom:"; break;
+                    case 4: faceName = "Front: "; break;
+                    case 5: faceName = "Back:  "; break;
+                }
+                
+                ImGui::Text("%s %s", faceName, filename.c_str());
+            }
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "No skybox textures loaded");
+        }
     }
-    
-    ImGui::Separator();
-    ImGui::Text("Rendering Information");
-    
-    // Display culling statistics if available
-    if (m_frustumCullingEnabled) {
-        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Frustum culling is active");
-        ImGui::Text("Objects outside the camera view are not rendered");
-    } else {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Frustum culling is disabled");
-        ImGui::Text("All objects are rendered regardless of visibility");
-    }
-    
-    // Rendering tips
-    ImGui::Separator();
-    ImGui::Text("Rendering Tips:");
-    ImGui::BulletText("Enable frustum culling for better performance in complex scenes");
-    ImGui::BulletText("Disable frustum culling only if you experience object popping issues");
-    ImGui::BulletText("Ensure bounding boxes are accurate for optimal culling");
 } 

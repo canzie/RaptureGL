@@ -17,6 +17,7 @@ enum class MaterialType {
 	PHONG,
 	SOLID,
 	KHR_SPECULAR_GLOSSINESS,
+    CUBE_MAP,
 	CUSTOM
 };
 
@@ -143,6 +144,19 @@ class SolidMaterial : public Material {
     protected:
         SolidColorUniform m_uniformData;
 };
+
+class CubeMapMaterial : public Material {
+    public:
+        CubeMapMaterial();
+        CubeMapMaterial(std::shared_ptr<Texture2D> skybox);
+
+        virtual void bindData() override;
+
+        // Make static members public so they can be initialized by MaterialLibrary
+        static Shader* s_shader;
+
+};
+
 
 // New SpecularGlossiness material class
 class SpecularGlossinessMaterial : public Material {

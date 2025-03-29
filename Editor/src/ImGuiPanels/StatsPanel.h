@@ -76,6 +76,5 @@ private:
     static constexpr float MEMORY_ERROR_MB = 1536.0f;     // 1.5 GB
     static constexpr int DRAWCALL_WARNING = 1000;
     static constexpr int DRAWCALL_ERROR = 2000;
-    static constexpr float IM_PI = 3.14159265358979323846f;
 };
 

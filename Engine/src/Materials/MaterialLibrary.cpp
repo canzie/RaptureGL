@@ -47,6 +47,11 @@ void MaterialLibrary::init()
         SpecularGlossinessMaterial::s_shader = new OpenGLShader("SpecularGlossiness_vs.glsl", "SpecularGlossiness_fs.glsl");
         GE_CORE_INFO("MaterialLibrary: Initialized Specular-Glossiness shader");
     }
+
+    if (!CubeMapMaterial::s_shader) {
+        CubeMapMaterial::s_shader = new OpenGLShader("cubemap_vs.glsl", "cubemap_fs.glsl");
+        GE_CORE_INFO("MaterialLibrary: Initialized CubeMap shader");
+    }
     
     // Create a default material
     s_defaultMaterial = std::make_shared<SolidMaterial>(glm::vec3(1.0f, 0.0f, 1.0f)); // Magenta for visibility
@@ -157,6 +162,23 @@ std::shared_ptr<Material> MaterialLibrary::createSpecularGlossinessMaterial(
     material->setName(name);
     s_materials[name] = material;
     GE_CORE_INFO("MaterialLibrary: Registered material '{0}'", name);
+    return material;
+}
+
+std::shared_ptr<Material> MaterialLibrary::createCubeMapMaterial(const std::string &name)
+{
+    std::lock_guard<std::mutex> lock(s_mutex);
+    
+    if (hasMaterialInternal(name))
+    {
+        GE_CORE_WARN("MaterialLibrary: Material with name '{0}' already exists!", name);
+        return s_materials[name];
+    }
+
+    auto material = std::make_shared<CubeMapMaterial>();
+    material->setName(name);
+    s_materials[name] = material;
+    GE_CORE_INFO("MaterialLibrary: Registered skybox material '{0}'", name);
     return material;
 }
 

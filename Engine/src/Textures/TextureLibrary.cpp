@@ -175,6 +175,36 @@ std::shared_ptr<Texture2D> TextureLibrary::loadAsync(const std::string &filepath
     return texture;
 }
 
+std::shared_ptr<Texture2D> TextureLibrary::loadCubemap(const std::vector<std::string> &filepaths)
+{
+    RAPTURE_PROFILE_FUNCTION();
+    
+    // Use filepath as name, but cleanup to get just the filename
+    std::string filename = "Cubemap_" + std::to_string(s_textures.size());
+    
+    // Check if already loaded
+    auto it = s_textures.find(filename);
+    if (it != s_textures.end()) {
+        return it->second;
+    }
+    
+    // Load the texture
+    auto texture = Texture2D::createCubemap(filepaths);
+    if (texture) {
+        add(filename, texture);
+        return texture;
+    }
+    
+    GE_CORE_ERROR("TextureLibrary: Failed to load cubemap");
+    return nullptr;
+}
+
+std::shared_ptr<Texture2D> TextureLibrary::loadCubemapAsync(const std::vector<std::string> &filepaths)
+{
+    return std::shared_ptr<Texture2D>();
+}
+
+
 std::shared_ptr<Texture2D> TextureLibrary::get(const std::string& name)
 {
     RAPTURE_PROFILE_FUNCTION();

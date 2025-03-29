@@ -63,6 +63,27 @@ namespace Rapture {
         }
     }
 
+    void BoundingBoxSystem::updateBoundingBox(Entity entity)
+    {
+        if (!entity) {
+            return;
+        }
+
+        auto boundingBoxComp = entity.tryGetComponent<BoundingBoxComponent>();
+        if (!boundingBoxComp) {
+            return;
+        }
+
+        auto transformComp = entity.tryGetComponent<TransformComponent>();
+        if (!transformComp) {
+            return;
+        }
+
+		if (boundingBoxComp->needsUpdate) {
+            boundingBoxComp->updateWorldBoundingBox(transformComp->transformMatrix());
+        }
+    }
+
     void BoundingBoxSystem::addBoundingBoxToEntity(Entity entity, const BoundingBox& localBounds) {
         // Skip if entity is already invalid
         if (!entity) {
@@ -79,8 +100,7 @@ namespace Rapture {
             // Add the bounding box component to the entity
             entity.addComponent<BoundingBoxComponent>(localBounds);
             entity.getComponent<BoundingBoxComponent>().initSharedResources();
-            GE_CORE_INFO("Added BoundingBoxComponent to entity '{}'", 
-                entity.hasComponent<TagComponent>() ? entity.getComponent<TagComponent>().tag : "unnamed");
+
             
             // Log the bounds for debugging
             localBounds.logBounds();

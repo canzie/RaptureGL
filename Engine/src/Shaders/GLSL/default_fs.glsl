@@ -10,7 +10,10 @@ in vec2 v_TexCoord;
 uniform int u_DebugMode = 0; // 0=Normal, 1=BaseColor, 2=Normals, 3=ID-based
 uniform float u_Time = 0.0;   // For animation effects in debug modes
 
-uniform sampler2D u_albedoMap;
+layout(binding = 0) uniform sampler2D u_AlbedoMap;    // ALBEDO=0
+
+uniform bool u_HasAlbedoMap = false;
+
 
 void main()
 {
@@ -42,6 +45,10 @@ void main()
 			checker > 0.5 ? t : 1.0 - t
 		);
 	}
+    if (u_HasAlbedoMap) {
+        outColor = texture(u_AlbedoMap, v_TexCoord);
+    } else {
+        outColor = vec4(0.0, 1.0, 0.0, 1.0);
+    }
 	
-	outColor = v_Albedo;
 }

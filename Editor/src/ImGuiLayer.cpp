@@ -14,6 +14,7 @@
 #include <GLFW/glfw3.h>
 
 #include "Debug/TracyProfiler.h"
+#include "ImGuiPanels/imGuiPanelStyle.h"
 
 ImGuiLayer::ImGuiLayer()
     : Layer("ImGuiLayer")
@@ -28,7 +29,10 @@ void ImGuiLayer::onAttach()
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    
+
+    // Apply the custom style
+    ImGuiPanelStyle::InitializeFonts();
+
     // Enable keyboard controls, docking, and viewports
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
@@ -60,11 +64,15 @@ void ImGuiLayer::onAttach()
     // Initialize the AssetsPanel with the project root directory
     // Use a valid absolute path that exists to avoid crashes
     std::string currentPath = std::filesystem::current_path().string();
+    m_AssetsPanel.setRootDirectory(currentPath);
     
     // Standard ImGui style overrides
     style.Colors[ImGuiCol_Header] = ImVec4(0.2f, 0.4f, 0.8f, 0.45f);
     style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.2f, 0.4f, 0.8f, 0.65f);
     style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.2f, 0.4f, 0.8f, 0.80f);
+
+    ImGuiPanelStyle::InitializeStyle();
+
     
 }
 
@@ -89,6 +97,8 @@ void ImGuiLayer::begin()
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+    ImGuizmo::BeginFrame();
+
 }
 
 void ImGuiLayer::end()
@@ -124,8 +134,29 @@ void ImGuiLayer::onUpdate(float ts)
             // Set the ViewportPanel reference in TestLayer
             testLayer->setViewportPanel(&m_ViewportPanel);
             
-            // Set up a callback for entity selection
-            testLayer->setEntitySelectedCallback([this](Rapture::Entity entity) {
+            // Set up callbacks for ImGuizmo functionality
+            
+            // 1. Camera matrices callback: TestLayer -> ViewportPanel
+            testLayer->setCameraMatricesCallback([this](const glm::mat4& view, const glm::mat4& projection) {
+                m_ViewportPanel.setCameraMatrices(view, projection);
+            });
+            
+            // 2. Entity transform callback: ViewportPanel -> Entity
+            m_ViewportPanel.setEntityTransformCallback([](std::shared_ptr<Rapture::Entity> entity, glm::mat4& outMatrix) {
+                if (!entity || !entity->isValid()) 
+                    return false;
+                
+                auto* transformComponent = entity->tryGetComponent<Rapture::TransformComponent>();
+                if (!transformComponent)
+                    return false;
+                
+                // Get the transform matrix from the transforms struct
+                outMatrix = transformComponent->transforms.getTransform();
+                return true;
+            });
+            
+            // 3. Entity selection callback: TestLayer -> ImGuiLayer
+            testLayer->setEntitySelectedCallback([this](std::shared_ptr<Rapture::Entity> entity) {
                 if (entity) {
                     // Update our selected entity when TestLayer selects something via raycast
                     m_SelectedEntity = entity;
@@ -133,6 +164,37 @@ void ImGuiLayer::onUpdate(float ts)
             });
             
             break;
+        }
+    }
+
+    // ImGuizmo keyboard shortcuts
+    if (testLayer && testLayer->getSelectedEntity()) {
+        // Only handle shortcuts if we have a selected entity
+        ImGuiIO& io = ImGui::GetIO();
+        
+        // Don't process shortcuts if ImGui is capturing keyboard
+        if (!io.WantCaptureKeyboard) {
+            // 1 key for Translate
+            if (ImGui::IsKeyPressed(ImGuiKey_1)) {
+                m_ViewportPanel.setGizmoOperation(ImGuizmo::TRANSLATE);
+                Rapture::GE_INFO("Gizmo mode set to Translate");
+            }
+            // 2 key for Rotate
+            else if (ImGui::IsKeyPressed(ImGuiKey_2)) {
+                m_ViewportPanel.setGizmoOperation(ImGuizmo::ROTATE);
+                Rapture::GE_INFO("Gizmo mode set to Rotate");
+            }
+            // 3 key for Scale
+            else if (ImGui::IsKeyPressed(ImGuiKey_3)) {
+                m_ViewportPanel.setGizmoOperation(ImGuizmo::SCALE);
+                Rapture::GE_INFO("Gizmo mode set to Scale");
+            }
+            // Space to toggle between local and world mode
+            else if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
+                m_ViewportPanel.toggleGizmoMode();
+                const char* modeName = (m_ViewportPanel.getCurrentGizmoMode() == ImGuizmo::LOCAL) ? "Local" : "World";
+                Rapture::GE_INFO("Gizmo coordinate system set to {0}", modeName);
+            }
         }
     }
     
@@ -205,21 +267,16 @@ void ImGuiLayer::onUpdate(float ts)
     //m_StatsPanel.render(ts);
     
     m_EntityBrowserPanel.render(testLayer->getActiveScene().get(), 
-        [this, testLayer](Rapture::Entity entity) {
+        [this, testLayer](std::shared_ptr<Rapture::Entity> entity) {
             if (entity) {
                 m_SelectedEntity = entity;
                 
                 // Keep TestLayer's selection in sync
-                if (testLayer) {
+                if (testLayer) { 
                     testLayer->setSelectedEntity(entity);
                 }
             } else {
                 Rapture::GE_WARN("No valid entity selected");
-                
-                // Clear TestLayer's selection too
-                if (testLayer) {
-                    testLayer->setSelectedEntity({});
-                }
             }
         });
     
@@ -230,6 +287,7 @@ void ImGuiLayer::onUpdate(float ts)
     
     // Render the settings panel
     if (m_SettingsPanel) {
+        m_SettingsPanel->setActiveScene(testLayer->getActiveScene());
         m_SettingsPanel->render();
     }
     

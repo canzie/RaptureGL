@@ -4,7 +4,15 @@
 #include "Materials/MaterialParameter.h"
 #include "Textures/Texture.h"
 
-void PropertiesPanel::render(Rapture::Entity entity) {
+// Windows file dialog
+#include <Windows.h>
+#include <commdlg.h>
+#include <filesystem>
+
+// ImGuizmo
+#include "../vendor/ImGuizmo/ImGuizmo.h"
+
+void PropertiesPanel::render(std::shared_ptr<Rapture::Entity> entity) {
     ImGui::Begin("Properties");
     
     // Access the scene registry from the TestLayer
@@ -32,10 +40,10 @@ void PropertiesPanel::render() {
 }
 
 // Helper method to render entity properties
-void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
+void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> entity) {
     // Display entity name at the top
-    if (entity.hasComponent<Rapture::TagComponent>()) {
-        auto& tagComponent = entity.getComponent<Rapture::TagComponent>();
+    if (entity->hasComponent<Rapture::TagComponent>()) {
+        auto& tagComponent = entity->getComponent<Rapture::TagComponent>();
         
         char buffer[256];
         strcpy_s(buffer, sizeof(buffer), tagComponent.tag.c_str());
@@ -43,16 +51,119 @@ void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
             tagComponent.tag = std::string(buffer);
         }
     } else {
-        ImGui::Text("Entity ID: %u", (uint32_t)entity.m_EntityHandle);
+        ImGui::Text("Entity ID: %u", (uint32_t)entity->m_EntityHandle);
     }
     
     
     ImGui::Separator();
     
+    // Add missing components section
+    if (ImGui::CollapsingHeader("Add Components", ImGuiTreeNodeFlags_DefaultOpen)) {
+        
+        // Add Transform component if it doesn't exist
+        if (!entity->hasComponent<Rapture::TransformComponent>()) {
+            if (ImGui::Button("Add Transform Component")) {
+                entity->addComponent<Rapture::TransformComponent>();
+            }
+        }
+        
+        // Add Sprite component if entity doesn't have a mesh component
+        if (!entity->hasComponent<Rapture::MeshComponent>() && 
+            !entity->hasComponent<Rapture::SpriteComponent>()) {
+            if (ImGui::Button("Add Sprite Component")) {
+                entity->addComponent<Rapture::SpriteComponent>();
+            }
+        }
+        
+        // Add Mesh component if entity doesn't have a sprite component
+        if (!entity->hasComponent<Rapture::SpriteComponent>() && 
+            !entity->hasComponent<Rapture::MeshComponent>()) {
+            if (ImGui::Button("Add Mesh Component")) {
+                //entity.addComponent<Rapture::MeshComponent>();
+            }
+        }
+        
+    }
+    
+    ImGui::Separator();
+    
+    // Edit Sprite component if it exists
+    bool hasSprite = entity->hasComponent<Rapture::SpriteComponent>();
+    
+    if (hasSprite && ImGui::CollapsingHeader("Sprite", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto& spriteComponent = entity->getComponent<Rapture::SpriteComponent>();
+        
+        // Texture selection
+        ImGui::Text("Texture");
+        
+        // Get current texture
+        std::shared_ptr<Rapture::Texture2D> texture = spriteComponent.texture;
+        
+        // Show texture preview if available
+        if (texture && texture) {
+            ImGui::BeginGroup();
+            
+            // Calculate preview size
+            float availWidth = ImGui::GetContentRegionAvail().x;
+            float previewSize = (std::min)(availWidth, 150.0f);
+            
+            // Get aspect ratio from texture
+            float aspectRatio = static_cast<float>(texture->getWidth()) / static_cast<float>(texture->getHeight());
+            ImVec2 previewDimensions;
+            
+            if (aspectRatio > 1.0f) {
+                previewDimensions = ImVec2(previewSize, previewSize / aspectRatio);
+            } else {
+                previewDimensions = ImVec2(previewSize * aspectRatio, previewSize);
+            }
+            
+            // Display texture as image
+            ImGui::Image((ImTextureID)(uint64_t)texture->getRendererID(), previewDimensions);
+            
+            std::string filename = std::filesystem::path(spriteComponent.texturePath).filename().string();
+
+            // Display texture info
+            ImGui::Text("Size: %ux%u", texture->getWidth(), texture->getHeight());
+            ImGui::Text("Path: %s", filename.c_str());
+            
+            ImGui::EndGroup();
+        } else {
+            ImGui::Text("No texture assigned");
+        }
+        
+        // Button to select texture
+        if (ImGui::Button("Select Texture", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+            // Windows file dialog implementation
+            OPENFILENAMEA ofn;
+            char szFile[260] = { 0 };
+            ZeroMemory(&ofn, sizeof(ofn));
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = nullptr;
+            ofn.lpstrFile = szFile;
+            ofn.nMaxFile = sizeof(szFile);
+            ofn.lpstrFilter = "Image Files\0*.png;*.jpg;*.jpeg;*.bmp;*.tga\0All Files\0*.*\0";
+            ofn.nFilterIndex = 1;
+            ofn.lpstrFileTitle = nullptr;
+            ofn.nMaxFileTitle = 0;
+            ofn.lpstrInitialDir = nullptr;
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+            
+            // Show the dialog
+            if (GetOpenFileNameA(&ofn)) {
+                std::string filepath = ofn.lpstrFile;
+                
+                // Set the texture
+                spriteComponent.setTexture(filepath);
+                // Log texture loading
+                Rapture::GE_INFO("Loading texture: {}", filepath);
+            }
+        }
+    }
+    
     // Edit Transform component
-    if (entity.hasComponent<Rapture::TransformComponent>() && 
+    if (entity->hasComponent<Rapture::TransformComponent>() && 
         ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-        auto& transform = entity.getComponent<Rapture::TransformComponent>();
+        auto& transform = entity->getComponent<Rapture::TransformComponent>();
         
         // Position with lock option
         ImGui::BeginGroup();
@@ -101,8 +212,8 @@ void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
         // If position changed, update the transform
         if (positionChanged) {
 
-            if (entity.hasComponent<Rapture::BoundingBoxComponent>()) {
-                entity.getComponent<Rapture::BoundingBoxComponent>().needsUpdate = true;
+            if (entity->hasComponent<Rapture::BoundingBoxComponent>()) {
+                entity->getComponent<Rapture::BoundingBoxComponent>().needsUpdate = true;
             }
 
             transform.transforms.setTranslation(position);
@@ -161,8 +272,8 @@ void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
             transform.transforms.setRotation(rotation);
             transform.transforms.recalculateTransform();
 
-            if (entity.hasComponent<Rapture::BoundingBoxComponent>()) {
-                entity.getComponent<Rapture::BoundingBoxComponent>().needsUpdate = true;
+            if (entity->hasComponent<Rapture::BoundingBoxComponent>()) {
+                entity->getComponent<Rapture::BoundingBoxComponent>().needsUpdate = true;
             }
         }
         
@@ -240,8 +351,8 @@ void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
             transform.transforms.setScale(scale);
             lastScale = scale;
             transform.transforms.recalculateTransform();
-            if (entity.hasComponent<Rapture::BoundingBoxComponent>()) {
-                entity.getComponent<Rapture::BoundingBoxComponent>().needsUpdate = true;
+            if (entity->hasComponent<Rapture::BoundingBoxComponent>()) {
+                entity->getComponent<Rapture::BoundingBoxComponent>().needsUpdate = true;
             }
         }
 
@@ -257,10 +368,10 @@ void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
     }
 
     // Add section for BoundingBox component
-    bool hasBoundingBox = entity.hasComponent<Rapture::BoundingBoxComponent>();
+    bool hasBoundingBox = entity->hasComponent<Rapture::BoundingBoxComponent>();
     
     if (hasBoundingBox && ImGui::CollapsingHeader("Bounding Box", ImGuiTreeNodeFlags_DefaultOpen)) {
-        auto& boundingBoxComp = entity.getComponent<Rapture::BoundingBoxComponent>();
+        auto& boundingBoxComp = entity->getComponent<Rapture::BoundingBoxComponent>();
         
         // Toggle visibility
         bool isVisible = boundingBoxComp.isVisible;
@@ -288,10 +399,10 @@ void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
     }
 
     // Edit Material component if it exists
-    bool hasMaterial = entity.hasComponent<Rapture::MaterialComponent>();
+    bool hasMaterial = entity->hasComponent<Rapture::MaterialComponent>();
     
     if (hasMaterial && ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
-        auto& materialComp = entity.getComponent<Rapture::MaterialComponent>();
+        auto& materialComp = entity->getComponent<Rapture::MaterialComponent>();
 
         // Display material name
         ImGui::Text("Material: %s", materialComp.materialName.c_str());
@@ -362,10 +473,10 @@ void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
     }
 
     // Edit Light component if it exists
-    bool hasLight = entity.hasComponent<Rapture::LightComponent>();
+    bool hasLight = entity->hasComponent<Rapture::LightComponent>();
     
     if (hasLight && ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen)) {
-        auto& lightComp = entity.getComponent<Rapture::LightComponent>();
+        auto& lightComp = entity->getComponent<Rapture::LightComponent>();
         
         // Light Type
         const char* lightTypes[] = { "Point", "Directional", "Spot" };
@@ -419,57 +530,22 @@ void PropertiesPanel::renderEntityProperties(Rapture::Entity entity) {
         // Add light component button for entities without lights
         ImGui::Separator();
         
-        // Button to add lights to objects in the scene
-        if (ImGui::Button("Create Light")) {
-            ImGui::OpenPopup("light_creation_popup");
-        }
-        
-        if (ImGui::BeginPopup("light_creation_popup")) {
-            if (ImGui::MenuItem("Point Light")) {
-                // Create a white point light
-                entity.addComponent<Rapture::LightComponent>(
-                    glm::vec3(1.0f, 1.0f, 1.0f),  // White color
-                    1.0f,                        // Default intensity
-                    10.0f                        // Default range
-                );
-            }
-            
-            if (ImGui::MenuItem("Directional Light")) {
-                // Create a white directional light
-                entity.addComponent<Rapture::LightComponent>(
-                    glm::vec3(1.0f, 1.0f, 1.0f),  // White color
-                    1.0f                         // Default intensity
-                );
-            }
-            
-            if (ImGui::MenuItem("Spot Light")) {
-                // Create a white spot light
-                entity.addComponent<Rapture::LightComponent>(
-                    glm::vec3(1.0f, 1.0f, 1.0f),  // White color
-                    1.0f,                        // Default intensity
-                    10.0f,                       // Default range
-                    30.0f,                       // Inner angle (degrees)
-                    45.0f                        // Outer angle (degrees)
-                );
-            }
-            
-            ImGui::EndPopup();
-        }
+
     }
     else if (!hasLight) {
         // Button to add a light component if it doesn't exist
         if (ImGui::Button("Add Light Component")) {
-            entity.addComponent<Rapture::LightComponent>();
+            entity->addComponent<Rapture::LightComponent>();
         }
     }
 }
 
-void PropertiesPanel::drawMaterialTextures(Rapture::Entity entity) {
-    if (!entity.hasComponent<Rapture::MaterialComponent>()) {
+void PropertiesPanel::drawMaterialTextures(std::shared_ptr<Rapture::Entity> entity) {
+    if (!entity->hasComponent<Rapture::MaterialComponent>()) {
         return;
     }
     
-    auto& materialComp = entity.getComponent<Rapture::MaterialComponent>();
+    auto& materialComp = entity->getComponent<Rapture::MaterialComponent>();
     
     if (!materialComp.material) {
         return;
@@ -532,7 +608,7 @@ void PropertiesPanel::drawMaterialTextures(Rapture::Entity entity) {
                         
                         // Calculate preview size
                         float availWidth = ImGui::GetContentRegionAvail().x;
-                        float previewSize = std::min(availWidth, 200.0f);
+                        float previewSize = (std::min)(availWidth, 200.0f);
                         
                         // Get aspect ratio from texture
                         float aspectRatio = static_cast<float>(texture->getWidth()) / static_cast<float>(texture->getHeight());

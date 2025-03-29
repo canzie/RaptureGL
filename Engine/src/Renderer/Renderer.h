@@ -28,17 +28,19 @@ namespace Rapture
 
 		static void sumbitScene(const std::shared_ptr<Scene> s);
 		
+        static void drawSprites(const std::shared_ptr<Scene> s);
+        
 		// Drawing functions that take shape objects as parameters
         static void drawLine(const Line& line);
         static void drawCube(const Cube& cube);
-        static void drawQuad(const Quad& quad);
+        static void drawQuad(const Quad& quad, const glm::mat4& transform=glm::mat4(1.0f));
 
 		// Bounding box rendering methods
 		// Show a bounding box for an entity
 		static void showBoundingBox(Entity entity, bool show = true);
 		
 		// Hide a bounding box for an entity
-		static void hideBoundingBox(Entity entity);
+		static void hideBoundingBox(Entity& entity);
 		
 		// Toggle bounding box visibility for an entity
 		static void toggleBoundingBox(Entity entity);

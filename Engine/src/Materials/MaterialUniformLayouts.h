@@ -71,4 +71,10 @@ namespace Rapture
 		alignas(16) uint32_t lightCount;    // Number of active lights
 		alignas(16) LightData lights[MAX_LIGHTS];
 	};
+    
+	struct BoneMatricesUniform
+	{
+		alignas(16) glm::mat4 u_BoneTransforms[100];
+	};
+    
 }

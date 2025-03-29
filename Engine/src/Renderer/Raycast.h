@@ -82,12 +82,17 @@ namespace Rapture
             const glm::mat4& viewMatrix);
 
     private:
+
         struct PendingRaycast {
             Scene* scene;
             glm::vec3 origin;
             glm::vec3 direction;
             RaycastCallback callback;
         };
+
+        static bool testRaycastHelper(PendingRaycast& pendingRaycast, glm::vec3& hitPoint, float& distance, Entity entity);
+    private:
+
         
         static std::vector<PendingRaycast> s_pendingRaycasts;
         static std::mutex s_raycastMutex;

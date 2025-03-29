@@ -159,31 +159,16 @@ namespace Rapture {
             for (auto& nodeIdx : sceneJSON["nodes"]) {
                 unsigned int nodeIndex = nodeIdx.get<unsigned int>();
                 if (nodeIndex < m_nodes.size()) {
-                    Entity nodeEntity = m_scene->createEntity("Root Node");
+                    Entity nodeEntity = m_scene->createEntity("Node " + std::to_string(nodeIndex));
                     processNode(nodeEntity, m_nodes[nodeIndex]);
                 }
             }
         }
     }
 
-    Entity glTF2Loader::processNode(Entity nodeEntity, json& nodeJSON)
-    {
+    glm::mat4 glTF2Loader::getNodeTransform(json& nodeJSON) {
 
-        if (!nodeEntity.hasComponent<EntityNodeComponent>()) {
-            nodeEntity.addComponent<EntityNodeComponent>(nodeEntity);
-        }
-
-        // Create a new entity for this node
-        std::string nodeName = nodeJSON.value("name", "Node");
-        //Entity nodeEntity = m_scene->createEntity(nodeName);
-
-        // Update the tag
-        nodeEntity.getComponent<TagComponent>().tag = nodeName;
-        auto& nodeEntityComp = nodeEntity.getComponent<EntityNodeComponent>();
-        
-
-        nodeEntity.addComponent<TransformComponent>();
-        auto& transformComp = nodeEntity.getComponent<TransformComponent>();
+        glm::mat4 transformMatrix = glm::mat4(1.0f);
 
         // Extract transform components if present
         if (nodeJSON.contains("matrix")) {
@@ -192,13 +177,9 @@ namespace Rapture {
             for (int i = 0; i < 16; i++) {
                 matrixValues[i] = nodeJSON["matrix"][i];
             }
-            glm::mat4 nodeMatrix = glm::make_mat4(matrixValues);
-            std::shared_ptr<EntityNode> parent = nodeEntityComp.entity_node->getParent();
-            if (parent != nullptr) {
-                nodeMatrix = parent->getEntity()->getComponent<TransformComponent>().transformMatrix() * nodeMatrix;
-            }
 
-            transformComp.transforms.setTransform(nodeMatrix);
+            transformMatrix = glm::make_mat4(matrixValues);
+
         }
         else {
             // Use TRS components
@@ -235,19 +216,44 @@ namespace Rapture {
             transformMatrix = glm::translate(transformMatrix, translation);
             transformMatrix = transformMatrix * glm::mat4_cast(rotation);
             transformMatrix = glm::scale(transformMatrix, scale);
-            
-            
-            std::shared_ptr<EntityNode> parent = nodeEntityComp.entity_node->getParent();
-            if (parent != nullptr) {
-                transformMatrix = parent->getEntity()->getComponent<TransformComponent>().transformMatrix() * transformMatrix;
-            }
-
-
-
-            // Add the component with the full transform matrix
-            transformComp.transforms.setTransform(transformMatrix);
-            
         }
+
+
+    return transformMatrix;
+
+    }
+
+    NodeType glTF2Loader::processNode(Entity nodeEntity, json& nodeJSON)
+    {
+
+        if (!nodeEntity.hasComponent<EntityNodeComponent>()) {
+            nodeEntity.addComponent<EntityNodeComponent>(nodeEntity);
+        }
+
+        // Create a new entity for this node
+        std::string nodeName = nodeJSON.value("name", "");
+        //Entity nodeEntity = m_scene->createEntity(nodeName);
+
+        // Update the tag
+        if (!nodeName.empty()) {
+            nodeEntity.getComponent<TagComponent>().tag = nodeName;
+        }
+        auto& nodeEntityComp = nodeEntity.getComponent<EntityNodeComponent>();
+        
+
+        nodeEntity.addComponent<TransformComponent>();
+        auto& transformComp = nodeEntity.getComponent<TransformComponent>();
+
+
+        glm::mat4 nodeTransform = getNodeTransform(nodeJSON);
+
+        std::shared_ptr<EntityNode> parent = nodeEntityComp.entity_node->getParent();
+        if (parent != nullptr) {
+            nodeTransform = parent->getEntity()->getComponent<TransformComponent>().transformMatrix() * nodeTransform;
+        }
+
+        transformComp.transforms.setTransform(nodeTransform);
+
         
         // If this node has a mesh, process it
         if (nodeJSON.contains("mesh")) {
@@ -256,36 +262,174 @@ namespace Rapture {
                 processMesh(nodeEntity, m_meshes[meshIndex]);
             }
         }
+
+        // If this node has a skin, process it
+        if (nodeJSON.contains("skin")) {
+            unsigned int skinIndex = nodeJSON["skin"];
+            if (skinIndex < m_skins.size()) {
+                processSkeleton(nodeEntity, m_skins[skinIndex]);
+            }
+        }
         
+        bool hasMeshChild = false;
         // Process children
         if (nodeJSON.contains("children")) {
             for (auto& childIdx : nodeJSON["children"]) {
                 unsigned int childIndex = childIdx.get<unsigned int>();
                 if (childIndex < m_nodes.size()) {
-                    Entity childEntity = m_scene->createEntity("Child Node");
+                    Entity childEntity = m_scene->createEntity("Node " + std::to_string(childIndex));
                     childEntity.addComponent<EntityNodeComponent>(childEntity, nodeEntity.getComponent<EntityNodeComponent>().entity_node);
 
                     nodeEntity.getComponent<EntityNodeComponent>().entity_node->addChild(childEntity.getComponent<EntityNodeComponent>().entity_node);
 
-                    processNode(childEntity, m_nodes[childIndex]);
+                    NodeType nodeType = processNode(childEntity, m_nodes[childIndex]);
 
-                    // Establish parent-child relationship
-                    if (!childEntity.hasComponent<EntityNodeComponent>()) {
-                        GE_CORE_ERROR("Child entity '{}' missing EntityNodeComponent", childIndex);
-                        continue;
-                    }
-                    
-                    if (!nodeEntity.hasComponent<EntityNodeComponent>()) {
-                        GE_CORE_ERROR("Node entity '{}' missing EntityNodeComponent", nodeName);
-                        continue;
-                    }
-                    
+                    if (nodeType == NodeType::Bone) {
+                        // use the child transform as the bone transform
 
+                        // then remove the entity, as it is a bone and we just need the transform
+                        m_scene->destroyEntity(childEntity); 
+
+                    // child is either a mesh, or an empty node which has a mesh somewhere as its child
+                    //    if the leaf node was not a mesh, it would be a bone type
+                    //    and propagated up the tree until a mesh was found, then it will always be a mesh or empty type
+                    } else if (nodeType == NodeType::Mesh || nodeType == NodeType::Empty){
+                        hasMeshChild = true;
+                    
+                    }
                 }
             }
         }
+
+        // we are the mesh
+        if (nodeJSON.contains("mesh")) {
+            return NodeType::Mesh;
         
-        return nodeEntity;
+        // descendants have a mesh
+        } else if (hasMeshChild) {
+            return NodeType::Empty;
+        
+        // we have a skeleton
+        } else if (nodeJSON.contains("skin")) {
+            return NodeType::Skeleton;
+        
+        // we are a bone
+        } else {
+            return NodeType::Bone;
+        }
+
+    }
+
+    void glTF2Loader::processSkeleton(Entity entity, json& skinJSON)
+    {
+
+        std::string skeletonName = skinJSON.value("name", "Skeleton");
+
+        GE_CORE_TRACE("glTF2Loader: Processing skeleton: {}", skeletonName);
+
+        // create a skeleton entity
+        entity.addComponent<SkeletonComponent>(skeletonName);
+
+        auto skeletonComp = entity.tryGetComponent<SkeletonComponent>();
+        if (skeletonComp == nullptr) {
+            GE_CORE_ERROR("glTF2Loader: Skeleton entity missing SkeletonComponent");
+            return;
+        }
+        
+        unsigned int skeletonIndex = skinJSON.value("skeleton", 0);
+        unsigned int inverseBindIndex = skinJSON.value("inverseBindMatrices", std::numeric_limits<unsigned int>::max());
+
+        // default root joint root index
+        unsigned int rootIndex = skinJSON["joints"][0];
+
+        // optional skeleton tag
+        if (skinJSON.contains("skeleton")) {
+            json& skeletonNodeJSON = m_nodes[skeletonIndex];
+
+            glm::mat4 nodeTransform = getNodeTransform(skeletonNodeJSON);
+
+            auto transformComp = entity.tryGetComponent<TransformComponent>();
+            auto entNodeComp = entity.tryGetComponent<EntityNodeComponent>();
+            if (entNodeComp) {
+                if (entNodeComp->entity_node->getParent() != nullptr) {
+                    TransformComponent& parentTransformComp = entNodeComp->entity_node->getParentComponent<TransformComponent>();
+                    transformComp->transforms.setTransform(parentTransformComp.transformMatrix() * nodeTransform);
+                } else {
+                    transformComp->transforms.setTransform(nodeTransform);
+                }
+                
+
+            }
+
+            // get the root index from the skeleton node
+            rootIndex = skeletonNodeJSON["children"][0];
+        }
+
+
+        std::vector<std::string> boneNames;
+        for (auto& bone : skinJSON["joints"]) {
+            unsigned int boneIdx = bone.get<unsigned int>();
+            boneNames.push_back(std::to_string(boneIdx));
+        }
+
+        // create empty bones in the order of the joints array
+        skeletonComp->skeleton->createBones(boneNames);
+
+        // process all of the bones via graph traversal
+        processBone(entity, rootIndex);
+
+        if (inverseBindIndex < m_accessors.size()) {
+            std::vector<unsigned char> inverseBinds;
+            loadAccessor(m_accessors[inverseBindIndex], inverseBinds);
+
+            // convert the inverse binds to a vector of glm::mat4
+            std::vector<glm::mat4> inverseBindMatrices;
+            for (unsigned int i = 0; i < inverseBinds.size(); i += 16) {
+                glm::mat4 matrix = glm::make_mat4(reinterpret_cast<float*>(inverseBinds.data() + i));
+                inverseBindMatrices.push_back(matrix);
+            }
+
+            // apply the inverse bind matrices to the bones
+            skeletonComp->skeleton->applyInverseBinds(inverseBindMatrices);
+        }
+
+
+        
+
+    }
+
+    void glTF2Loader::processBone(Entity entity, unsigned int boneIndex)
+    {
+
+        json& boneJSON = m_nodes[boneIndex];
+        auto skeletonComp = entity.tryGetComponent<SkeletonComponent>();
+
+        if (skeletonComp == nullptr) {
+            GE_CORE_ERROR("Bone entity missing SkeletonComponent");
+            return;
+        }
+
+        auto bone = skeletonComp->skeleton->getBone(std::to_string(boneIndex));
+        if (bone == nullptr) {
+            GE_CORE_ERROR("Bone not found");
+            return;
+        }
+
+       bone->transform = getNodeTransform(boneJSON);
+
+        if (boneJSON.contains("children")) {
+            for (auto& childBoneIndex : boneJSON["children"]) {
+                unsigned int childBoneIndexInt = childBoneIndex.get<unsigned int>();
+                auto childBone = skeletonComp->skeleton->getBone(std::to_string(childBoneIndexInt));
+                if (childBone != nullptr) {
+
+                    // automatically updates the parent of the child bone
+                    bone->addChild(childBone);
+                    processBone(entity, childBoneIndex);
+                }
+            }
+        }
+
     }
 
     Entity glTF2Loader::processMesh(Entity parent, json& meshJSON)
@@ -427,7 +571,7 @@ namespace Rapture {
                 foundPosition = true;
             }
         }
-        
+
         // Set interleaved flag to true
         bufferLayout.isInterleaved = true;
         bufferLayout.vertexSize = vertexStride;

@@ -13,6 +13,7 @@ namespace Rapture {
         
         // Update all bounding boxes in the scene
         static void updateBoundingBoxes(Scene* scene);
+        static void updateBoundingBox(Entity entity);
         
         // Add a bounding box component to an entity with a mesh component
         static void addBoundingBoxToEntity(Entity entity, const BoundingBox& localBounds);

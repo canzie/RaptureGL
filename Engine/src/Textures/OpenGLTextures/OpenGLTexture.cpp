@@ -190,6 +190,63 @@ GLenum OpenGLTexture2D::convertWrapToGL(TextureWrap wrap)
     }
 }
 
+OpenGLTexture2D::OpenGLTexture2D(const std::vector<std::string>& filepaths)
+{
+    RAPTURE_PROFILE_FUNCTION();
+
+    
+
+    glGenTextures(1, &m_rendererID);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, m_rendererID);
+
+    stbi_set_flip_vertically_on_load(0);
+
+
+    int width, height, nrChannels;
+    unsigned char *data;  
+    for(unsigned int i = 0; i < filepaths.size(); i++)
+    {
+        data = stbi_load(filepaths[i].c_str(), &width, &height, &nrChannels, 0);
+        
+        GLenum internalFormat = 0, dataFormat = 0;
+        if (nrChannels == 4) {
+            internalFormat = GL_RGBA8;
+            dataFormat = GL_RGBA;
+        }
+        else if (nrChannels == 3) {
+            internalFormat = GL_RGB8;
+            dataFormat = GL_RGB;
+        }
+        
+        m_internalFormat = internalFormat;
+        m_dataFormat = dataFormat;
+        
+        if (internalFormat == 0 || dataFormat == 0) {
+            GE_CORE_ERROR("OpenGLTexture2D: Unsupported format! Channels: {0}", nrChannels);
+            stbi_image_free(data);
+            return;
+        }
+
+
+
+        glTexImage2D(
+            GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 
+            0, internalFormat, width, height, 0, dataFormat, GL_UNSIGNED_BYTE, data
+        );
+
+    }
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE); 
+
+    
+    stbi_image_free(data);
+ 
+}
+
 // Implement the static create functions from Texture2D
 std::shared_ptr<Texture2D> Texture2D::create(const std::string& path)
 {
@@ -201,4 +258,9 @@ std::shared_ptr<Texture2D> Texture2D::create(uint32_t width, uint32_t height, ui
     return std::make_shared<OpenGLTexture2D>(width, height, channels);
 }
 
-} // namespace Rapture 
+std::shared_ptr<Texture2D> Texture2D::createCubemap(const std::vector<std::string> &filepaths)
+{
+    return std::make_shared<OpenGLTexture2D>(filepaths);
+}
+
+} // namespace Rapture

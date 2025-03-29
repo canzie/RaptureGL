@@ -1,6 +1,7 @@
 #include "Scene.h"
 #include "Entity.h"
 #include "Components/Components.h"
+#include "../Renderer/Renderer.h"
 
 namespace Rapture
 {
@@ -22,6 +23,11 @@ namespace Rapture
 	{
 		m_Registry.destroy(entity);
 	}
+
+    void Scene::onUpdate()
+    {
+        Renderer::drawCube(m_SkyBox.skybox);
+    }
 
 	/*
 	void Scene::OnUpdateRuntime(Timestep ts)

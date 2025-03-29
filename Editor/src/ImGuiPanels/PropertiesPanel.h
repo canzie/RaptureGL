@@ -8,33 +8,41 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "imgui.h"
+#include <string>
 
+// Forward declarations
+namespace Rapture {
+    class Material;
+}
 
 class PropertiesPanel {
 public:
-    PropertiesPanel() = default;
+    PropertiesPanel() : 
+        positionLocked(false), 
+        rotationLocked(false), 
+        scaleLocked(false) {}
     ~PropertiesPanel() = default;
 
     // Original method that gets entity from EntityBrowserPanel
-    void render(Rapture::Entity entity);
+    void render(std::shared_ptr<Rapture::Entity> entity);
     void render();
 
 private:
-    bool positionLocked = false;
-    bool rotationLocked = false;
-    bool scaleLocked = false;
-    glm::vec3 lastScale = {1.0f, 1.0f, 1.0f};
+    // Transform component UI state
+    bool positionLocked;
+    bool rotationLocked;
+    bool scaleLocked;
+    glm::vec3 lastScale = glm::vec3(1.0f);
     
-    // For texture preview
-    std::string selectedTextureName;
-    
-    // Light component editor state
+    // Light component UI state
     int selectedLightType = 0;
     
-    void drawMaterialTextures(Rapture::Entity entity);
-    const char* getLightTypeString(int type);
+    // Material UI state
+    std::string selectedTextureName;
     
     // Helper method to render entity properties
-    void renderEntityProperties(Rapture::Entity entity);
+    void renderEntityProperties(std::shared_ptr<Rapture::Entity> entity);
+    void drawMaterialTextures(std::shared_ptr<Rapture::Entity> entity);
+    const char* getLightTypeString(int type);
 };
 

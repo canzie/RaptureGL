@@ -16,11 +16,11 @@
 #include "Debug/Profiler.h"
 #include "Renderer/Raycast.h"
 
-void TestLayer::setSelectedEntity(Rapture::Entity entity)
+void TestLayer::setSelectedEntity(std::shared_ptr<Rapture::Entity> entity)
 {
     // If we had a previous selection, hide its bounding box
     if (m_selectedEntity) {
-        Rapture::Renderer::hideBoundingBox(m_selectedEntity);
+        Rapture::Renderer::hideBoundingBox(*m_selectedEntity);
     }
     
     m_selectedEntity = entity;
@@ -28,11 +28,11 @@ void TestLayer::setSelectedEntity(Rapture::Entity entity)
     // Show bounding box for the new selection
     if (entity) {
         // Show the bounding box of the selected entity with a distinctive color
-        auto* bb = entity.tryGetComponent<Rapture::BoundingBoxComponent>();
+        auto* bb = entity->tryGetComponent<Rapture::BoundingBoxComponent>();
         if (bb) bb->isVisible = true;
         
     } else if (m_selectedEntity) {
-        auto* bb = m_selectedEntity.tryGetComponent<Rapture::BoundingBoxComponent>();
+        auto* bb = m_selectedEntity->tryGetComponent<Rapture::BoundingBoxComponent>();
         if (bb) bb->isVisible = false;
     }
     
@@ -54,44 +54,38 @@ void TestLayer::onAttach()
     };
     m_framebuffer = Rapture::Framebuffer::create(fbSpec);
 
-    // Initialize the material library
-	//Rapture::TextureLibrary::init();
-    
 
 	// Initialize keybindings from config file
 	KeyBindings::init("keybindings.cfg");
 
-    // Create test cube using our new method (no file loading)
-    //m_testCube = Rapture::Mesh::createCube(2.0f);
-
-	// Create the first object (cube)
-	//Rapture::Entity cube = m_activeScene->createEntity("Test Cube");
-    // Use the constructor that takes a mesh shared_ptr
-    //cube.addComponent<Rapture::MeshComponent>("adamHead.gltf");
 	
 	Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
-	loader.loadModel("adamHead/adamHead.gltf");
-    
-  
+	//loader.loadModel("adamHead/adamHead.gltf");
+    //loader.loadModel("Buggy/Buggy.gltf");
+    //loader.loadModel("BoxAnimated/BoxAnimated.gltf");
+    //loader.loadModel("RiggedSimple/RiggedSimple.gltf");
+
+    loader.loadModel("BrainStem/BrainStem.gltf");
+
     //loader.loadModel("Sponza/glTF/Sponza.gltf");
 
-	loader.loadModel("sphere.gltf");
-	loader.loadModel("donut.gltf");
+	//loader.loadModel("sphere.gltf");
+	//loader.loadModel("donut.gltf");
+    //loader.loadModel("cube.gltf");
 
-	// Add a custom red material to the cube
-	// Create a bright red metal material (1,0,0 for RGB red, 0.2 roughness, 0.8 metallic)
-	//cube.addComponent<Rapture::MaterialComponent>(glm::vec3(1.0f, 0.0f, 1.0f), 0.2f, 0.8f, 0.5f);
-	
-	//cube.addComponent<Rapture::TransformComponent>();
-	// Position the cube in front of the camera (negative Z moves it further away)
+    std::vector<std::string> cubemapPaths = {
+        "D:/downloads/skybox/skybox/right.jpg",
+        "D:/downloads/skybox/skybox/left.jpg",
+        "D:/downloads/skybox/skybox/top.jpg",
+        "D:/downloads/skybox/skybox/bottom.jpg",
+        "D:/downloads/skybox/skybox/front.jpg", 
+        "D:/downloads/skybox/skybox/back.jpg"
+    };
 
-	//Rapture::Entity sph = m_activeScene->createEntity("sdaduiwqhiudahiudh ent");
-	//sph.addComponent<Rapture::MeshComponent>();
-	//sph.addComponent<Rapture::MaterialComponent>(glm::vec3(0.0f, 0.0f, 1.0f));
-    //sph.getComponent<Rapture::MaterialComponent>().material->setTexture("albedoMap", Rapture::TextureLibrary::get("albedoMap"));
-    //sph.addComponent<Rapture::TransformComponent>();
-    // Create two light entities
-    // Light 1: A bright white point light to the right of the model
+    m_activeScene->getSkyBox().setTexturePaths(cubemapPaths);
+    m_showDebugRay = m_activeScene->getSettings().rayCastDebugEnabled;
+
+
     Rapture::Entity light1 = m_activeScene->createEntity("Light 1");
     light1.addComponent<Rapture::TransformComponent>(
         glm::vec3(2.0f, 1.0f, -3.0f),  // Position to the right of the sphere, same Z coordinate
@@ -104,11 +98,7 @@ void TestLayer::onAttach()
         1.2f,                         // High intensity
         10.0f                         // Range
     );
-    // Add a cube mesh to visualize the light
-    //light1.addComponent<Rapture::MeshComponent>();
-    //light1.getComponent<Rapture::MeshComponent>().mesh = Rapture::Mesh::createCube();
-    // Create an emissive material for the light
-    light1.addComponent<Rapture::MaterialComponent>(glm::vec3(1.0f, 1.0f, 1.0f));  // White emissive material
+    light1.addComponent<Rapture::SpriteComponent>();
     
     // Light 2: A blue-tinted light to the left side
     Rapture::Entity light2 = m_activeScene->createEntity("Light 2");
@@ -118,16 +108,9 @@ void TestLayer::onAttach()
         glm::vec3(0.2f)                // Small scale to make the cube compact
     );
     // Blue-tinted light with medium intensity
-    light2.addComponent<Rapture::LightComponent>(
-        glm::vec3(0.2f, 0.4f, 1.0f),  // Blue-tinted color
-        1.0f,                         // Medium intensity
-        8.0f                          // Range
-    );
-    // Add a cube mesh to visualize the light
-    //light2.addComponent<Rapture::MeshComponent>();
-    //light2.getComponent<Rapture::MeshComponent>().mesh = Rapture::Mesh::createCube();
-    // Create an emissive material that matches the light color
-    light2.addComponent<Rapture::MaterialComponent>(glm::vec3(0.2f, 0.4f, 1.0f));  // Blue emissive material
+    light2.addComponent<Rapture::LightComponent>();
+    light2.addComponent<Rapture::SpriteComponent>();
+
 
 	// Create camera controller
 	Rapture::Entity camera_controller = m_activeScene->createEntity("Camera Controller");
@@ -148,6 +131,23 @@ void TestLayer::onAttach()
 void TestLayer::onDetach()
 {
 
+}
+
+void TestLayer::notifyCameraChange()
+{
+    // Only proceed if we have a callback and valid camera entity
+    if (!m_cameraMatricesCallback || !m_cameraEntity || !m_cameraEntity->isValid())
+        return;
+        
+    // Get camera component data
+    auto* cameraComponent = m_cameraEntity->tryGetComponent<Rapture::CameraControllerComponent>();
+    if (!cameraComponent)
+        return;
+        
+    // Get matrices and call the callback
+    glm::mat4 viewMatrix = cameraComponent->camera.getViewMatrix();
+    glm::mat4 projMatrix = cameraComponent->camera.getProjectionMatrix();
+    m_cameraMatricesCallback(viewMatrix, projMatrix);
 }
 
 void TestLayer::onUpdate(float ts)
@@ -177,6 +177,9 @@ void TestLayer::onUpdate(float ts)
 
 	// Update the camera controller
 	CameraController::update(ts);
+    
+    // Notify about camera changes (for ImGuizmo)
+    notifyCameraChange();
 
     if (Rapture::Input::isMouseBtnPressed(0))
     {
@@ -189,14 +192,11 @@ void TestLayer::onUpdate(float ts)
             // Make sure we have valid framebuffer and camera
             if (m_framebuffer && m_cameraEntity && m_viewportPanel)
             {
-                // Get global window mouse position
-                float windowMouseX = Rapture::Input::getMousePos().first;
-                float windowMouseY = Rapture::Input::getMousePos().second;
-                
+
                 // Convert to viewport coordinates
                 float viewportMouseX, viewportMouseY;
                 bool isInViewport = m_viewportPanel->windowToViewportCoordinates(
-                    windowMouseX, windowMouseY, viewportMouseX, viewportMouseY);
+                    viewportMouseX, viewportMouseY);
                 
                 // Only process clicks inside the viewport
                 if (isInViewport)
@@ -233,8 +233,6 @@ void TestLayer::onUpdate(float ts)
                             glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)  // Red color
                         );
                         
-                        // Set the timer to show the ray for 2 seconds
-                        m_showDebugRay = true;
                     }
                     
                     // Queue the raycast with a callback
@@ -251,7 +249,7 @@ void TestLayer::onUpdate(float ts)
                                 Rapture::GE_INFO("Queued raycast hit entity with ID: {}", hit->entity.getID());
 
                                 // Set this entity as the selected entity
-                                setSelectedEntity(hit->entity);
+                                setSelectedEntity(std::make_shared<Rapture::Entity>(hit->entity));
                                 
                                 // Update the debug ray line to end at the hit point
                                 if (m_debugRayLine && m_showDebugRay) {
@@ -284,7 +282,10 @@ void TestLayer::onUpdate(float ts)
 
 	// Render the scene to the framebuffer
 	Rapture::Renderer::sumbitScene(m_activeScene);
-    
+    Rapture::Renderer::drawSprites(m_activeScene);
+
+    m_activeScene->onUpdate();
+
     // Draw the debug ray if active
     if (m_showDebugRay && m_debugRayLine) {
         Rapture::Renderer::drawLine(*m_debugRayLine);
@@ -307,11 +308,10 @@ void TestLayer::onEvent(Rapture::Event& event)
             // Only capture the mouse if it's inside the viewport
             if (m_viewportPanel)
             {
-                float windowMouseX = Rapture::Input::getMousePos().first;
-                float windowMouseY = Rapture::Input::getMousePos().second;
+
                 
                 // Only handle clicks inside the viewport
-                if (m_viewportPanel->isMouseInViewport(windowMouseX, windowMouseY))
+                if (m_viewportPanel->isMouseInViewport())
                 {
                     CameraController::onWindowClicked();
                     m_wasMouseBtnPressedLastFrame = true;
@@ -326,5 +326,4 @@ void TestLayer::onEvent(Rapture::Event& event)
         }
     }
 }
-
 

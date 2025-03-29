@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <memory>
+#include <string>
 
 namespace Rapture {
 
@@ -30,7 +31,13 @@ namespace Rapture {
 
     class Cube {
         public:
+            Cube();
+            Cube(bool isCubeMap);
             Cube(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color, bool filled = false);
+            // New constructor with option to use texture coordinates and normals
+            Cube(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color, bool filled, bool useTexCoords);
+            // New constructor with texture path
+            Cube(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color, bool filled, const std::string& texturePath);
             
             // Getters for the Renderer to use
             inline glm::vec3 getPosition() const { return m_position; }
@@ -53,7 +60,14 @@ namespace Rapture {
 
     class Quad {
         public:
+            Quad();
+            // these values are just initial values, they should not be changed after creation
+            // only execption to this is for drawing a quad for debugging purposes
             Quad(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color);
+            // New constructor with option to use texture coordinates and normals
+            Quad(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color, bool useTexCoords);
+            // New constructor with texture path
+            Quad(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color, const std::string& texturePath);
             
             // Getters for the Renderer to use
             inline glm::vec3 getPosition() const { return m_position; }

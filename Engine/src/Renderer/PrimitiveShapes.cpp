@@ -40,6 +40,87 @@ namespace Rapture {
         return mesh;
     }
 
+    // Helper function to create a mesh with position, normal, and texcoord attributes
+    static std::shared_ptr<Mesh> createFullAttributeMesh(
+        const std::vector<float>& positions, 
+        const std::vector<float>& normals, 
+        const std::vector<float>& texcoords, 
+        const std::vector<uint32_t>& indices) 
+    {
+        auto mesh = std::make_shared<Mesh>();
+        
+        // Create an interleaved buffer with position, normal, and texcoord attributes
+        BufferLayout layout;
+        
+        // Position attribute
+        BufferAttribute posAttrib;
+        posAttrib.name = "POSITION";
+        posAttrib.componentType = GL_FLOAT;
+        posAttrib.type = "VEC3";
+        posAttrib.offset = 0;
+        layout.buffer_attribs.push_back(posAttrib);
+        
+        // Normal attribute
+        BufferAttribute normAttrib;
+        normAttrib.name = "NORMAL";
+        normAttrib.componentType = GL_FLOAT;
+        normAttrib.type = "VEC3";
+        normAttrib.offset = 3 * sizeof(float);
+        layout.buffer_attribs.push_back(normAttrib);
+        
+        // Texcoord attribute
+        BufferAttribute texAttrib;
+        texAttrib.name = "TEXCOORD_0";
+        texAttrib.componentType = GL_FLOAT;
+        texAttrib.type = "VEC2";
+        texAttrib.offset = 6 * sizeof(float);
+        layout.buffer_attribs.push_back(texAttrib);
+        
+        layout.isInterleaved = true;
+        layout.vertexSize = (3 + 3 + 2) * sizeof(float); // position(3) + normal(3) + texcoord(2)
+        
+        // Interleave the data
+        std::vector<float> interleavedData;
+        interleavedData.reserve(positions.size() + normals.size() + texcoords.size());
+        
+        // Ensure vector sizes are consistent
+        size_t vertexCount = positions.size() / 3;
+        if (normals.size() / 3 != vertexCount || texcoords.size() / 2 != vertexCount) {
+            GE_CORE_ERROR("createFullAttributeMesh: Attribute sizes are inconsistent");
+            return nullptr;
+        }
+        
+        // Interleave data: [pos.x, pos.y, pos.z, norm.x, norm.y, norm.z, tex.u, tex.v, ...]
+        for (size_t i = 0; i < vertexCount; i++) {
+            // Position (x, y, z)
+            interleavedData.push_back(positions[i * 3 + 0]);
+            interleavedData.push_back(positions[i * 3 + 1]);
+            interleavedData.push_back(positions[i * 3 + 2]);
+            
+            // Normal (x, y, z)
+            interleavedData.push_back(normals[i * 3 + 0]);
+            interleavedData.push_back(normals[i * 3 + 1]);
+            interleavedData.push_back(normals[i * 3 + 2]);
+            
+            // Texcoord (u, v)
+            interleavedData.push_back(texcoords[i * 2 + 0]);
+            interleavedData.push_back(texcoords[i * 2 + 1]);
+        }
+        
+        // Set the mesh data using our layout
+        mesh->setMeshData(
+            layout, 
+            interleavedData.data(), 
+            interleavedData.size() * sizeof(float),
+            indices.data(),
+            indices.size() * sizeof(uint32_t),
+            indices.size(),
+            GL_UNSIGNED_INT
+        );
+        
+        return mesh;
+    }
+
     //-----------------------------------------------------------------------------
     // Line Implementation
     //-----------------------------------------------------------------------------
@@ -67,6 +148,20 @@ namespace Rapture {
     //-----------------------------------------------------------------------------
     // Cube Implementation
     //-----------------------------------------------------------------------------
+
+    Cube::Cube()
+    : Cube(glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(1.0f), glm::vec4(1.0f), false)
+    {
+    }
+
+    Cube::Cube(bool isCubeMap)
+    : Cube(glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(1000.0f), glm::vec4(1.0f), true, false)
+    {
+        if (isCubeMap) {
+            m_material = MaterialLibrary::createCubeMapMaterial("CubeMap_Material");
+        }
+    }
+
     Cube::Cube(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color, bool filled)
         : m_position(position), m_rotation(rotation), m_scale(scale), m_color(color), m_filled(filled)
     {
@@ -125,9 +220,323 @@ namespace Rapture {
         m_material = MaterialLibrary::createSolidMaterial(materialName, glm::vec3(color));
     }
     
+    // Overloaded constructor that includes normals and texture coordinates
+    Cube::Cube(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color, bool filled, bool useTexCoords)
+        : m_position(position), m_rotation(rotation), m_scale(scale), m_color(color), m_filled(filled)
+    {
+        if (!useTexCoords) {
+            // Fall back to the simpler version if we don't need texture coordinates
+            *this = Cube(position, rotation, scale, color, filled);
+            return;
+        }
+
+        if (!filled) {
+            // For wireframe, we don't need normals and texcoords
+            *this = Cube(position, rotation, scale, color, false);
+            return;
+        }
+
+        // Vertices for a cube centered at origin with size 1
+        // We need unique vertices for each face for proper normals and texture coordinates
+        std::vector<float> positions = {
+            // Front face
+            -0.5f, -0.5f,  0.5f,  // 0
+             0.5f, -0.5f,  0.5f,  // 1
+             0.5f,  0.5f,  0.5f,  // 2
+            -0.5f,  0.5f,  0.5f,  // 3
+            
+            // Back face
+            -0.5f, -0.5f, -0.5f,  // 4
+             0.5f, -0.5f, -0.5f,  // 5
+             0.5f,  0.5f, -0.5f,  // 6
+            -0.5f,  0.5f, -0.5f,  // 7
+            
+            // Left face
+            -0.5f, -0.5f, -0.5f,  // 8
+            -0.5f, -0.5f,  0.5f,  // 9
+            -0.5f,  0.5f,  0.5f,  // 10
+            -0.5f,  0.5f, -0.5f,  // 11
+            
+            // Right face
+             0.5f, -0.5f,  0.5f,  // 12
+             0.5f, -0.5f, -0.5f,  // 13
+             0.5f,  0.5f, -0.5f,  // 14
+             0.5f,  0.5f,  0.5f,  // 15
+            
+            // Bottom face
+            -0.5f, -0.5f, -0.5f,  // 16
+             0.5f, -0.5f, -0.5f,  // 17
+             0.5f, -0.5f,  0.5f,  // 18
+            -0.5f, -0.5f,  0.5f,  // 19
+            
+            // Top face
+            -0.5f,  0.5f,  0.5f,  // 20
+             0.5f,  0.5f,  0.5f,  // 21
+             0.5f,  0.5f, -0.5f,  // 22
+            -0.5f,  0.5f, -0.5f   // 23
+        };
+        
+        std::vector<float> normals = {
+            // Front face
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f,
+            
+            // Back face
+            0.0f, 0.0f, -1.0f,
+            0.0f, 0.0f, -1.0f,
+            0.0f, 0.0f, -1.0f,
+            0.0f, 0.0f, -1.0f,
+            
+            // Left face
+            -1.0f, 0.0f, 0.0f,
+            -1.0f, 0.0f, 0.0f,
+            -1.0f, 0.0f, 0.0f,
+            -1.0f, 0.0f, 0.0f,
+            
+            // Right face
+            1.0f, 0.0f, 0.0f,
+            1.0f, 0.0f, 0.0f,
+            1.0f, 0.0f, 0.0f,
+            1.0f, 0.0f, 0.0f,
+            
+            // Bottom face
+            0.0f, -1.0f, 0.0f,
+            0.0f, -1.0f, 0.0f,
+            0.0f, -1.0f, 0.0f,
+            0.0f, -1.0f, 0.0f,
+            
+            // Top face
+            0.0f, 1.0f, 0.0f,
+            0.0f, 1.0f, 0.0f,
+            0.0f, 1.0f, 0.0f,
+            0.0f, 1.0f, 0.0f
+        };
+        
+        std::vector<float> texcoords = {
+            // Front face
+            0.0f, 1.0f,
+            1.0f, 1.0f,
+            1.0f, 0.0f,
+            0.0f, 0.0f,
+            
+            // Back face
+            1.0f, 1.0f,
+            0.0f, 1.0f,
+            0.0f, 0.0f,
+            1.0f, 0.0f,
+            
+            // Left face
+            0.0f, 1.0f,
+            1.0f, 1.0f,
+            1.0f, 0.0f,
+            0.0f, 0.0f,
+            
+            // Right face
+            1.0f, 1.0f,
+            0.0f, 1.0f,
+            0.0f, 0.0f,
+            1.0f, 0.0f,
+            
+            // Bottom face
+            0.0f, 0.0f,
+            1.0f, 0.0f,
+            1.0f, 1.0f,
+            0.0f, 1.0f,
+            
+            // Top face
+            0.0f, 0.0f,
+            1.0f, 0.0f,
+            1.0f, 1.0f,
+            0.0f, 1.0f
+        };
+        
+        std::vector<uint32_t> indices = {
+            // Front face
+            0, 1, 2, 2, 3, 0,
+            // Back face
+            4, 5, 6, 6, 7, 4,
+            // Left face
+            8, 9, 10, 10, 11, 8,
+            // Right face
+            12, 13, 14, 14, 15, 12,
+            // Bottom face
+            16, 17, 18, 18, 19, 16,
+            // Top face
+            20, 21, 22, 22, 23, 20
+        };
+        
+        auto mesh = createFullAttributeMesh(positions, normals, texcoords, indices);
+        
+        // Store the mesh as a member variable
+        m_mesh = mesh;
+        
+        // Create a solid color material using MaterialLibrary
+        std::string materialName = "Cube_Material_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+        m_material = MaterialLibrary::createSolidMaterial(materialName, glm::vec3(color));
+    }
+    
+    // Add constructor implementation for textured Cube
+    Cube::Cube(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color, bool filled, const std::string& texturePath)
+        : m_position(position), m_rotation(rotation), m_scale(scale), m_color(color), m_filled(filled)
+    {
+        if (!filled) {
+            // For wireframe, we don't need textures
+            *this = Cube(position, rotation, scale, color, false);
+            return;
+        }
+
+        // Vertices for a cube centered at origin with size 1
+        // We need unique vertices for each face for proper normals and texture coordinates
+        std::vector<float> positions = {
+            // Front face
+            -0.5f, -0.5f,  0.5f,  // 0
+             0.5f, -0.5f,  0.5f,  // 1
+             0.5f,  0.5f,  0.5f,  // 2
+            -0.5f,  0.5f,  0.5f,  // 3
+            
+            // Back face
+            -0.5f, -0.5f, -0.5f,  // 4
+             0.5f, -0.5f, -0.5f,  // 5
+             0.5f,  0.5f, -0.5f,  // 6
+            -0.5f,  0.5f, -0.5f,  // 7
+            
+            // Left face
+            -0.5f, -0.5f, -0.5f,  // 8
+            -0.5f, -0.5f,  0.5f,  // 9
+            -0.5f,  0.5f,  0.5f,  // 10
+            -0.5f,  0.5f, -0.5f,  // 11
+            
+            // Right face
+             0.5f, -0.5f,  0.5f,  // 12
+             0.5f, -0.5f, -0.5f,  // 13
+             0.5f,  0.5f, -0.5f,  // 14
+             0.5f,  0.5f,  0.5f,  // 15
+            
+            // Bottom face
+            -0.5f, -0.5f, -0.5f,  // 16
+             0.5f, -0.5f, -0.5f,  // 17
+             0.5f, -0.5f,  0.5f,  // 18
+            -0.5f, -0.5f,  0.5f,  // 19
+            
+            // Top face
+            -0.5f,  0.5f,  0.5f,  // 20
+             0.5f,  0.5f,  0.5f,  // 21
+             0.5f,  0.5f, -0.5f,  // 22
+            -0.5f,  0.5f, -0.5f   // 23
+        };
+        
+        std::vector<float> normals = {
+            // Front face
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f,
+            
+            // Back face
+            0.0f, 0.0f, -1.0f,
+            0.0f, 0.0f, -1.0f,
+            0.0f, 0.0f, -1.0f,
+            0.0f, 0.0f, -1.0f,
+            
+            // Left face
+            -1.0f, 0.0f, 0.0f,
+            -1.0f, 0.0f, 0.0f,
+            -1.0f, 0.0f, 0.0f,
+            -1.0f, 0.0f, 0.0f,
+            
+            // Right face
+            1.0f, 0.0f, 0.0f,
+            1.0f, 0.0f, 0.0f,
+            1.0f, 0.0f, 0.0f,
+            1.0f, 0.0f, 0.0f,
+            
+            // Bottom face
+            0.0f, -1.0f, 0.0f,
+            0.0f, -1.0f, 0.0f,
+            0.0f, -1.0f, 0.0f,
+            0.0f, -1.0f, 0.0f,
+            
+            // Top face
+            0.0f, 1.0f, 0.0f,
+            0.0f, 1.0f, 0.0f,
+            0.0f, 1.0f, 0.0f,
+            0.0f, 1.0f, 0.0f
+        };
+        
+        std::vector<float> texcoords = {
+            // Front face
+            0.0f, 1.0f,
+            1.0f, 1.0f,
+            1.0f, 0.0f,
+            0.0f, 0.0f,
+            
+            // Back face
+            1.0f, 1.0f,
+            0.0f, 1.0f,
+            0.0f, 0.0f,
+            1.0f, 0.0f,
+            
+            // Left face
+            0.0f, 1.0f,
+            1.0f, 1.0f,
+            1.0f, 0.0f,
+            0.0f, 0.0f,
+            
+            // Right face
+            1.0f, 1.0f,
+            0.0f, 1.0f,
+            0.0f, 0.0f,
+            1.0f, 0.0f,
+            
+            // Bottom face
+            0.0f, 0.0f,
+            1.0f, 0.0f,
+            1.0f, 1.0f,
+            0.0f, 1.0f,
+            
+            // Top face
+            0.0f, 0.0f,
+            1.0f, 0.0f,
+            1.0f, 1.0f,
+            0.0f, 1.0f
+        };
+        
+        std::vector<uint32_t> indices = {
+            // Front face
+            0, 1, 2, 2, 3, 0,
+            // Back face
+            4, 5, 6, 6, 7, 4,
+            // Left face
+            8, 9, 10, 10, 11, 8,
+            // Right face
+            12, 13, 14, 14, 15, 12,
+            // Bottom face
+            16, 17, 18, 18, 19, 16,
+            // Top face
+            20, 21, 22, 22, 23, 20
+        };
+        
+        auto mesh = createFullAttributeMesh(positions, normals, texcoords, indices);
+        
+        // Store the mesh as a member variable
+        m_mesh = mesh;
+        
+        // Create a textured material
+        std::string materialName = "Cube_Material_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+        m_material = MaterialLibrary::createSolidMaterial(materialName, glm::vec3(color));
+    }
+    
     //-----------------------------------------------------------------------------
     // Quad Implementation
     //-----------------------------------------------------------------------------
+    Quad::Quad()
+        : Quad(glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(1.0f), glm::vec4(1.0f), true)
+    {
+        
+    }
+
     Quad::Quad(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color)
         : m_position(position), m_rotation(rotation), m_scale(scale), m_color(color)
     {
@@ -151,6 +560,100 @@ namespace Rapture {
         m_mesh = mesh;
         
         // Create a solid color material using MaterialLibrary
+        std::string materialName = "Quad_Material_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+        m_material = MaterialLibrary::createSolidMaterial(materialName, glm::vec3(color));
+    }
+
+    // Overloaded constructor that includes normals and texture coordinates
+    Quad::Quad(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color, bool useTexCoords)
+        : m_position(position), m_rotation(rotation), m_scale(scale), m_color(color)
+    {
+        if (!useTexCoords) {
+            // Fall back to the simpler version if we don't need texture coordinates
+            *this = Quad(position, rotation, scale, color);
+            return;
+        }
+
+        // Vertices for a quad in the XY plane, centered at origin with size 1
+        std::vector<float> positions = {
+            -0.5f, -0.5f, 0.0f,
+             0.5f, -0.5f, 0.0f,
+             0.5f,  0.5f, 0.0f,
+            -0.5f,  0.5f, 0.0f
+        };
+        
+        // Normals for quad (all facing positive Z)
+        std::vector<float> normals = {
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f
+        };
+        
+        // Texture coordinates
+        std::vector<float> texcoords = {
+            0.0f, 1.0f,
+            1.0f, 1.0f,
+            1.0f, 0.0f,
+            0.0f, 0.0f
+        };
+        
+        // Indices for filled quad (two triangles)
+        std::vector<uint32_t> indices = {
+            0, 1, 2,
+            2, 3, 0
+        };
+        
+        auto mesh = createFullAttributeMesh(positions, normals, texcoords, indices);
+        
+        // Store the mesh as a member variable
+        m_mesh = mesh;
+        
+        // Create a solid color material using MaterialLibrary
+        std::string materialName = "Quad_Material_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+        m_material = MaterialLibrary::createSolidMaterial(materialName, glm::vec3(color));
+    }
+
+    // Add constructor implementation for textured Quad
+    Quad::Quad(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color, const std::string& texturePath)
+        : m_position(position), m_rotation(rotation), m_scale(scale), m_color(color)
+    {
+        // Vertices for a quad in the XY plane, centered at origin with size 1
+        std::vector<float> positions = {
+            -0.5f, -0.5f, 0.0f,
+             0.5f, -0.5f, 0.0f,
+             0.5f,  0.5f, 0.0f,
+            -0.5f,  0.5f, 0.0f
+        };
+        
+        // Normals for quad (all facing positive Z)
+        std::vector<float> normals = {
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f,
+            0.0f, 0.0f, 1.0f
+        };
+        
+        // Texture coordinates
+        std::vector<float> texcoords = {
+            0.0f, 1.0f,
+            1.0f, 1.0f,
+            1.0f, 0.0f,
+            0.0f, 0.0f
+        };
+        
+        // Indices for filled quad (two triangles)
+        std::vector<uint32_t> indices = {
+            0, 1, 2,
+            2, 3, 0
+        };
+        
+        auto mesh = createFullAttributeMesh(positions, normals, texcoords, indices);
+        
+        // Store the mesh as a member variable
+        m_mesh = mesh;
+        
+        // Create a textured material
         std::string materialName = "Quad_Material_" + std::to_string(reinterpret_cast<uintptr_t>(this));
         m_material = MaterialLibrary::createSolidMaterial(materialName, glm::vec3(color));
     }

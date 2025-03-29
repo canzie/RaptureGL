@@ -11,6 +11,7 @@ namespace Rapture {
 
 enum class TextureActiveSlot : uint32_t {
     ALBEDO=0,
+    CUBEMAP=0,
     NORMAL=1,
     METALLIC=2,
     ROUGHNESS=3,
@@ -62,6 +63,8 @@ public:
 
     static std::shared_ptr<Texture2D> create(const std::string& path);
     static std::shared_ptr<Texture2D> create(uint32_t width, uint32_t height, uint32_t channels);
+
+    static std::shared_ptr<Texture2D> createCubemap(const std::vector<std::string>& filepaths);
 };
 
 struct TextureLoadRequest {
@@ -80,10 +83,19 @@ public:
     static void init(unsigned int numThreads = 4);
     static void shutdown();
     
+    // Add a texture to the library
     static void add(const std::string& name, const std::shared_ptr<Texture2D>& texture);
     static void add(const std::shared_ptr<Texture2D>& texture);
+
+    // Load a texture from a file
     static std::shared_ptr<Texture2D> load(const std::string& filepath);
     static std::shared_ptr<Texture2D> loadAsync(const std::string& filepath);
+
+    static std::shared_ptr<Texture2D> loadCubemap(const std::vector<std::string>& filepaths);
+    static std::shared_ptr<Texture2D> loadCubemapAsync(const std::vector<std::string>& filepaths);
+
+
+    // Get a texture from the library
     static std::shared_ptr<Texture2D> get(const std::string& name);
     
     static bool getTextureDimensions(const std::string& path, int& width, int& height, int& channels);
