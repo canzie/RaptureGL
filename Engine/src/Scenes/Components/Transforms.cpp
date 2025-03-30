@@ -80,8 +80,44 @@ void Transforms::setScale(const glm::vec3& scale)
 {
     m_scale = scale;
     recalculateTransform();
-}      
+}
 
+glm::mat4 Transforms::recalculateTransform(const glm::vec3 &translation, const glm::vec3 &rotation, const glm::vec3 &scale)
+{
+
+    RAPTURE_PROFILE_FUNCTION();
+
+    glm::mat4 transformMatrix = glm::mat4(1.0f);
+    transformMatrix = glm::translate(transformMatrix, translation);
+    transformMatrix = transformMatrix * glm::mat4_cast(glm::quat(rotation));
+    transformMatrix = glm::scale(transformMatrix, scale);
+
+    return transformMatrix;
+}
+
+void Transforms::decomposeTransform(const glm::mat4 &transform, glm::vec3* translation, glm::vec3* rotation, glm::vec3* scale)
+{
+    RAPTURE_PROFILE_FUNCTION();
+    // 1. Extract translation directly - always accurate and efficient
+    *translation = glm::vec3(transform[3]);
+    
+    // 2. Extract scale - use column vector lengths
+    scale->x = glm::length(glm::vec3(transform[0]));
+    scale->y = glm::length(glm::vec3(transform[1]));
+    scale->z = glm::length(glm::vec3(transform[2]));
+    
+    // Extract rotation
+    // Remove scale from the matrix
+    glm::mat3 rotationMatrix(
+        glm::vec3(transform[0]) / scale->x,
+        glm::vec3(transform[1]) / scale->y,
+        glm::vec3(transform[2]) / scale->z
+    );
+    
+    // 6. Extract quaternion from rotation matrix
+    glm::quat rotationQ = glm::quat_cast(glm::mat4(rotationMatrix));
+    *rotation = glm::eulerAngles(rotationQ);
+}   
 
 void Transforms::recalculateTransform()
 {

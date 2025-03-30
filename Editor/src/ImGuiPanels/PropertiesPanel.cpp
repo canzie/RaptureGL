@@ -4,6 +4,9 @@
 #include "Materials/MaterialParameter.h"
 #include "Textures/Texture.h"
 
+
+#include "Scenes/Components/Transforms.h"
+
 // Windows file dialog
 #include <Windows.h>
 #include <commdlg.h>
@@ -86,6 +89,12 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
     }
     
     ImGui::Separator();
+    
+    // Check for SkeletonComponent and render if exists
+    if (entity->hasComponent<Rapture::SkeletonComponent>() && 
+        ImGui::CollapsingHeader("Skeleton", ImGuiTreeNodeFlags_DefaultOpen)) {
+        renderSkeletonBones(entity);
+    }
     
     // Edit Sprite component if it exists
     bool hasSprite = entity->hasComponent<Rapture::SpriteComponent>();
@@ -641,4 +650,120 @@ const char* PropertiesPanel::getLightTypeString(int type)
     case 2: return "Spot";
     default: return "Unknown";
     }
+}
+
+void PropertiesPanel::renderSkeletonBones(std::shared_ptr<Rapture::Entity> entity) {
+    if (!entity->hasComponent<Rapture::SkeletonComponent>())
+        return;
+    
+    auto& skeletonComponent = entity->getComponent<Rapture::SkeletonComponent>();
+    auto& skeleton = skeletonComponent.skeleton;
+    
+    ImGui::Text("Skeleton Bones");
+    ImGui::Separator();
+    
+    if (ImGui::BeginChild("BonesScrollArea", ImVec2(0, 300), true)) {
+        const auto& bones = skeleton->getBones();
+        
+        for (const auto& bone : bones) {
+            if (ImGui::TreeNode(bone->name.c_str())) {
+                // Get current transform information
+                glm::vec3 translation = glm::vec3(0.0f);
+                glm::vec3 rotation = glm::vec3(0.0f);
+                glm::vec3 scale = glm::vec3(1.0f);
+                
+                // Extract translation, rotation, and scale from bone transform matrix using Transforms class
+                Rapture::Transforms::decomposeTransform(bone->transform, &translation, &rotation, &scale);
+                
+                // Convert rotation to degrees for UI display
+                rotation = glm::degrees(rotation);
+                
+                // Translation controls with colored axes
+                ImGui::Text("Translation");
+                
+                // X axis (Red)
+                ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "X:");
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.6f, 0.1f, 0.1f, 0.5f));
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x / 3.0f - 10.0f);
+                bool transXChanged = ImGui::DragFloat("##boneTransX", &translation.x, 0.01f);
+                ImGui::PopItemWidth();
+                ImGui::PopStyleColor();
+                
+                // Y axis (Green)
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Y:");
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.6f, 0.1f, 0.5f));
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x / 2.0f - 10.0f);
+                bool transYChanged = ImGui::DragFloat("##boneTransY", &translation.y, 0.01f);
+                ImGui::PopItemWidth();
+                ImGui::PopStyleColor();
+                
+                // Z axis (Blue)
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.2f, 0.2f, 1.0f, 1.0f), "Z:");
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.6f, 0.5f));
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
+                bool transZChanged = ImGui::DragFloat("##boneTransZ", &translation.z, 0.01f);
+                ImGui::PopItemWidth();
+                ImGui::PopStyleColor();
+                
+                // Rotation controls with colored axes
+                ImGui::Text("Rotation");
+                
+                // X axis (Red)
+                ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "X:");
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.6f, 0.1f, 0.1f, 0.5f));
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x / 3.0f - 10.0f);
+                bool rotXChanged = ImGui::DragFloat("##boneRotX", &rotation.x, 0.5f);
+                ImGui::PopItemWidth();
+                ImGui::PopStyleColor();
+                
+                // Y axis (Green)
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Y:");
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.6f, 0.1f, 0.5f));
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x / 2.0f - 10.0f);
+                bool rotYChanged = ImGui::DragFloat("##boneRotY", &rotation.y, 0.5f);
+                ImGui::PopItemWidth();
+                ImGui::PopStyleColor();
+                
+                // Z axis (Blue)
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.2f, 0.2f, 1.0f, 1.0f), "Z:");
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.6f, 0.5f));
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
+                bool rotZChanged = ImGui::DragFloat("##boneRotZ", &rotation.z, 0.5f);
+                ImGui::PopItemWidth();
+                ImGui::PopStyleColor();
+                
+                // If any value has changed, update the bone's transform
+                if (transXChanged || transYChanged || transZChanged || rotXChanged || rotYChanged || rotZChanged) {
+                    // Convert rotation back to radians
+                    glm::vec3 rotationRadians = glm::radians(rotation);
+                    
+                    // Use Transforms::recalculateTransform to create a new transform matrix
+                    glm::mat4 transformMatrix = Rapture::Transforms::recalculateTransform(translation, rotationRadians, scale);
+                    
+                    // Update the bone's transform
+                    bone->transform = transformMatrix;
+                    
+                    // Propagate the change through the skeleton
+                    if (bone->parent) {
+                        skeleton->propegateBoneUpdate(bone, bone->parent->worldTransform * bone->transform);
+                    } else {
+                        skeleton->propegateBoneUpdate(bone, bone->transform);
+                    }
+                }
+                
+                ImGui::TreePop();
+            }
+        }
+    }
+    ImGui::EndChild();
 }

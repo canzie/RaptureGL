@@ -368,6 +368,19 @@ namespace Rapture {
 
     };
 
+    // is not enforced at all right now
+    // only way i can think of would be to copy-paste the entityNodeComponent
+    // but having both is weird and only having one can lead to inconsistencies
+    // so this is just a dummy component to get a root entity quickly, witouth having to traverse the entire hierarchy
+    struct RootComponent
+    {
+        bool yo = true;
+
+        RootComponent() = default;
+        
+
+    };
+
     struct EntityNodeComponent
     {
         std::shared_ptr<EntityNode> entity_node;

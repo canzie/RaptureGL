@@ -33,6 +33,9 @@ class Transforms {
         void setRotation(const glm::quat& rotation);
         void setScale(const glm::vec3& scale);
 
+        static glm::mat4 recalculateTransform(const glm::vec3& translation, const glm::vec3& rotation, const glm::vec3& scale);
+        static void decomposeTransform(const glm::mat4& transform, glm::vec3* translation, glm::vec3* rotation, glm::vec3* scale);
+
 
         // Recalculate the transform matrix 
         void recalculateTransform();

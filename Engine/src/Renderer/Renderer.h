@@ -59,11 +59,11 @@ namespace Rapture
 		static void disableFrustumCulling();
 		static void toggleFrustumCulling();
 		static bool isFrustumCullingEnabled();
+        
 
 	private:
 		// Extract scene entities for rendering
 		static void extractSceneData(const std::shared_ptr<Scene> s, 
-			std::vector<entt::entity>& meshEntities,
 			entt::entity& cameraEntity,
 			std::vector<entt::entity>& lightEntities);
 
@@ -81,7 +81,6 @@ namespace Rapture
 		
 		// Render all meshes
 		static void renderMeshes(const std::shared_ptr<Scene> s, 
-			const std::vector<entt::entity>& meshEntities, 
 			const glm::vec3& camPos);
 		
 		// Draw a bounding box for a specific entity

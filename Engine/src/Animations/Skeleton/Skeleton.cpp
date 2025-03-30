@@ -1,11 +1,39 @@
 #include "Skeleton.h"
 
 #include "../../Logger/Log.h"
+#include "../../Shaders/OpenGLUniforms/UniformBindingPointIndices.h"
 
 namespace Rapture {
-    void Skeleton::propegateBoneUpdate(Bone &bone, const glm::mat4 &transform)
+    Skeleton::Skeleton(const std::string &name)
+    : m_name(name)
+    {        
+        m_boneMatricesUBO = std::make_shared<UniformBuffer>(
+            sizeof(m_boneMatricesData), 
+            BufferUsage::Dynamic, 
+            &m_boneMatricesData, 
+            BONE_MATRICES_BINDING_POINT_IDX);
+
+    }
+
+    void Skeleton::propegateBoneUpdate(std::shared_ptr<Bone> bone, const glm::mat4 &parentWorldTransform)
     {
-        GE_CORE_ERROR("Skeleton::propegateBoneUpdate not implemented yet in Skeleton.cpp");
+        // Calculate world transform for this bone by combining parent's world transform with 
+        // bone's local transform
+        glm::mat4 worldTransform = parentWorldTransform * bone->transform;
+        
+        // Store the world transform (or use it for rendering)
+        // Note: typically you'd store local transforms separately from world transforms
+        glm::mat4 localTransform = bone->transform;  // Save local transform
+        bone->worldTransform = worldTransform;  // Store world transform for rendering
+        
+        // Propagate to children (each child's transform is in LOCAL space relative to this bone)
+        for (auto& child : bone->children) {
+            propegateBoneUpdate(child, worldTransform);
+        }
+        
+        // Mark bones as needing update in shader
+        m_isBoneDirty = true;
+
     }
 
     std::shared_ptr<Bone> Skeleton::getBone(const std::string &name)
@@ -23,9 +51,13 @@ namespace Rapture {
     {
         int i = 0;  
         for (auto& bone : m_bones) {
-            bone->inverseBind = inverseBinds[i++];
-            
+            bone->inverseBind = inverseBinds[i];
+            m_boneMatricesData.u_BoneTransforms[i] = inverseBinds[i];
+            i++;
         }
+
+        propegateBoneUpdate(m_bones[0], glm::mat4(1.0f));
+
     }
 
     void Skeleton::createBones(std::vector<std::string> &boneNames)
@@ -58,5 +90,26 @@ namespace Rapture {
             printHierarchy(child, indent + "  ");
         }
     }
-    
+
+    void Skeleton::bindBones()
+    {
+
+        m_boneMatricesUBO->bindBase(BONE_MATRICES_BINDING_POINT_IDX);
+
+        int i = 0;
+        for (auto& bone : m_bones) {
+            m_boneMatricesData.u_BoneTransforms[i] = bone->worldTransform * bone->inverseBind;
+ 
+            i++;
+        }
+
+
+        
+            m_boneMatricesUBO->setData(&m_boneMatricesData, sizeof(m_boneMatricesData));
+            m_boneMatricesUBO->flush();
+
+            m_isBoneDirty = false;
+        
+
+    }
 }

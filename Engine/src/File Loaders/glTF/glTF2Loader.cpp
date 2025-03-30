@@ -140,6 +140,8 @@ namespace Rapture {
         else if (!m_nodes.empty()) {
             // If no scenes but has nodes, process the first node as root
             Entity nodeEntity = m_scene->createEntity("Root Node");
+            nodeEntity.addComponent<RootComponent>();
+
             processNode(nodeEntity, m_nodes[0]);
         }
         
@@ -212,7 +214,7 @@ namespace Rapture {
                 );
             
             // Build transform matrix correctly using GLM
-            glm::mat4 transformMatrix = glm::mat4(1.0f);
+            
             transformMatrix = glm::translate(transformMatrix, translation);
             transformMatrix = transformMatrix * glm::mat4_cast(rotation);
             transformMatrix = glm::scale(transformMatrix, scale);
@@ -378,16 +380,21 @@ namespace Rapture {
         // process all of the bones via graph traversal
         processBone(entity, rootIndex);
 
+
         if (inverseBindIndex < m_accessors.size()) {
             std::vector<unsigned char> inverseBinds;
             loadAccessor(m_accessors[inverseBindIndex], inverseBinds);
 
             // convert the inverse binds to a vector of glm::mat4
             std::vector<glm::mat4> inverseBindMatrices;
-            for (unsigned int i = 0; i < inverseBinds.size(); i += 16) {
+            int j = 0;
+            for (unsigned int i = 0; i < inverseBinds.size(); i += 16*4) {
                 glm::mat4 matrix = glm::make_mat4(reinterpret_cast<float*>(inverseBinds.data() + i));
                 inverseBindMatrices.push_back(matrix);
+
             }
+
+            GE_CORE_TRACE("Inverse Bind Matrices Size: {0}", inverseBindMatrices.size());
 
             // apply the inverse bind matrices to the bones
             skeletonComp->skeleton->applyInverseBinds(inverseBindMatrices);
@@ -415,7 +422,10 @@ namespace Rapture {
             return;
         }
 
-       bone->transform = getNodeTransform(boneJSON);
+
+        bone->transform = getNodeTransform(boneJSON);
+
+
 
         if (boneJSON.contains("children")) {
             for (auto& childBoneIndex : boneJSON["children"]) {

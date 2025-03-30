@@ -44,5 +44,8 @@ private:
     void renderEntityProperties(std::shared_ptr<Rapture::Entity> entity);
     void drawMaterialTextures(std::shared_ptr<Rapture::Entity> entity);
     const char* getLightTypeString(int type);
+    
+    // Helper method to render skeleton bone transforms
+    void renderSkeletonBones(std::shared_ptr<Rapture::Entity> entity);
 };
 

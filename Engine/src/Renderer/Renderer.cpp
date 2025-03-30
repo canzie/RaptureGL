@@ -11,6 +11,7 @@
 #include "Raycast.h"
 #include "PrimitiveShapes.h"
 #include "../Materials/MaterialLibrary.h"
+#include "../Animations/Skeleton/Skeleton.h"
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -120,12 +121,10 @@ namespace Rapture
 		s_entitiesCulled = 0;
 
 		// Extract entities from scene - only once per frame
-		static std::vector<entt::entity> meshEntities;
 		static entt::entity cameraEntity = entt::null;
 		static std::vector<entt::entity> lightEntities;
 		
 		// Clear previous entities
-		meshEntities.clear();
 		lightEntities.clear();
 		cameraEntity = entt::null;
 		s_visibleEntities.clear();
@@ -133,7 +132,7 @@ namespace Rapture
 		// Extract entities from scene
 		{
 			RAPTURE_PROFILE_SCOPE("Scene Data Extraction");
-			extractSceneData(s, meshEntities, cameraEntity, lightEntities);
+			extractSceneData(s, cameraEntity, lightEntities);
 		}
 		
 		// Skip if no camera
@@ -166,8 +165,10 @@ namespace Rapture
 		// Render all meshes
 		{
 			RAPTURE_PROFILE_SCOPE("Mesh Rendering");
-			renderMeshes(s, meshEntities, camPos);
+			renderMeshes(s, camPos);
 		}
+
+
 
         Raycast::onFrameEnd(s_visibleEntities);
 
@@ -267,8 +268,7 @@ namespace Rapture
 		return s_frustumCullingEnabled;
 	}
 
-	void Renderer::extractSceneData(const std::shared_ptr<Scene> s, 
-								  std::vector<entt::entity>& meshEntities,
+	void Renderer::extractSceneData(const std::shared_ptr<Scene> s,
 								  entt::entity& cameraEntity,
 								  std::vector<entt::entity>& lightEntities)
 	{
@@ -277,17 +277,9 @@ namespace Rapture
 		
 		{
 			RAPTURE_PROFILE_SCOPE("Mesh View Creation");
-			auto meshes = reg.view<TransformComponent, MeshComponent>();
 			auto cams = reg.view<CameraControllerComponent>();
 			auto lights = reg.view<TransformComponent, LightComponent>();
 			
-			// Cache entity IDs to avoid registry lookups during rendering
-			{
-				RAPTURE_PROFILE_SCOPE("Mesh Entity Collection");
-				for (auto ent : meshes) {
-					meshEntities.push_back(ent);
-				}
-			}
 			
 			if (!cams.empty()) {
 				cameraEntity = cams.front();
@@ -494,8 +486,8 @@ namespace Rapture
 		return true;
 	}
 
-	void Renderer::renderMeshes(const std::shared_ptr<Scene> s, 
-							 const std::vector<entt::entity>& meshEntities, 
+	void Renderer::renderMeshes(const std::shared_ptr<Scene> s,
+                            
 							 const glm::vec3& camPos)
 	{
 		
@@ -505,8 +497,27 @@ namespace Rapture
 		int boundingBoxesDrawn = 0;
 		int processedEntities = 0;
 		int culledEntities = 0;
-		
-		for (auto ent : meshEntities)
+
+        // render independant meshes
+        //auto roots = s->getRegistry().view<RootComponent>();
+
+        auto skeletal_meshes = s->getRegistry().view<SkeletonComponent, EntityNodeComponent>();
+        ;
+        for (auto ent : skeletal_meshes)
+        {
+            auto entity = Entity(ent, s.get());
+            auto& skc = entity.getComponent<SkeletonComponent>();
+
+            //skeleton.skeleton->printHierarchy();
+            skc.skeleton->bindBones();
+
+            
+        }
+
+        // render meshes with a hierarchy
+        auto meshes = s->getRegistry().view<MeshComponent, MaterialComponent, TransformComponent>();
+
+		for (auto ent : meshes)
 		{
 			processedEntities++;
 			
@@ -522,11 +533,7 @@ namespace Rapture
 				RAPTURE_PROFILE_SCOPE("Entity Validation");
 				Entity mesh(ent, s.get());
 				
-				if (!mesh.hasComponent<MeshComponent>()) {
-					GE_RENDER_ERROR("Entity doesn't have MeshComponent, skipping");
-					skippedMeshes++;
-					continue;
-				}
+
 
 				// Perform frustum culling
 				if (!isEntityVisible(s, ent)) {
@@ -571,6 +578,8 @@ namespace Rapture
 					// Bind the material (which also binds the shader)
 					material->bind();
 				}
+
+
 				
 				// Per-object uniform setup
 				{
