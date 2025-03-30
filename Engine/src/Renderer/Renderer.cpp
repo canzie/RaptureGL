@@ -498,20 +498,26 @@ namespace Rapture
 		int processedEntities = 0;
 		int culledEntities = 0;
 
-        // render independant meshes
-        //auto roots = s->getRegistry().view<RootComponent>();
-
+        // Process skeletal entities and update animations
         auto skeletal_meshes = s->getRegistry().view<SkeletonComponent, EntityNodeComponent>();
-        ;
         for (auto ent : skeletal_meshes)
         {
             auto entity = Entity(ent, s.get());
             auto& skc = entity.getComponent<SkeletonComponent>();
-
-            //skeleton.skeleton->printHierarchy();
-            skc.skeleton->bindBones();
-
             
+            // Check if the entity has an animation component
+            if (entity.hasComponent<AnimationComponent>()) {
+                auto& animComp = entity.getComponent<AnimationComponent>();
+                
+                // Update animation time and apply to skeleton
+                if (animComp.animation && animComp.animation->isPlaying()) {
+                    // Animation time update is handled by the AnimationSystem
+                    animComp.applyToSkeleton(skc.skeleton);
+                }
+            }
+
+            // Bind the bones for rendering
+            skc.skeleton->bindBones();
         }
 
         // render meshes with a hierarchy

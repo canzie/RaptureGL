@@ -13,6 +13,7 @@
 #include "../../Scenes/Scene.h"
 #include "../../Scenes/Entity.h"
 #include "../../Materials/Material.h"
+#include "../../Animations/Animation.h"
 
 using json = nlohmann::json;
 
@@ -58,6 +59,15 @@ namespace Rapture
 		 * @return true if loading was successful, false otherwise
 		 */
 		bool loadModel(const std::string& filepath, bool isAbsolute=false, bool calculateBoundingBoxes = false);
+
+        /**
+         * @brief Load animations from a glTF file
+         * 
+         * @param filepath Path to the .gltf file
+         * @param isAbsolute If true, filepath is an absolute path
+         * @return std::vector of loaded animations
+         */
+        std::vector<std::shared_ptr<Animation>> loadAnimations(const std::string& filepath, bool isAbsolute=false);
 
 	private:
 		/**
@@ -109,6 +119,34 @@ namespace Rapture
 		 * @return Entity The root scene entity
 		 */
 		void processScene(json& sceneJSON);
+
+        /**
+         * @brief Process animations from the glTF file
+         * 
+         * @param animationsJSON JSON array containing animation data
+         * @return Vector of processed animations
+         */
+        std::vector<std::shared_ptr<Animation>> processAnimations(json& animationsJSON);
+
+        /**
+         * @brief Process a single animation from the glTF file
+         * 
+         * @param animationJSON JSON object containing animation data
+         * @return Processed animation
+         */
+        std::shared_ptr<Animation> processAnimation(json& animationJSON);
+
+        /**
+         * @brief Process animation samplers and create animation channels
+         * 
+         * @param animation Animation to add channels to
+         * @param channelsJSON JSON array containing channel data
+         * @param samplersJSON JSON array containing sampler data
+         */
+        void processAnimationChannelsAndSamplers(
+            std::shared_ptr<Animation> animation, 
+            json& channelsJSON, 
+            json& samplersJSON);
 
 		/**
 		 * @brief Load a texture from the glTF file and set it on a material
@@ -163,6 +201,22 @@ namespace Rapture
          * @param boneIndex The index of the bone in the glTF file
          */
         void processBone(Entity entity, unsigned int boneIndex);
+
+        /**
+         * @brief Get node name from glTF node index
+         * 
+         * @param nodeIndex Index of the node in glTF file
+         * @return Name of the node
+         */
+        std::string getNodeName(unsigned int nodeIndex);
+
+        /**
+         * @brief Convert glTF interpolation string to InterpolationType
+         * 
+         * @param interpolation glTF interpolation string
+         * @return Corresponding InterpolationType
+         */
+        InterpolationType getInterpolationType(const std::string& interpolation);
 
 	private:
 		// Reference to the scene being populated

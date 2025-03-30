@@ -90,6 +90,12 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
     
     ImGui::Separator();
     
+    // Check for AnimationComponent and render if exists
+    if (entity->hasComponent<Rapture::AnimationComponent>() && 
+        ImGui::CollapsingHeader("Animation", ImGuiTreeNodeFlags_DefaultOpen)) {
+        renderAnimationControls(entity);
+    }
+    
     // Check for SkeletonComponent and render if exists
     if (entity->hasComponent<Rapture::SkeletonComponent>() && 
         ImGui::CollapsingHeader("Skeleton", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -766,4 +772,80 @@ void PropertiesPanel::renderSkeletonBones(std::shared_ptr<Rapture::Entity> entit
         }
     }
     ImGui::EndChild();
+}
+
+void PropertiesPanel::renderAnimationControls(std::shared_ptr<Rapture::Entity> entity) {
+    auto& animComp = entity->getComponent<Rapture::AnimationComponent>();
+    
+    // Display current animation info
+    if (animComp.animation) {
+        // Animation details
+        ImGui::Text("Current: %s", animComp.animationName.c_str());
+        ImGui::Text("Duration: %.2f seconds", animComp.animation->getDuration());
+        ImGui::Text("Time: %.2f / %.2f", animComp.animation->getCurrentTime(), animComp.animation->getDuration());
+        
+        // Playback status
+        bool isPlaying = animComp.animation->isPlaying();
+        ImGui::Text("Status: %s", isPlaying ? "Playing" : "Paused");
+        
+        // Playback speed control
+        float speed = animComp.animation->getPlaybackSpeed();
+        if (ImGui::SliderFloat("Speed", &speed, 0.1f, 2.0f)) {
+            animComp.animation->setPlaybackSpeed(speed);
+        }
+        
+        // Looping control
+        bool looping = animComp.animation->isLooping();
+        if (ImGui::Checkbox("Loop", &looping)) {
+            animComp.animation->setLooping(looping);
+        }
+        
+        // Playback controls
+        ImGui::Separator();
+        
+        // Play/Pause button
+        if (!isPlaying) {
+            if (ImGui::Button("Play", ImVec2(80, 0))) {
+                animComp.playAnimation();
+            }
+        } else {
+            if (ImGui::Button("Pause", ImVec2(80, 0))) {
+                animComp.pauseAnimation();
+            }
+        }
+        
+        ImGui::SameLine();
+        
+        // Stop button
+        if (ImGui::Button("Stop", ImVec2(80, 0))) {
+            animComp.stopAnimation();
+        }
+        
+        ImGui::SameLine();
+        
+        // Reset button
+        if (ImGui::Button("Reset", ImVec2(80, 0))) {
+            animComp.resetAnimation();
+        }
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "No active animation");
+    }
+    
+    // Animation selection dropdown if multiple animations exist
+    if (animComp.animations.size() > 1) {
+        ImGui::Separator();
+        ImGui::Text("Available Animations:");
+        
+        // Create a vector of animation names for the combo box
+        std::vector<const char*> animNames;
+        for (const auto& anim : animComp.animations) {
+            animNames.push_back(anim->getName().c_str());
+        }
+        
+        // Display combo box with animation selection
+        int currentItem = animComp.currentAnimationIndex;
+        if (ImGui::Combo("Select Animation", &currentItem, animNames.data(), static_cast<int>(animNames.size()))) {
+            animComp.setAnimation(currentItem);
+        }
+    }
 }

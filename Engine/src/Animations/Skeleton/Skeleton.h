@@ -15,7 +15,7 @@ namespace Rapture
 
     struct Bone : public std::enable_shared_from_this<Bone>
     {
-        std::string name;
+        std::string name = "Bone";
         glm::mat4 transform = glm::mat4(1.0f);
         glm::mat4 worldTransform = glm::mat4(1.0f);
         glm::mat4 inverseBind = glm::mat4(1.0f);
@@ -70,6 +70,13 @@ namespace Rapture
 
         void bindBones();
 
+        void setRootBoneTransform(const glm::mat4& transform) {
+            m_rootBone->transform = transform;
+        }
+
+        std::shared_ptr<Bone> getRootBone() const {
+            return m_rootBone;
+        }
 
 
 
@@ -78,6 +85,8 @@ namespace Rapture
         std::string m_name;
         // used to bind them in the correct order
         std::vector<std::shared_ptr<Bone>> m_bones;
+
+        std::shared_ptr<Bone> m_rootBone;
 
         bool m_isBoneDirty = true;
         std::shared_ptr<UniformBuffer> m_boneMatricesUBO;

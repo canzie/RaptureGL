@@ -132,6 +132,11 @@ namespace Rapture {
         
         GE_CORE_INFO("glTF2Loader: Loading model from '{}'", fullPath);
 
+        // Check if the model has animations
+        if (!m_animations.empty()) {
+            GE_CORE_INFO("glTF2Loader: Model has {} animations", m_animations.size());
+        }
+
         // Process the default scene or the first scene if default not specified
         int defaultScene = m_glTFfile.value("scene", 0);
         if (m_glTFfile.contains("scenes") && !m_glTFfile["scenes"].empty()) {
@@ -349,7 +354,8 @@ namespace Rapture {
             json& skeletonNodeJSON = m_nodes[skeletonIndex];
 
             glm::mat4 nodeTransform = getNodeTransform(skeletonNodeJSON);
-
+            skeletonComp->skeleton->setRootBoneTransform(nodeTransform);
+            
             auto transformComp = entity.tryGetComponent<TransformComponent>();
             auto entNodeComp = entity.tryGetComponent<EntityNodeComponent>();
             if (entNodeComp) {
@@ -400,9 +406,23 @@ namespace Rapture {
             skeletonComp->skeleton->applyInverseBinds(inverseBindMatrices);
         }
 
-
-        
-
+        // Check if the file has animations, and if so, add them to the entity
+        if (!m_animations.empty()) {
+            std::vector<std::shared_ptr<Animation>> animations = processAnimations(m_animations);
+            
+            if (!animations.empty()) {
+                GE_CORE_INFO("Found {} animations for skeleton: {}", animations.size(), skeletonName);
+                
+                // Add animation component with all loaded animations
+                entity.addComponent<AnimationComponent>(animations);
+                
+                // If autoPlay is desired, start the first animation
+                auto animComp = entity.getComponent<AnimationComponent>();
+                if (animComp.autoPlay) {
+                    animComp.playAnimation();
+                }
+            }
+        }
     }
 
     void glTF2Loader::processBone(Entity entity, unsigned int boneIndex)
@@ -1206,8 +1226,328 @@ namespace Rapture {
         
         return true; // Return true to indicate the texture was queued for loading
     }
-
     return false;
 }
+    // Animation loading methods
+    std::vector<std::shared_ptr<Animation>> glTF2Loader::loadAnimations(const std::string& filepath, bool isAbsolute) {
+        // Reset state to ensure clean loading
+        cleanUp();
+        
+        // Report initial progress
+        reportProgress(0.0f);
+        
+        std::string fullPath = isAbsolute ? filepath : DIRNAME + filepath;
+
+        // Load the gltf file
+        std::ifstream gltf_file(fullPath);
+        if (!gltf_file) {
+            GE_CORE_ERROR("glTF2Loader: Couldn't load glTF file '{}'", fullPath);
+            return {};
+        }
+
+        // Parse the JSON file
+        try {
+            gltf_file >> m_glTFfile;
+        }
+        catch (const std::exception& e) {
+            GE_CORE_ERROR("glTF2Loader: Failed to parse glTF JSON: {}", e.what());
+            return {};
+        }
+        gltf_file.close();
+
+        // Load references to major sections
+        m_accessors = m_glTFfile.value("accessors", json::array());
+        m_bufferViews = m_glTFfile.value("bufferViews", json::array());
+        m_buffers = m_glTFfile.value("buffers", json::array());
+        m_nodes = m_glTFfile.value("nodes", json::array());
+        m_animations = m_glTFfile.value("animations", json::array());
+
+        // Check if there are any animations
+        if (m_animations.empty()) {
+            GE_CORE_WARN("glTF2Loader: No animations found in '{}'", fullPath);
+            return {};
+        }
+
+        // Extract the directory path from the filepath
+        m_basePath = "";
+        size_t lastSlashPos = fullPath.find_last_of("/\\");
+        if (lastSlashPos != std::string::npos) {
+            m_basePath = fullPath.substr(0, lastSlashPos + 1);
+        }
+
+        // Load the bin file with all the buffer data
+        std::string bufferURI = m_buffers[0].value("uri", "");
+        if (bufferURI.empty()) {
+            GE_CORE_ERROR("glTF2Loader: Buffer URI is missing");
+            return {};
+        }
+        
+        // Check if the buffer URI is a relative path
+        if (bufferURI.find("://") == std::string::npos && !bufferURI.empty()) {
+            // Combine the directory path with the buffer URI
+            bufferURI = m_basePath + bufferURI;
+        }
+        std::ifstream binary_file(bufferURI, std::ios::binary);
+        if (!binary_file) {
+            GE_CORE_ERROR("glTF2Loader: Couldn't load binary file '{}'", bufferURI);
+            return {};
+        }
+        
+        // Get file size and reserve space
+        binary_file.seekg(0, std::ios::end);
+        size_t fileSize = binary_file.tellg();
+        binary_file.seekg(0, std::ios::beg);
+        
+        m_binVec.resize(fileSize);
+        
+        // Read the entire file at once for efficiency
+        if (!binary_file.read(reinterpret_cast<char*>(m_binVec.data()), fileSize)) {
+            GE_CORE_ERROR("glTF2Loader: Failed to read binary data");
+            return {};
+        }
+        
+        binary_file.close();
+
+        // Process animations
+        std::vector<std::shared_ptr<Animation>> animations = processAnimations(m_animations);
+        
+        // Clean up
+        cleanUp();
+        
+        return animations;
+    }
+
+    std::vector<std::shared_ptr<Animation>> glTF2Loader::processAnimations(json& animationsJSON) {
+        std::vector<std::shared_ptr<Animation>> animations;
+        
+        for (auto& animationJSON : animationsJSON) {
+            std::shared_ptr<Animation> animation = processAnimation(animationJSON);
+            if (animation) {
+                animations.push_back(animation);
+            }
+        }
+        
+        GE_CORE_INFO("glTF2Loader: Processed {} animations", animations.size());
+        return animations;
+    }
+
+    std::shared_ptr<Animation> glTF2Loader::processAnimation(json& animationJSON) {
+        // Get animation name and ensure it's unique
+        std::string name = animationJSON.value("name", "Animation");
+        if (name.empty()) {
+            name = "Animation_" + std::to_string(reinterpret_cast<uintptr_t>(&animationJSON));
+        }
+        
+        // Check required elements
+        if (!animationJSON.contains("channels") || !animationJSON.contains("samplers")) {
+            GE_CORE_ERROR("glTF2Loader: Animation missing required channels or samplers");
+            return nullptr;
+        }
+        
+        json& channelsJSON = animationJSON["channels"];
+        json& samplersJSON = animationJSON["samplers"];
+        
+        if (channelsJSON.empty() || samplersJSON.empty()) {
+            GE_CORE_ERROR("glTF2Loader: Animation has empty channels or samplers");
+            return nullptr;
+        }
+        
+        // Find animation duration by examining all keyframes
+        float duration = 0.0f;
+        
+        for (auto& samplerJSON : samplersJSON) {
+            if (!samplerJSON.contains("input")) {
+                continue;
+            }
+            
+            unsigned int inputAccessorIdx = samplerJSON["input"];
+            if (inputAccessorIdx >= m_accessors.size()) {
+                continue;
+            }
+            
+            json& inputAccessor = m_accessors[inputAccessorIdx];
+            if (!inputAccessor.contains("max")) {
+                continue;
+            }
+            
+            float maxTime = inputAccessor["max"][0];
+            duration = std::max(duration, maxTime);
+        }
+        
+        if (duration <= 0.0f) {
+            GE_CORE_ERROR("glTF2Loader: Animation has invalid duration");
+            return nullptr;
+        }
+        
+        // Create animation
+        std::shared_ptr<Animation> animation = std::make_shared<Animation>(name, duration);
+        
+        // Process channels and samplers
+        processAnimationChannelsAndSamplers(animation, channelsJSON, samplersJSON);
+        
+        GE_CORE_INFO("glTF2Loader: Processed animation '{}' with duration {}s", name, duration);
+        return animation;
+    }
+
+    void glTF2Loader::processAnimationChannelsAndSamplers(
+        std::shared_ptr<Animation> animation, 
+        json& channelsJSON, 
+        json& samplersJSON) {
+        
+        // First, process all samplers
+        std::vector<std::shared_ptr<AnimationSampler>> samplers;
+        samplers.reserve(samplersJSON.size());
+        
+        for (auto& samplerJSON : samplersJSON) {
+            // Get interpolation
+            std::string interpolationStr = samplerJSON.value("interpolation", "LINEAR");
+            InterpolationType interpolationType = getInterpolationType(interpolationStr);
+            
+            // Create sampler
+            std::shared_ptr<AnimationSampler> sampler = std::make_shared<AnimationSampler>(interpolationType);
+            
+            // Get input accessor (keyframe times)
+            if (!samplerJSON.contains("input")) {
+                GE_CORE_ERROR("glTF2Loader: Sampler missing input accessor");
+                samplers.push_back(nullptr);
+                continue;
+            }
+            
+            unsigned int inputAccessorIdx = samplerJSON["input"];
+            if (inputAccessorIdx >= m_accessors.size()) {
+                GE_CORE_ERROR("glTF2Loader: Sampler input accessor index out of range");
+                samplers.push_back(nullptr);
+                continue;
+            }
+            
+            std::vector<unsigned char> timeData;
+            loadAccessor(m_accessors[inputAccessorIdx], timeData);
+            
+            // Get output accessor (keyframe values)
+            if (!samplerJSON.contains("output")) {
+                GE_CORE_ERROR("glTF2Loader: Sampler missing output accessor");
+                samplers.push_back(nullptr);
+                continue;
+            }
+            
+            unsigned int outputAccessorIdx = samplerJSON["output"];
+            if (outputAccessorIdx >= m_accessors.size()) {
+                GE_CORE_ERROR("glTF2Loader: Sampler output accessor index out of range");
+                samplers.push_back(nullptr);
+                continue;
+            }
+            
+            json& outputAccessor = m_accessors[outputAccessorIdx];
+            std::string outputType = outputAccessor.value("type", "");
+            
+            std::vector<unsigned char> valueData;
+            loadAccessor(outputAccessor, valueData);
+            
+            // Number of keyframes
+            unsigned int keyframeCount = timeData.size() / sizeof(float);
+            
+            // Parse keyframe data based on output type
+            if (outputType == "VEC3") {
+                // Position or scale keyframes
+                for (unsigned int i = 0; i < keyframeCount; ++i) {
+                    float time = reinterpret_cast<float*>(timeData.data())[i];
+                    glm::vec3 value = *reinterpret_cast<glm::vec3*>(valueData.data() + i * sizeof(glm::vec3));
+                    
+                    // Determine if this is position or scale based on usage
+                    // Will be determined when processing channels
+                    sampler->addPositionKeyframe(time, value);
+                    sampler->addScaleKeyframe(time, value);
+                }
+            } else if (outputType == "VEC4") {
+                // Rotation keyframes (quaternions)
+                for (unsigned int i = 0; i < keyframeCount; ++i) {
+                    float time = reinterpret_cast<float*>(timeData.data())[i];
+
+                    glm::vec4 rawQuat = *reinterpret_cast<glm::vec4*>(valueData.data() + i * sizeof(glm::vec4));
+                    
+                    // GLTF quaternions are stored as [x, y, z, w]
+                    glm::quat rotation(rawQuat.w, rawQuat.x, rawQuat.y, rawQuat.z);
+                    sampler->addRotationKeyframe(time, rotation);
+                }
+            }
+            
+            samplers.push_back(sampler);
+        }
+        
+        // Process animation channels
+        for (auto& channelJSON : channelsJSON) {
+            // Check required fields
+            if (!channelJSON.contains("sampler") || !channelJSON.contains("target")) {
+                GE_CORE_ERROR("glTF2Loader: Channel missing required sampler or target");
+                continue;
+            }
+            
+            // Get sampler index
+            unsigned int samplerIdx = channelJSON["sampler"];
+            if (samplerIdx >= samplers.size() || !samplers[samplerIdx]) {
+                GE_CORE_ERROR("glTF2Loader: Channel references invalid sampler");
+                continue;
+            }
+            
+            // Get target node and path
+            json& targetJSON = channelJSON["target"];
+            if (!targetJSON.contains("node") || !targetJSON.contains("path")) {
+                GE_CORE_ERROR("glTF2Loader: Channel target missing node or path");
+                continue;
+            }
+            
+            unsigned int nodeIdx = targetJSON["node"];
+            std::string path = targetJSON["path"];
+            
+
+            // Get node name
+            //std::string nodeName = getNodeName(nodeIdx);
+            std::string nodeName = std::to_string(nodeIdx);
+
+            // Create animation channel
+            std::shared_ptr<AnimationChannel> channel = std::make_shared<AnimationChannel>(nodeName);
+            
+            // Assign sampler based on path
+            if (path == "translation") {
+                channel->setPositionSampler(samplers[samplerIdx]);
+            } else if (path == "rotation") {
+                channel->setRotationSampler(samplers[samplerIdx]);
+            } else if (path == "scale") {
+                channel->setScaleSampler(samplers[samplerIdx]);
+            } else {
+                GE_CORE_WARN("glTF2Loader: Unsupported animation path: {}", path);
+                continue;
+            }
+            
+            // Add channel to animation
+            animation->addChannel(channel);
+        }
+    }
+
+    std::string glTF2Loader::getNodeName(unsigned int nodeIndex) {
+        if (nodeIndex >= m_nodes.size()) {
+            return std::to_string(nodeIndex);
+        }
+        
+        json& nodeJSON = m_nodes[nodeIndex];
+        std::string nodeName = nodeJSON.value("name", "");
+        
+        if (nodeName.empty()) {
+            nodeName = std::to_string(nodeIndex);
+        }
+        
+        return nodeName;
+    }
+
+    InterpolationType glTF2Loader::getInterpolationType(const std::string& interpolation) {
+        if (interpolation == "STEP") {
+            return InterpolationType::STEP;
+        } else if (interpolation == "CUBICSPLINE") {
+            return InterpolationType::CUBICSPLINE;
+        } else {
+            // Default to LINEAR
+            return InterpolationType::LINEAR;
+        }
+    }
 
 }

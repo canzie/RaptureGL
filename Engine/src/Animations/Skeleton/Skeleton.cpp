@@ -13,6 +13,10 @@ namespace Rapture {
             &m_boneMatricesData, 
             BONE_MATRICES_BINDING_POINT_IDX);
 
+        m_rootBone = std::make_shared<Bone>();
+        m_rootBone->name = "RootBone";
+
+
     }
 
     void Skeleton::propegateBoneUpdate(std::shared_ptr<Bone> bone, const glm::mat4 &parentWorldTransform)
@@ -23,7 +27,7 @@ namespace Rapture {
         
         // Store the world transform (or use it for rendering)
         // Note: typically you'd store local transforms separately from world transforms
-        glm::mat4 localTransform = bone->transform;  // Save local transform
+        //glm::mat4 localTransform = bone->transform;  // Save local transform
         bone->worldTransform = worldTransform;  // Store world transform for rendering
         
         // Propagate to children (each child's transform is in LOCAL space relative to this bone)
@@ -96,12 +100,12 @@ namespace Rapture {
 
         m_boneMatricesUBO->bindBase(BONE_MATRICES_BINDING_POINT_IDX);
 
-        int i = 0;
-        for (auto& bone : m_bones) {
-            m_boneMatricesData.u_BoneTransforms[i] = bone->worldTransform * bone->inverseBind;
- 
-            i++;
-        }
+        if (m_isBoneDirty) {
+            int i = 0;
+            for (auto& bone : m_bones) {
+                m_boneMatricesData.u_BoneTransforms[i] = bone->worldTransform * bone->inverseBind;
+                i++;
+            }
 
 
         
@@ -109,7 +113,7 @@ namespace Rapture {
             m_boneMatricesUBO->flush();
 
             m_isBoneDirty = false;
-        
+        }
 
     }
 }

@@ -9,12 +9,22 @@
 #include "Scenes/Components/Components.h"
 #include "Mesh/Mesh.h"
 #include "ImGuiPanels/ViewportPanel.h"
+#include "Renderer/PrimitiveShapes.h"
+#include "Renderer/Raycast.h"
+#include "Scenes/Systems/AnimationSystem.h"
 
 #include "File Loaders/glTF/glTF2Loader.h"
 #include "File Loaders/ModelLoader.h"
 #include "Textures/Texture.h"
 #include "Debug/Profiler.h"
-#include "Renderer/Raycast.h"
+
+// Vendor includes
+#include <imgui.h>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 void TestLayer::setSelectedEntity(std::shared_ptr<Rapture::Entity> entity)
 {
@@ -67,7 +77,7 @@ void TestLayer::onAttach()
 
     loader.loadModel("BrainStem/BrainStem.gltf");
 
-    //loader.loadModel("Sponza/glTF/Sponza.gltf");
+    loader.loadModel("Sponza/glTF/Sponza.gltf");
 
 	//loader.loadModel("sphere.gltf");
 	//loader.loadModel("donut.gltf");
@@ -180,6 +190,9 @@ void TestLayer::onUpdate(float ts)
     
     // Notify about camera changes (for ImGuizmo)
     notifyCameraChange();
+    
+    // Update animations in the scene
+    Rapture::AnimationSystem::updateAnimations(*m_activeScene, timeInSeconds);
 
     if (Rapture::Input::isMouseBtnPressed(0))
     {

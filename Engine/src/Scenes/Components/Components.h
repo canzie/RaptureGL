@@ -18,6 +18,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "../../Animations/Skeleton/Skeleton.h"
+#include "../../Animations/Animation.h"
 
 #include <vector>
 //#include <string>
@@ -56,10 +57,81 @@ namespace Rapture {
 
     struct AnimationComponent
     {
-        //std::shared_ptr<Animation> animation;
-        //std::string animationName;
+        std::shared_ptr<Animation> animation;
+        std::string animationName;
+        std::vector<std::shared_ptr<Animation>> animations;
+        int currentAnimationIndex = 0;
+        bool autoPlay = false;
         
+        AnimationComponent() = default;
         
+        AnimationComponent(std::shared_ptr<Animation> anim)
+            : animation(anim), animationName(anim ? anim->getName() : "")
+        {
+            if (anim) {
+                animations.push_back(anim);
+            }
+        }
+        
+        AnimationComponent(std::vector<std::shared_ptr<Animation>> anims)
+            : animations(anims)
+        {
+            if (!animations.empty()) {
+                animation = animations[0];
+                animationName = animation->getName();
+            }
+        }
+        
+        void playAnimation()
+        {
+            if (animation) {
+                animation->play();
+            }
+        }
+        
+        void pauseAnimation()
+        {
+            if (animation) {
+                animation->pause();
+            }
+        }
+        
+        void stopAnimation()
+        {
+            if (animation) {
+                animation->stop();
+            }
+        }
+        
+        void resetAnimation()
+        {
+            if (animation) {
+                animation->reset();
+            }
+        }
+        
+        void setAnimation(int index)
+        {
+            if (index >= 0 && index < animations.size()) {
+                animation = animations[index];
+                animationName = animation->getName();
+                currentAnimationIndex = index;
+            }
+        }
+        
+        void update(float deltaTime)
+        {
+            if (animation) {
+                animation->update(deltaTime);
+            }
+        }
+        
+        void applyToSkeleton(std::shared_ptr<Skeleton> skeleton)
+        {
+            if (animation && skeleton) {
+                animation->applyToSkeleton(skeleton);
+            }
+        }
     };
 
     struct SkeletonComponent
