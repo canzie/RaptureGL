@@ -76,8 +76,7 @@ void TestLayer::onAttach()
     //loader.loadModel("RiggedSimple/RiggedSimple.gltf");
 
     loader.loadModel("BrainStem/BrainStem.gltf");
-
-    loader.loadModel("Sponza/glTF/Sponza.gltf");
+    loader.loadModel("CesiumMan/CesiumMan.gltf");
 
 	//loader.loadModel("sphere.gltf");
 	//loader.loadModel("donut.gltf");

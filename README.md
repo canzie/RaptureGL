@@ -27,13 +27,18 @@ A modern 3D game engine built with C++ and OpenGL.
 ## TODO's
 
 ### High Priority
+
 - [ ] Deferred rendering pipeline
 - [ ] Instanced mesh rendering for large scenes
 - [ ] Advanced particle system with GPU acceleration
-- [ ] Mouse picking system for editor interaction
+- [x] Mouse picking system for editor interaction
+- [x] Vertex Skinning and Animations 
 - [ ] Post-processing pipeline
 
+  
+
 ### Future Plans
+
 - [ ] Physics engine integration
 - [ ] Audio system
 - [ ] Advanced serialization system

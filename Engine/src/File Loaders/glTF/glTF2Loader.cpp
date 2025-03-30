@@ -277,6 +277,7 @@ namespace Rapture {
                 processSkeleton(nodeEntity, m_skins[skinIndex]);
             }
         }
+
         
         bool hasMeshChild = false;
         // Process children
@@ -350,7 +351,7 @@ namespace Rapture {
         unsigned int rootIndex = skinJSON["joints"][0];
 
         // optional skeleton tag
-        if (skinJSON.contains("skeleton")) {
+        if (skinJSON.contains("skeleton") && skeletonIndex != rootIndex) {
             json& skeletonNodeJSON = m_nodes[skeletonIndex];
 
             glm::mat4 nodeTransform = getNodeTransform(skeletonNodeJSON);

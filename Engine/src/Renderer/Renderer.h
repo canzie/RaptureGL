@@ -11,6 +11,7 @@
 #include <vector>
 #include <unordered_set>
 #include "Frustum.h"
+#include "RenderQueue.h"
 
 namespace Rapture
 {
@@ -59,7 +60,10 @@ namespace Rapture
 		static void disableFrustumCulling();
 		static void toggleFrustumCulling();
 		static bool isFrustumCullingEnabled();
-        
+
+        static void processScene(const std::shared_ptr<Scene> s);
+        static void renderQueue(RenderQueue* queue);
+        static void renderMesh(const RenderCommand& cmd);
 
 	private:
 		// Extract scene entities for rendering
@@ -84,7 +88,7 @@ namespace Rapture
 			const glm::vec3& camPos);
 		
 		// Draw a bounding box for a specific entity
-		static void drawBoundingBox(const std::shared_ptr<Scene> s, Entity entity);
+		static void drawBoundingBox(Entity entity);
 		
 		// Uniform buffers for camera and lights
 		static std::shared_ptr<UniformBuffer> s_cameraUBO;

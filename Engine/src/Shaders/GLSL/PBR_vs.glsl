@@ -25,6 +25,8 @@ layout (std140, binding=1) uniform PBR
 };
 
 
+
+
 // Uniform buffer for bone transforms
 layout (std140, binding=6) uniform BoneMatrices
 {
@@ -41,7 +43,7 @@ uniform vec3 u_camPos;
 
 
 // Skinning control - 1.0 when skinning is enabled, 0.0 when disabled
-uniform float u_SkinningEnabled = 1.0;
+uniform float u_SkinningEnabled = 0.0;
 
 void main()
 {

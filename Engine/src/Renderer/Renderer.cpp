@@ -165,7 +165,9 @@ namespace Rapture
 		// Render all meshes
 		{
 			RAPTURE_PROFILE_SCOPE("Mesh Rendering");
-			renderMeshes(s, camPos);
+			//renderMeshes(s, camPos);
+
+            processScene(s);
 		}
 
 
@@ -268,7 +270,125 @@ namespace Rapture
 		return s_frustumCullingEnabled;
 	}
 
-	void Renderer::extractSceneData(const std::shared_ptr<Scene> s,
+    void Renderer::processScene(const std::shared_ptr<Scene> s)
+    {
+        RenderQueue queue = CommandQueueBuilder::buildGeometryCommandQueue(s);
+        renderQueue(&queue);
+    }
+
+    void Renderer::renderQueue(RenderQueue* queue)
+    {
+        while (!queue->empty()) {
+            const CommandVariant cmd = queue->serve();
+            if (std::holds_alternative<RenderCommand>(cmd)) {
+                renderMesh(std::get<RenderCommand>(cmd));
+            }
+            else if (std::holds_alternative<AnimationSetupCommand>(cmd)) {
+                //renderAnimation(std::get<AnimationSetupCommand>(cmd));
+                AnimationSetupCommand asCmd = std::get<AnimationSetupCommand>(cmd);
+                // Update animation time and apply to skeleton
+                if (asCmd.animation && asCmd.animation->isPlaying()) {
+                    // Animation time update is handled by the AnimationSystem
+                    asCmd.animation->applyToSkeleton(asCmd.skeleton);
+                }
+
+                asCmd.skeleton->bindBones();
+
+            }
+        }   
+    }
+
+    void Renderer::renderMesh(const RenderCommand &cmd)
+    {
+
+
+
+        if (cmd.entity == nullptr) {
+            return;
+        }
+		// In EnTT, entity 0 is not null, but entt::null is FFFFFFFF
+		if ((uint32_t)*cmd.entity.get() == 0xFFFFFFFF) {
+			GE_RENDER_ERROR("Entity is null (0xFFFFFFFF), skipping");
+			return;
+		}
+
+        //auto* scene = cmd.entity->getScene();
+        //auto& controller_comp = scene->getRegistry().get<CameraControllerComponent>(cmd.entity->m_EntityHandle);
+        //glm::vec3 camPos = controller_comp.translation;
+        //camPos.z = -camPos.z;
+
+        glm::vec3 camPos = glm::vec3(0.0f, 0.0f, 0.0f);
+
+        auto mesh = cmd.mesh;
+        auto material = cmd.material;
+        auto transform = cmd.transform;
+
+
+        auto& meshData = mesh->getMeshData();
+        meshData.vao->bind();
+        material->bind();
+
+
+        {
+			RAPTURE_PROFILE_SCOPE("Per-Object Uniforms");
+			Shader* shdr = material->getShader();
+
+			// Set the camera position uniform
+			shdr->setVec3("u_camPos", camPos);
+
+            if (cmd.isSkeletal) {
+                shdr->setFloat("u_SkinningEnabled", 1.0f);
+            } else {
+                shdr->setFloat("u_SkinningEnabled", 0.0f);
+            }
+					
+			// Calculate combined transform with parent hierarchy
+			shdr->setMat4("u_model", transform);
+
+        }
+		
+		{
+			RAPTURE_PROFILE_SCOPE("Draw Call");
+			OpenGLRendererAPI::drawIndexed(meshData.indexCount, meshData.indexType, 
+				meshData.indexAllocation->offsetBytes, meshData.vertexOffsetInVertices);
+    
+		}
+				
+		
+		{
+			RAPTURE_PROFILE_SCOPE("Resource Unbinding");
+			// Unbind material after rendering this entity
+			material->unbind();
+					
+			// Unbind VAO too for clean state management
+    		meshData.vao->unbind();
+		}
+
+
+        auto* boundingBoxComp = cmd.entity->tryGetComponent<BoundingBoxComponent>();
+
+        // Draw bounding box if enabled for this entity
+		if (boundingBoxComp != nullptr && boundingBoxComp->isVisible) {
+
+			RAPTURE_PROFILE_SCOPE("Bounding Box Draw");
+            RAPTURE_PROFILE_GPU_SCOPE("Bounding Box Draw");
+			// Bind the bounding box material
+			if (boundingBoxComp->s_visualizationMesh) {
+				boundingBoxComp->s_visualizationMaterial->bind();
+				auto bbMeshdata = boundingBoxComp->s_visualizationMesh->getMeshData();
+                bbMeshdata.vao->bind();
+				// Draw the bounding box
+				drawBoundingBox(*cmd.entity.get());
+				bbMeshdata.vao->unbind();
+				// Unbind the material
+				boundingBoxComp->s_visualizationMaterial->unbind();
+						
+			}
+		}
+
+    }
+
+    void Renderer::extractSceneData(const std::shared_ptr<Scene> s,
 								  entt::entity& cameraEntity,
 								  std::vector<entt::entity>& lightEntities)
 	{
@@ -344,8 +464,7 @@ namespace Rapture
 		return true;
 	}
 
-	void Renderer::setupLightsUniforms(const std::shared_ptr<Scene> s, const std::vector<entt::entity>& lightEntities)
-	{
+	void Renderer::setupLightsUniforms(const std::shared_ptr<Scene> s, const std::vector<entt::entity>& lightEntities) {
 		RAPTURE_PROFILE_SCOPE("Lights Uniform Setup");
 		
 		// We'll update the lights every frame to ensure component data changes are reflected
@@ -486,165 +605,9 @@ namespace Rapture
 		return true;
 	}
 
-	void Renderer::renderMeshes(const std::shared_ptr<Scene> s,
-                            
-							 const glm::vec3& camPos)
-	{
-		
-		// Count for stats
-		int totalDrawCalls = 0;
-		int skippedMeshes = 0;
-		int boundingBoxesDrawn = 0;
-		int processedEntities = 0;
-		int culledEntities = 0;
-
-        // Process skeletal entities and update animations
-        auto skeletal_meshes = s->getRegistry().view<SkeletonComponent, EntityNodeComponent>();
-        for (auto ent : skeletal_meshes)
-        {
-            auto entity = Entity(ent, s.get());
-            auto& skc = entity.getComponent<SkeletonComponent>();
-            
-            // Check if the entity has an animation component
-            if (entity.hasComponent<AnimationComponent>()) {
-                auto& animComp = entity.getComponent<AnimationComponent>();
-                
-                // Update animation time and apply to skeleton
-                if (animComp.animation && animComp.animation->isPlaying()) {
-                    // Animation time update is handled by the AnimationSystem
-                    animComp.applyToSkeleton(skc.skeleton);
-                }
-            }
-
-            // Bind the bones for rendering
-            skc.skeleton->bindBones();
-        }
-
-        // render meshes with a hierarchy
-        auto meshes = s->getRegistry().view<MeshComponent, MaterialComponent, TransformComponent>();
-
-		for (auto ent : meshes)
-		{
-			processedEntities++;
-			
-			// In EnTT, entity 0 is not null, but entt::null is FFFFFFFF
-			if ((uint32_t)ent == 0xFFFFFFFF) {
-				GE_RENDER_ERROR("Entity is null (0xFFFFFFFF), skipping");
-				skippedMeshes++;
-				continue;
-			}
-			
-			// Entity validation
-			{
-				RAPTURE_PROFILE_SCOPE("Entity Validation");
-				Entity mesh(ent, s.get());
-				
-
-
-				// Perform frustum culling
-				if (!isEntityVisible(s, ent)) {
-					culledEntities++;
-					skippedMeshes++;
-					continue;
-				}
-				
-				MeshComponent& meshComp = mesh.getComponent<MeshComponent>();
-				
-				// Skip rendering if the mesh is still loading
-				if (meshComp.isLoading) {
-					skippedMeshes++;
-					continue;
-				}
-				
-				auto meshe = meshComp.mesh;
-				
-				// Add proper null checking for mesh and vao
-				if (!meshe) {
-					GE_RENDER_ERROR("Null mesh encountered during rendering - entity ID: {0:x}", (uint32_t)ent);
-					skippedMeshes++;
-					continue;
-				}
-				
-				MaterialComponent& mat = mesh.getComponent<MaterialComponent>();
-				auto& material = mat.material;
-				if (!material) {
-					GE_RENDER_WARN("Renderer: Entity has no valid material assigned");
-					skippedMeshes++;
-					continue;
-				}
-				
-				auto meshdata = meshComp.mesh->getMeshData();
-				auto vao = meshdata.vao;
-				
-				// Resource binding
-				{
-					RAPTURE_PROFILE_SCOPE("Resource Binding");
-					// Bind the VAO
-					vao->bind();
-					// Bind the material (which also binds the shader)
-					material->bind();
-				}
-
-
-				
-				// Per-object uniform setup
-				{
-					RAPTURE_PROFILE_SCOPE("Per-Object Uniforms");
-					Shader* shdr = material->getShader();
-					
-					// Set the camera position uniform
-					shdr->setVec3("u_camPos", camPos);
-					
-					// Calculate combined transform with parent hierarchy
-					glm::mat4 modelMatrix = mesh.getComponent<TransformComponent>().transformMatrix();
-					shdr->setMat4("u_model", modelMatrix);
-				}
-				
-				// Draw call
-				{
-					RAPTURE_PROFILE_SCOPE("Draw Call");
-					OpenGLRendererAPI::drawIndexed(meshdata.indexCount, meshdata.indexType, 
-						meshdata.indexAllocation->offsetBytes, meshdata.vertexOffsetInVertices);
-					totalDrawCalls++;
-				}
-				
-				// Resource unbinding
-				{
-					RAPTURE_PROFILE_SCOPE("Resource Unbinding");
-					// Unbind material after rendering this entity
-					material->unbind();
-					
-					// Unbind VAO too for clean state management
-					vao->unbind();
-				}
-
-				// Draw bounding box if enabled for this entity
-				if (auto& boundingBoxComp = mesh.getComponent<BoundingBoxComponent>();
-					boundingBoxComp.isVisible) {
-					RAPTURE_PROFILE_SCOPE("Bounding Box Draw");
-                    RAPTURE_PROFILE_GPU_SCOPE("Bounding Box Draw");
-					// Bind the bounding box material
-					if (boundingBoxComp.s_visualizationMesh) {
-						boundingBoxComp.s_visualizationMaterial->bind();
-						auto meshdata = boundingBoxComp.s_visualizationMesh->getMeshData();
-                        meshdata.vao->bind();
-						// Draw the bounding box
-						drawBoundingBox(s, mesh);
-						meshdata.vao->unbind();
-						// Unbind the material
-						boundingBoxComp.s_visualizationMaterial->unbind();
-						
-						boundingBoxesDrawn++;
-					}
-				}
-			}
-		}
-		
-
-	}
 	
 	
-	void Renderer::drawBoundingBox(const std::shared_ptr<Scene> s, Entity entity)
+	void Renderer::drawBoundingBox(Entity entity)
 	{
 		if (!entity || !entity.hasComponent<BoundingBoxComponent>()) {
 			GE_RENDER_ERROR("Entity missing BoundingBoxComponent in drawBoundingBox");

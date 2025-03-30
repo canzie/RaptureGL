@@ -11,10 +11,15 @@
 namespace Rapture
 {
 
+
     struct SceneSettings {
 
         bool frustumCullingEnabled = false;
         bool rayCastDebugEnabled = false;
+
+        //Entity mainCamera;
+
+
     };
 
     struct SkyBox {
@@ -44,7 +49,7 @@ namespace Rapture
         }
         
     };
-
+    
 	class Entity;
 	class Scene
 	{

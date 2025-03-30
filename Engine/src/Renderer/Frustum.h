@@ -27,6 +27,9 @@ namespace Rapture
         // Test if a bounding box is inside, outside, or intersecting the frustum
         FrustumResult testBoundingBox(const BoundingBox& boundingBox) const;
 
+
+        
+
     private:
         // Frustum planes in this order: Left, Right, Bottom, Top, Near, Far
         std::array<glm::vec4, 6> _planes;
