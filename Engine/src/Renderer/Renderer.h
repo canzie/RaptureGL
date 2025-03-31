@@ -61,9 +61,15 @@ namespace Rapture
 		static void toggleFrustumCulling();
 		static bool isFrustumCullingEnabled();
 
+        // Scene processing methods
         static void processScene(const std::shared_ptr<Scene> s);
+        static void processSceneAsync(const std::shared_ptr<Scene> s);
+        
+        // Queue rendering methods
         static void renderQueue(RenderQueue* queue);
-        static void renderMesh(const RenderCommand& cmd);
+        static void renderQueueAsync(std::shared_ptr<RenderQueue> queue);
+        
+        static inline void renderMesh(const RenderCommand& cmd);
 
 	private:
 		// Extract scene entities for rendering
@@ -73,8 +79,7 @@ namespace Rapture
 
 		// Setup camera uniform buffer
 		static bool setupCameraUniforms(const std::shared_ptr<Scene> s, 
-			entt::entity cameraEntity, 
-			glm::vec3& camPos);
+			entt::entity cameraEntity);
 			
 		// Setup lights uniform buffer
 		static void setupLightsUniforms(const std::shared_ptr<Scene> s, 
@@ -83,9 +88,7 @@ namespace Rapture
 		// Check if an entity is visible (frustum culling)
 		static bool isEntityVisible(const std::shared_ptr<Scene>& s, entt::entity entity);
 		
-		// Render all meshes
-		static void renderMeshes(const std::shared_ptr<Scene> s, 
-			const glm::vec3& camPos);
+
 		
 		// Draw a bounding box for a specific entity
 		static void drawBoundingBox(Entity entity);
@@ -93,7 +96,7 @@ namespace Rapture
 		// Uniform buffers for camera and lights
 		static std::shared_ptr<UniformBuffer> s_cameraUBO;
 		static std::shared_ptr<UniformBuffer> s_lightsUBO;
-		
+		static std::shared_ptr<UniformBuffer> s_cameraPositionUBO;
 		// Camera uniform caching
 		static bool s_cameraDataInitialized;
 		static glm::mat4 s_cachedProjectionMatrix;

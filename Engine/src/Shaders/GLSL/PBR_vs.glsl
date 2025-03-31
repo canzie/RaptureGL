@@ -16,15 +16,6 @@ layout (std140, binding=0) uniform BaseTransformMats
 	mat4 u_view;
 };
 
-layout (std140, binding=1) uniform PBR
-{
-	vec3 base_color;
-	float roughness;
-	float metallic;
-    float specular;
-};
-
-
 
 
 // Uniform buffer for bone transforms
@@ -35,11 +26,11 @@ layout (std140, binding=6) uniform BoneMatrices
 
 out vec3 normalInterp;
 out vec3 vertPos;
-out vec3 camPos;
+//out vec3 camPos;
 out vec2 texCoord;
 
 uniform mat4 u_model;
-uniform vec3 u_camPos;
+//uniform vec3 u_camPos;
 
 
 // Skinning control - 1.0 when skinning is enabled, 0.0 when disabled
@@ -79,7 +70,7 @@ void main()
     normalInterp = mat3(u_model) * skinnedNormal;
     
     // Output other values
-    camPos = u_camPos;
+    //camPos = u_camPos;
     texCoord = aTexCoord0;
     
     // Final position

@@ -34,5 +34,10 @@ namespace Rapture
 		alignas(16) glm::mat4 view_mat;       // 64 bytes, aligned to 16 bytes
 	};
 
+	// Ensure std140 layout compatibility
+	struct CameraPositionUniform
+	{
 
+		alignas(16) glm::vec3 position;       // 16 bytes, aligned to 16 bytes
+	};
 }

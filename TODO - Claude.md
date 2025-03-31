@@ -242,6 +242,26 @@ A robust mesh system should use a hierarchical structure with support for instan
 
 - asset manager
 - propegate changed in an entities hierarchy
+- serializer
+- fixing gltf loader edge cases
+- shaddows
+- default entities (with default components attached)
+- add a lock to some components (so they cant be removed, even if only enforcable by checks)
+- add textures for lights, cameras, ..
+- cubemap reflections in objects
+- optimization of the systems before the next step
+- scripting via lua (sol2)
+- runtime launcher
+- first prototype game
+
+
+optimizations todo
+ -[ ] applytoskeleton multithreading, can easily be done in parallel (in the current supported anim system)
+ -[x] build geometrycommandqueue optimizations needed, currently 4.3ms -> multithreaded and less then 1 (removed getcomponent calls)
+ -[ ] optimize bind bones
+ -[x] optimize material binding (added dirty flag)
+ -[ ] read this https://www.ibm.com/docs/en/xl-c-and-cpp-aix/16.1?topic=performance-reducing-function-call-overhead
+ 
 
 
 - deffered renderer

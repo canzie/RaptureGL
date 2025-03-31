@@ -1,3 +1,4 @@
+/*
 #pragma once
 
 #include "Material.h"
@@ -53,3 +54,5 @@ private:
 };
 
 } // namespace Rapture 
+
+*/

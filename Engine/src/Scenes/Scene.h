@@ -16,6 +16,7 @@ namespace Rapture
 
         bool frustumCullingEnabled = false;
         bool rayCastDebugEnabled = false;
+        bool useAsyncRendering = true; // Enable by default for better performance
 
         //Entity mainCamera;
 

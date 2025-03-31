@@ -51,13 +51,14 @@ public:
     void unbind();
 
 private:
+    std::shared_ptr<Material> m_baseMaterial;
+    std::string m_name;
+    std::shared_ptr<UniformBuffer> m_uniformBuffer;
+    MaterialParameterMap m_parameterOverrides;
+    bool m_uniformDataDirty = false;
+
     // Update the uniform buffer with our parameter overrides
     void updateUniformBufferFromOverrides();
-
-    std::string m_name;
-    std::shared_ptr<Material> m_baseMaterial;
-    MaterialParameterMap m_parameterOverrides;
-    std::shared_ptr<UniformBuffer> m_uniformBuffer = nullptr;
 };
 
 } // namespace Rapture 

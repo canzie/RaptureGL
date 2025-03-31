@@ -139,11 +139,13 @@ namespace Rapture
 
 	bool Material::hasParameter(const std::string& name) const
 	{
+        RAPTURE_PROFILE_SCOPE("Material hasParameter");
 		return m_parameters.find(name) != m_parameters.end();
 	}
 
 	const MaterialParameter& Material::getParameter(const std::string& name) const
 	{
+        RAPTURE_PROFILE_SCOPE("Material getParameter");
 		static MaterialParameter s_defaultParameter;
 		auto it = m_parameters.find(name);
 		if (it != m_parameters.end()) {
@@ -217,6 +219,7 @@ namespace Rapture
 		m_uniformData.metallicFactor = metallic;
 		m_uniformData.roughnessFactor = roughness;
 		m_uniformData.specularFactor = specular;
+		m_uniformData.flags = 0;
 		
 		// Store as parameters for serialization/deserialization
 		setVec4("baseColor", glm::vec4(base_color, 1.0f));
@@ -230,107 +233,96 @@ namespace Rapture
 	void PBRMaterial::bindData()
 	{
 		RAPTURE_PROFILE_GPU_SCOPE("PBR Material Bind Data");
+        RAPTURE_PROFILE_SCOPE("PBR Material Bind Data");
+
 		if (!m_uniformBuffer) {
 			GE_CORE_ERROR("PBR material {0} has no uniform buffer!", m_name);
 			return;
 		}
-	
+        {
+            RAPTURE_PROFILE_SCOPE("PBR Material Uniform Data Update");
+            RAPTURE_PROFILE_GPU_SCOPE("PBR Material Uniform Data Update");
+            
 		// Update uniform data from parameters
-		if (hasParameter("baseColor") ) {
+		if (m_isDirty && hasParameter("baseColor") ) {
 			m_uniformData.baseColorFactor = getParameter("baseColor").asVec4();
 		}
-		if (hasParameter("roughness") ) {
+		if (m_isDirty && hasParameter("roughness") ) {
 			m_uniformData.roughnessFactor = getParameter("roughness").asFloat();
 		}
-		if (hasParameter("metallic") ) {
+		if (m_isDirty && hasParameter("metallic") ) {
 			m_uniformData.metallicFactor = getParameter("metallic").asFloat();
 		}
-		if (hasParameter("specular") ) {
+		if (m_isDirty && hasParameter("specular") ) {
 			m_uniformData.specularFactor = getParameter("specular").asFloat();
 		}
+        }
         
+        {
+            RAPTURE_PROFILE_SCOPE("PBR Material Uniform Texture bindings");
+            RAPTURE_PROFILE_GPU_SCOPE("PBR Material Uniform Texture bindings");
 
-        // Bind all PBR textures to their respective slots
+        // Reset texture flags
+        uint32_t textureFlags = 0;
+
+        // Bind all PBR textures to their respective slots and update flags
         if (hasParameter("albedoMap")) {
-            
             std::shared_ptr<Texture2D> texture = getParameter("albedoMap").asTexture();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
-                m_shader->setInt("u_AlbedoMap", static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
-                m_shader->setBool("u_HasAlbedoMap", true);
-            } else {
-                m_shader->setBool("u_HasAlbedoMap", false);
+                textureFlags |= PBRTextureFlags::ALBEDO_MAP;
             }
-        } else {
-            m_shader->setBool("u_HasAlbedoMap", false);
         }
         
         if (hasParameter("normalMap")) {
             std::shared_ptr<Texture2D> texture = getParameter("normalMap").asTexture();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::NORMAL));
-                m_shader->setInt("u_NormalMap", static_cast<uint32_t>(TextureActiveSlot::NORMAL));
-                m_shader->setBool("u_HasNormalMap", true);
-            } else {
-                m_shader->setBool("u_HasNormalMap", false);
+                textureFlags |= PBRTextureFlags::NORMAL_MAP;
             }
-        } else {
-            m_shader->setBool("u_HasNormalMap", false);
         }
         
         if (hasParameter("metallicMap")) {
             std::shared_ptr<Texture2D> texture = getParameter("metallicMap").asTexture();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::METALLIC));
-                m_shader->setInt("u_MetallicMap", static_cast<uint32_t>(TextureActiveSlot::METALLIC));
-                m_shader->setBool("u_HasMetallicMap", true);
-            } else {
-                m_shader->setBool("u_HasMetallicMap", false);
+                textureFlags |= PBRTextureFlags::METALLIC_MAP;
             }
-        } else {
-            m_shader->setBool("u_HasMetallicMap", false);
         }
         
         if (hasParameter("roughnessMap")) {
             std::shared_ptr<Texture2D> texture = getParameter("roughnessMap").asTexture();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::ROUGHNESS));
-                m_shader->setInt("u_RoughnessMap", static_cast<uint32_t>(TextureActiveSlot::ROUGHNESS));
-                m_shader->setBool("u_HasRoughnessMap", true);
-            } else {
-                m_shader->setBool("u_HasRoughnessMap", false);
+                textureFlags |= PBRTextureFlags::ROUGHNESS_MAP;
             }
-        } else {
-            m_shader->setBool("u_HasRoughnessMap", false);
         }
         
         if (hasParameter("aoMap")) {
             std::shared_ptr<Texture2D> texture = getParameter("aoMap").asTexture();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::AO));
-                m_shader->setInt("u_AOMap", static_cast<uint32_t>(TextureActiveSlot::AO));
-                m_shader->setBool("u_HasAOMap", true);
-            } else {
-                m_shader->setBool("u_HasAOMap", false);
+                textureFlags |= PBRTextureFlags::AO_MAP;
             }
-        } else {
-            m_shader->setBool("u_HasAOMap", false);
         }
         
         if (hasParameter("emissiveMap")) {
             std::shared_ptr<Texture2D> texture = getParameter("emissiveMap").asTexture();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::EMISSION));
-                m_shader->setInt("u_EmissiveMap", static_cast<uint32_t>(TextureActiveSlot::EMISSION));
-                m_shader->setBool("u_HasEmissiveMap", true);
-            } else {
-                m_shader->setBool("u_HasEmissiveMap", false);
+                textureFlags |= PBRTextureFlags::EMISSIVE_MAP;
             }
-        } else {
-            m_shader->setBool("u_HasEmissiveMap", false);
         }
 
-		
+            // Store the texture flags in the uniform data
+            if (m_uniformData.flags != textureFlags) setTextureFlags(textureFlags);
+
+        }
+
+		{
+            RAPTURE_PROFILE_GPU_SCOPE("PBR Material UBO binding");
+            RAPTURE_PROFILE_SCOPE("PBR Material UBO binding");
+
 		// Explicitly bind UBO to binding point before updating
 		m_uniformBuffer->bindBase(PBR_BINDING_POINT_IDX);
 		
@@ -338,12 +330,23 @@ namespace Rapture
 		if (m_isDirty) {
 			// Now update the data
 			m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
+
 			// Force flush to ensure data is sent to GPU
 			m_uniformBuffer->flush();
 			// Reset the dirty flag
 			m_isDirty = false;
 		}
+
+        }
 	}
+
+        
+    void PBRMaterial::setTextureFlags(uint32_t flags)
+    {
+        m_uniformData.flags = flags;
+        markDirty();
+
+    }
 
     // default constructor
 	PhongMaterial::PhongMaterial()

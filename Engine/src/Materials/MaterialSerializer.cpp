@@ -1,3 +1,4 @@
+/*
 #include "MaterialSerializer.h"
 #include "../Logger/Log.h"
 #include "MaterialLibrary.h"
@@ -576,3 +577,5 @@ std::shared_ptr<MaterialInstance> MaterialSerializer::loadInstanceFromFile(const
 }
 
 } // namespace Rapture 
+
+*/

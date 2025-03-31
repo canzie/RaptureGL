@@ -6,6 +6,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+#include "../Debug/TracyProfiler.h"
+
 namespace Rapture {
 
 // Animation class implementation
@@ -70,7 +72,7 @@ void Animation::update(float deltaTime) {
 
 void Animation::applyToSkeleton(std::shared_ptr<Skeleton> skeleton) {
     // For each channel in the animation
-
+    RAPTURE_PROFILE_FUNCTION();
     std::unordered_map<std::string, glm::mat4> boneTransforms;
     
     for (const auto& channel : _channels) {

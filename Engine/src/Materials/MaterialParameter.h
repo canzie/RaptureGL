@@ -22,6 +22,38 @@ enum class MaterialParameterType {
     TEXTURE2D, TEXTURECUBE
 };
 
+
+enum class ParameterID : uint16_t {
+    NONE,
+    BASE_COLOR,
+    METALLIC,
+    ROUGHNESS,
+    SPECULAR,
+    EMISSION,
+    SHININESS,
+    FLUX,
+    DIFFUSE_COLOR,
+    SPECULAR_COLOR,
+    AMBIENT_LIGHT,
+    TEXTURE_FLAGS,
+    TEXTURE_ALBEDO,
+    TEXTURE_METALLIC,
+    TEXTURE_ROUGHNESS,
+    TEXTURE_NORMAL,
+    TEXTURE_HEIGHT,
+    TEXTURE_AO,
+    TEXTURE_EMISSIVE,
+    TEXTURE_DISPLACEMENT,
+    TEXTURE_SHININESS,
+    TEXTURE_OPACITY,
+    TEXTURE_EMISSION,
+    TEXTURE_DIFFUSE,
+    TEXTURE_SPECULAR,
+    TEXTURE_CUBEMAP
+    
+};
+
+
 // Class to handle different material parameter types
 class MaterialParameter {
 public:

@@ -225,10 +225,21 @@ void SettingsPanel::renderSceneSettings()
                    settings.rayCastDebugEnabled ? "enabled" : "disabled");
     }
     
+    // Async rendering option
+    if (ImGui::Checkbox("Async Rendering", &settings.useAsyncRendering)) {
+        Rapture::GE_INFO("Async rendering {0} from settings panel", 
+                   settings.useAsyncRendering ? "enabled" : "disabled");
+    }
+    
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Enable asynchronous rendering for better performance.\nBuilds the render queue in a separate thread.");
+    }
+    
     // Button to reset scene settings
     if (ImGui::Button("Reset Scene Settings")) {
         settings.frustumCullingEnabled = true;
         settings.rayCastDebugEnabled = false;
+        settings.useAsyncRendering = true;
         m_frustumCullingEnabled = true;
         Rapture::Renderer::enableFrustumCulling(true);
         

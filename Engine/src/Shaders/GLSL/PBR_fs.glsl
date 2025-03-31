@@ -20,6 +20,15 @@ in vec2 texCoord;
 #define LIGHT_TYPE_DIRECTIONAL 1
 #define LIGHT_TYPE_SPOT        2
 
+// Define texture flag constants - must match C++ side
+#define ALBEDO_MAP_FLAG    (1 << 0)
+#define NORMAL_MAP_FLAG    (1 << 1)
+#define METALLIC_MAP_FLAG  (1 << 2)
+#define ROUGHNESS_MAP_FLAG (1 << 3)
+#define AO_MAP_FLAG        (1 << 4)
+#define EMISSIVE_MAP_FLAG  (1 << 5)
+#define HEIGHT_MAP_FLAG    (1 << 6)
+
 // Light data structure
 struct Light {
     vec4 position;     // xyz = position, w = type (0=point, 1=directional, 2=spot)
@@ -28,20 +37,28 @@ struct Light {
     vec4 coneAngles;   // x = innerConeAngle, y = outerConeAngle (for spot lights)
 };
 
+layout (std140, binding=1) uniform PBR
+{
+	vec4 baseColorFactor;
+	float metallicFactor;
+	float roughnessFactor;
+    float specularFactor;
+    uint flags;
+};
+
 // Light uniform buffer
 layout(std140, binding = 2) uniform Lights {
     uint lightCount;
     Light lights[MAX_LIGHTS];
 };
 
-
-layout (std140, binding=1) uniform PBR
+layout(std140, binding = 7) uniform Camera
 {
-	vec3 base_color;
-	float roughness;
-	float metallic;
-    float specular;
+    vec3 u_camPos;
 };
+
+
+
 
 // PBR textures
 layout(binding = 0) uniform sampler2D u_AlbedoMap;    // ALBEDO=0
@@ -51,14 +68,6 @@ layout(binding = 3) uniform sampler2D u_RoughnessMap; // ROUGHNESS=3
 layout(binding = 4) uniform sampler2D u_AOMap;        // AO=4
 layout(binding = 5) uniform sampler2D u_EmissiveMap;  // EMISSION=5
 layout(binding = 6) uniform sampler2D u_HeightMap;    // HEIGHT=6
-
-// Texture availability flags
-uniform bool u_HasAlbedoMap = false;
-uniform bool u_HasRoughnessMap = false;
-uniform bool u_HasMetallicMap = false;
-uniform bool u_HasNormalMap = false;
-uniform bool u_HasAOMap = false;
-uniform bool u_HasEmissiveMap = false;
 
 // Debug uniform to control visualization mode
 uniform int u_DebugMode = 0; // 0=Normal, 1=BaseColor, 2=Normals, 3=ID-based
@@ -148,14 +157,31 @@ float calculateSpotEffect(vec3 lightDir, vec3 spotDir, float innerConeAngle, flo
 
 void main() {
     // Get material properties from textures or fallback to uniforms
-    vec3 albedo = u_HasAlbedoMap ? texture(u_AlbedoMap, texCoord).rgb : base_color;
-    float material_roughness = u_HasRoughnessMap ? texture(u_RoughnessMap, texCoord).r : roughness;
-    float material_metallic = u_HasMetallicMap ? texture(u_MetallicMap, texCoord).r : metallic;
-    float ao = u_HasAOMap ? texture(u_AOMap, texCoord).r : 1.0;
-    vec3 emission = u_HasEmissiveMap ? texture(u_EmissiveMap, texCoord).rgb : vec3(0.0);
+    vec3 albedo = ((flags & ALBEDO_MAP_FLAG) != 0) ? 
+                   texture(u_AlbedoMap, texCoord).rgb : 
+                   baseColorFactor.rgb;
+                   
+    float material_roughness = ((flags & ROUGHNESS_MAP_FLAG) != 0) ? 
+                               texture(u_RoughnessMap, texCoord).r : 
+                               roughnessFactor;
+                               
+    float material_metallic = ((flags & METALLIC_MAP_FLAG) != 0) ? 
+                              texture(u_MetallicMap, texCoord).r : 
+                              metallicFactor;
+                              
+    float ao = ((flags & AO_MAP_FLAG) != 0) ? 
+               texture(u_AOMap, texCoord).r : 
+               1.0;
+               
+    vec3 emission = ((flags & EMISSIVE_MAP_FLAG) != 0) ? 
+                    texture(u_EmissiveMap, texCoord).rgb : 
+                    vec3(0.0);
     
-    // Always calculate these basic values regardless of mode
-    vec3 N = u_HasNormalMap ? getNormalFromMap() : normalize(normalInterp);
+    // Get normal either from normal map or interpolated vertex normal
+    vec3 N = ((flags & NORMAL_MAP_FLAG) != 0) ? 
+             getNormalFromMap() : 
+             normalize(normalInterp);
+             
     vec3 V = normalize(camPos - vertPos);
     vec3 visualColor;
 
@@ -252,6 +278,5 @@ void main() {
         // gamma correction
         visualColor = lin2rgb(visualColor);
     }
-
     outColor = vec4(visualColor, 1.0);
 }

@@ -3,6 +3,9 @@
 #include "../../Logger/Log.h"
 #include "../../Shaders/OpenGLUniforms/UniformBindingPointIndices.h"
 
+#include "../../Debug/TracyProfiler.h"
+
+
 namespace Rapture {
     Skeleton::Skeleton(const std::string &name)
     : m_name(name)
@@ -21,6 +24,7 @@ namespace Rapture {
 
     void Skeleton::propegateBoneUpdate(std::shared_ptr<Bone> bone, const glm::mat4 &parentWorldTransform)
     {
+        RAPTURE_PROFILE_FUNCTION();
         // Calculate world transform for this bone by combining parent's world transform with 
         // bone's local transform
         glm::mat4 worldTransform = parentWorldTransform * bone->transform;
@@ -97,6 +101,7 @@ namespace Rapture {
 
     void Skeleton::bindBones()
     {
+        RAPTURE_PROFILE_FUNCTION();
 
         m_boneMatricesUBO->bindBase(BONE_MATRICES_BINDING_POINT_IDX);
 

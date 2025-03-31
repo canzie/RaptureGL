@@ -27,9 +27,8 @@ namespace Rapture {
         std::shared_ptr<Mesh> mesh = nullptr;
         glm::mat4 transform;
 
-        bool isSkeletal = true;
+        bool isSkeletal = false;
         
-        std::shared_ptr<Skeleton> skeleton = nullptr;
 
 
     };

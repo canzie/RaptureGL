@@ -21,7 +21,8 @@ namespace Rapture
 
 	std::shared_ptr<UniformBuffer> Renderer::s_cameraUBO = nullptr;
 	std::shared_ptr<UniformBuffer> Renderer::s_lightsUBO = nullptr;
-	
+	std::shared_ptr<UniformBuffer> Renderer::s_cameraPositionUBO = nullptr;
+
 	// Cache for camera data to avoid redundant uploads
 	bool Renderer::s_cameraDataInitialized = false;
 	glm::mat4 Renderer::s_cachedProjectionMatrix = glm::mat4(1.0f);
@@ -52,6 +53,9 @@ namespace Rapture
 
 		Raycast::init();
 		
+		// Initialize the CommandQueueBuilder with a thread pool
+		CommandQueueBuilder::init(2); // Create 2 worker threads by default
+		
 		// Create camera UBO with persistent mapping capability
 		s_cameraUBO = std::make_shared<UniformBuffer>(sizeof(CameraUniform), BufferUsage::Stream, nullptr, BASE_BINDING_POINT_IDX);
 		s_cameraUBO->bindBase();
@@ -71,6 +75,11 @@ namespace Rapture
 		if (!s_persistentLightsBufferPtr) {
 			GE_CORE_ERROR("Failed to create persistent mapping for lights buffer");
 		}
+
+        		// Create lights uniform buffer with the lights binding point and persistent mapping
+		s_cameraPositionUBO = std::make_shared<UniformBuffer>(sizeof(CameraPositionUniform), BufferUsage::Stream, nullptr, CAMERA_BINDING_POINT_IDX);
+		s_cameraPositionUBO->bindBase();
+		
 		
 		// Initialize the shared resources for BoundingBoxComponent
 		BoundingBoxComponent::initSharedResources();
@@ -89,6 +98,9 @@ namespace Rapture
 
 		Raycast::shutdown();
 		
+		// Shutdown worker threads first to prevent accessing released resources
+		CommandQueueBuilder::shutdownWorkers();
+		
 		// Shutdown the shared resources for BoundingBoxComponent
 		BoundingBoxComponent::shutdownSharedResources();
 		
@@ -106,6 +118,7 @@ namespace Rapture
 		// Reset uniform buffers
 		s_cameraUBO.reset();
 		s_lightsUBO.reset();
+		s_cameraPositionUBO.reset();
 		
 
 	}
@@ -142,10 +155,9 @@ namespace Rapture
 		}
 
 		// Setup camera uniforms and get camera position for shaders
-		glm::vec3 camPos;
 		{
 			RAPTURE_PROFILE_SCOPE("Camera Setup");
-			if (!setupCameraUniforms(s, cameraEntity, camPos)) {
+			if (!setupCameraUniforms(s, cameraEntity)) {
 				return;
 			}
 		}
@@ -165,26 +177,17 @@ namespace Rapture
 		// Render all meshes
 		{
 			RAPTURE_PROFILE_SCOPE("Mesh Rendering");
-			//renderMeshes(s, camPos);
-
-            processScene(s);
+            
+            // Use the async processing method for better performance
+            // Can be toggled with the s->getSettings().useAsyncRendering flag
+            if (s->getSettings().useAsyncRendering) {
+                processSceneAsync(s);
+            } else {
+                processScene(s);
+            }
 		}
-
-
 
         Raycast::onFrameEnd(s_visibleEntities);
-
-        
-        /*
-		// Log culling stats occasionally
-		static int frameCounter = 0;
-		if (s_frustumCullingEnabled && ++frameCounter % 300 == 0) {
-			GE_RENDER_INFO("Frustum culling: {0} entities culled out of {1} ({2:.1f}%)",
-				s_entitiesCulled, meshEntities.size(),
-				meshEntities.size() > 0 ? (100.0f * s_entitiesCulled / meshEntities.size()) : 0.0f);
-			frameCounter = 0;
-		}
-        */
 	}
 
 	void Renderer::showBoundingBox(Entity entity, bool show)
@@ -272,120 +275,118 @@ namespace Rapture
 
     void Renderer::processScene(const std::shared_ptr<Scene> s)
     {
+        RAPTURE_PROFILE_GPU_SCOPE("ProcessScene");
         RenderQueue queue = CommandQueueBuilder::buildGeometryCommandQueue(s);
         renderQueue(&queue);
     }
 
+    void Renderer::processSceneAsync(const std::shared_ptr<Scene> s)
+    {
+        RAPTURE_PROFILE_GPU_SCOPE("ProcessSceneAsync");
+        RAPTURE_PROFILE_SCOPE("ProcessSceneAsync");
+        
+        // Get the async queue - this starts processing immediately in another thread
+        std::shared_ptr<RenderQueue> queue = CommandQueueBuilder::buildGeometryCommandQueueAsync(s);
+        
+        // Render the queue while it's still being populated
+        renderQueueAsync(queue);
+    }
+
     void Renderer::renderQueue(RenderQueue* queue)
     {
+        RAPTURE_PROFILE_GPU_SCOPE("Executing RenderQueue");
+        RAPTURE_PROFILE_SCOPE("Executing RenderQueue");
         while (!queue->empty()) {
             const CommandVariant cmd = queue->serve();
             if (std::holds_alternative<RenderCommand>(cmd)) {
                 renderMesh(std::get<RenderCommand>(cmd));
             }
             else if (std::holds_alternative<AnimationSetupCommand>(cmd)) {
-                //renderAnimation(std::get<AnimationSetupCommand>(cmd));
                 AnimationSetupCommand asCmd = std::get<AnimationSetupCommand>(cmd);
-                // Update animation time and apply to skeleton
-                if (asCmd.animation && asCmd.animation->isPlaying()) {
-                    // Animation time update is handled by the AnimationSystem
-                    asCmd.animation->applyToSkeleton(asCmd.skeleton);
-                }
-
                 asCmd.skeleton->bindBones();
-
             }
         }   
     }
 
-    void Renderer::renderMesh(const RenderCommand &cmd)
+    void Renderer::renderQueueAsync(std::shared_ptr<RenderQueue> queue)
     {
+        RAPTURE_PROFILE_GPU_SCOPE("Executing Async RenderQueue");
+        RAPTURE_PROFILE_SCOPE("Executing Async RenderQueue");
+        
+        // Process commands until the queue is both empty and marked as done
+        while (!queue->isDone()) {
+            // Try to get a command, process it if available
+            CommandVariant cmd;
+            if (queue->tryServe(cmd)) {
+                if (std::holds_alternative<RenderCommand>(cmd)) {
+                    renderMesh(std::get<RenderCommand>(cmd));
+                }
+                else if (std::holds_alternative<AnimationSetupCommand>(cmd)) {
+                    AnimationSetupCommand asCmd = std::get<AnimationSetupCommand>(cmd);
+                    asCmd.skeleton->bindBones();
+                }
+            }
+        }
+    }
 
-
-
-        if (cmd.entity == nullptr) {
+    inline void Renderer::renderMesh(const RenderCommand &cmd)
+    {
+        RAPTURE_PROFILE_GPU_SCOPE("RenderMesh");
+        RAPTURE_PROFILE_SCOPE("renderMesh");
+        
+        // Early validation to avoid unnecessary work
+        if (cmd.entity == nullptr || (uint32_t)*cmd.entity.get() == 0xFFFFFFFF) {
+            if ((uint32_t)*cmd.entity.get() == 0xFFFFFFFF) {
+                GE_RENDER_ERROR("Entity is null (0xFFFFFFFF), skipping");
+            }
             return;
         }
-		// In EnTT, entity 0 is not null, but entt::null is FFFFFFFF
-		if ((uint32_t)*cmd.entity.get() == 0xFFFFFFFF) {
-			GE_RENDER_ERROR("Entity is null (0xFFFFFFFF), skipping");
-			return;
-		}
 
-        //auto* scene = cmd.entity->getScene();
-        //auto& controller_comp = scene->getRegistry().get<CameraControllerComponent>(cmd.entity->m_EntityHandle);
-        //glm::vec3 camPos = controller_comp.translation;
-        //camPos.z = -camPos.z;
-
-        glm::vec3 camPos = glm::vec3(0.0f, 0.0f, 0.0f);
-
-        auto mesh = cmd.mesh;
-        auto material = cmd.material;
-        auto transform = cmd.transform;
-
-
-        auto& meshData = mesh->getMeshData();
+        // Use const references to avoid copies
+        const auto& mesh = cmd.mesh;
+        const auto& material = cmd.material;
+        const auto& transform = cmd.transform;
+        const auto& meshData = mesh->getMeshData();
+        
+        // Bind VAO once
         meshData.vao->bind();
+        
+        // Bind material once
         material->bind();
-
-
+        
+        // Get shader pointer once and use it for all operations
+        Shader* const shdr = material->getShader();
+        
+        // Set uniform values directly with minimal function calls
+        // Camera position is constant (0,0,0) in this implementation
+        //shdr->setVec3("u_camPos", glm::vec3(0.0f, 0.0f, 0.0f));
+        shdr->setFloat("u_SkinningEnabled", cmd.isSkeletal ? 1.0f : 0.0f);
+        shdr->setMat4("u_model", transform);
         {
-			RAPTURE_PROFILE_SCOPE("Per-Object Uniforms");
-			Shader* shdr = material->getShader();
-
-			// Set the camera position uniform
-			shdr->setVec3("u_camPos", camPos);
-
-            if (cmd.isSkeletal) {
-                shdr->setFloat("u_SkinningEnabled", 1.0f);
-            } else {
-                shdr->setFloat("u_SkinningEnabled", 0.0f);
-            }
-					
-			// Calculate combined transform with parent hierarchy
-			shdr->setMat4("u_model", transform);
-
+            RAPTURE_PROFILE_SCOPE("Draw Call");
+            RAPTURE_PROFILE_GPU_SCOPE("Draw Call");
+        // Single draw call - avoid function call overhead by directly accessing members
+        OpenGLRendererAPI::drawIndexed(meshData.indexCount, meshData.indexType, 
+            meshData.indexAllocation->offsetBytes, meshData.vertexOffsetInVertices);
         }
-		
-		{
-			RAPTURE_PROFILE_SCOPE("Draw Call");
-			OpenGLRendererAPI::drawIndexed(meshData.indexCount, meshData.indexType, 
-				meshData.indexAllocation->offsetBytes, meshData.vertexOffsetInVertices);
-    
-		}
-				
-		
-		{
-			RAPTURE_PROFILE_SCOPE("Resource Unbinding");
-			// Unbind material after rendering this entity
-			material->unbind();
-					
-			// Unbind VAO too for clean state management
-    		meshData.vao->unbind();
-		}
+        // Clean state once
+        material->unbind();
+        meshData.vao->unbind();
 
 
-        auto* boundingBoxComp = cmd.entity->tryGetComponent<BoundingBoxComponent>();
-
-        // Draw bounding box if enabled for this entity
-		if (boundingBoxComp != nullptr && boundingBoxComp->isVisible) {
-
-			RAPTURE_PROFILE_SCOPE("Bounding Box Draw");
+        /*
+        // Handle bounding box rendering - moved outside main rendering path for better locality
+        auto* const boundingBoxComp = cmd.entity->tryGetComponent<BoundingBoxComponent>();
+        if (boundingBoxComp != nullptr && boundingBoxComp->isVisible && boundingBoxComp->s_visualizationMesh) {
             RAPTURE_PROFILE_GPU_SCOPE("Bounding Box Draw");
-			// Bind the bounding box material
-			if (boundingBoxComp->s_visualizationMesh) {
-				boundingBoxComp->s_visualizationMaterial->bind();
-				auto bbMeshdata = boundingBoxComp->s_visualizationMesh->getMeshData();
-                bbMeshdata.vao->bind();
-				// Draw the bounding box
-				drawBoundingBox(*cmd.entity.get());
-				bbMeshdata.vao->unbind();
-				// Unbind the material
-				boundingBoxComp->s_visualizationMaterial->unbind();
-						
-			}
-		}
-
+            boundingBoxComp->s_visualizationMaterial->bind();
+            auto& bbMeshdata = boundingBoxComp->s_visualizationMesh->getMeshData();
+            bbMeshdata.vao->bind();
+            drawBoundingBox(*cmd.entity.get());
+            bbMeshdata.vao->unbind();
+            boundingBoxComp->s_visualizationMaterial->unbind();
+        }
+        */
     }
 
     void Renderer::extractSceneData(const std::shared_ptr<Scene> s,
@@ -414,7 +415,7 @@ namespace Rapture
 		}
 	}
 
-	bool Renderer::setupCameraUniforms(const std::shared_ptr<Scene> s, entt::entity cameraEntity, glm::vec3& camPos)
+	bool Renderer::setupCameraUniforms(const std::shared_ptr<Scene> s, entt::entity cameraEntity)
 	{
 		RAPTURE_PROFILE_SCOPE("Camera Uniform Setup");
 		Entity camera_ent(cameraEntity, s.get());
@@ -457,10 +458,17 @@ namespace Rapture
 			}
 		}
 		
+
 		// Set camera position for shader use
-		camPos = controller_comp.translation;
-		camPos.z = -camPos.z;
+		CameraPositionUniform cameraPositionData;
+		cameraPositionData.position = controller_comp.translation;
+		cameraPositionData.position.z = -cameraPositionData.position.z;
 		
+        if (s_cameraPositionUBO != nullptr) {
+            s_cameraPositionUBO->bindBase();
+			s_cameraPositionUBO->setData(&cameraPositionData, sizeof(CameraPositionUniform));
+            s_cameraPositionUBO->flush();
+		}
 		return true;
 	}
 

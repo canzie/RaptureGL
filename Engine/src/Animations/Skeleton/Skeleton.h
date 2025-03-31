@@ -78,6 +78,10 @@ namespace Rapture
             return m_rootBone;
         }
 
+        const std::string& getSkeletonName() const {
+            return m_name;
+        }
+
 
 
     private:

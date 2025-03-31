@@ -26,6 +26,9 @@
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+
+#include "Debug/TracyProfiler.h"
+
 void TestLayer::setSelectedEntity(std::shared_ptr<Rapture::Entity> entity)
 {
     // If we had a previous selection, hide its bounding box
@@ -71,12 +74,17 @@ void TestLayer::onAttach()
 	
 	Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
 	//loader.loadModel("adamHead/adamHead.gltf");
+	//loader.loadModel("Sponza/glTF/Sponza.gltf");
+
+	loader.loadModel("metalroughspheres/MetalRoughSpheres.gltf");
+
+
     //loader.loadModel("Buggy/Buggy.gltf");
     //loader.loadModel("BoxAnimated/BoxAnimated.gltf");
     //loader.loadModel("RiggedSimple/RiggedSimple.gltf");
 
-    loader.loadModel("BrainStem/BrainStem.gltf");
-    loader.loadModel("CesiumMan/CesiumMan.gltf");
+    //loader.loadModel("BrainStem/BrainStem.gltf");
+    //loader.loadModel("CesiumMan/CesiumMan.gltf");
 
 	//loader.loadModel("sphere.gltf");
 	//loader.loadModel("donut.gltf");
@@ -161,6 +169,8 @@ void TestLayer::notifyCameraChange()
 
 void TestLayer::onUpdate(float ts)
 {
+    RAPTURE_PROFILE_FUNCTION();
+    RAPTURE_PROFILE_GPU_SCOPE("TestLayer::onUpdate");
     // Ensure time is in seconds
     float timeInSeconds = ts;
     

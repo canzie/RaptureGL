@@ -23,6 +23,8 @@ enum class MaterialType {
 
 
 
+
+
 enum class MaterialFlagBitLocations {
 	TRANSPARENT=0,
 	OCCLUSION=1
@@ -112,6 +114,8 @@ class PBRMaterial : public Material {
 
         // Make static members public so they can be initialized by MaterialLibrary
         static Shader* s_shader;
+
+        void setTextureFlags(uint32_t flags);
 
     protected:
         PBRUniform m_uniformData;
