@@ -59,7 +59,7 @@ OpenGLTexture2D::OpenGLTexture2D(const std::string& path)
         stbi_image_free(data);
     }
     else {
-        GE_CORE_ERROR("Failed to load texture '{0}'", path);
+        GE_CORE_ERROR("OpenGLTexture2D::OpenGLTexture2D - Failed to load texture '{0}'", path);
     }
 }
 

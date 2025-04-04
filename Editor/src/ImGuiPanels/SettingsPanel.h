@@ -33,8 +33,8 @@ private:
     void renderSceneSettings();
     
     // Helper to extract filename from path
-    std::string extractFilename(const std::string& path) const {
-        return std::filesystem::path(path).filename().string();
+    std::string extractFilename(const std::filesystem::path& path) const {
+        return path.filename().string();
     }
     
     // Helper to open file dialog for skybox textures

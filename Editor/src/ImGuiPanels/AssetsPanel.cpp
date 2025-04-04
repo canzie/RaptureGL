@@ -1,5 +1,6 @@
 #include "AssetsPanel.h"
-#include "../../Engine/src/Logger/Log.h"
+#include "Logger/Log.h"
+#include "AssetsManager/AssetManager.h"
 #include "Materials/MaterialLibrary.h"
 #include "Textures/Texture.h"
 
@@ -149,11 +150,8 @@ void AssetsPanel::render(TestLayer* testLayer) {
             ImGui::Separator();
             displayFileList();
             break;
-        case AssetViewMode::Materials:
-            displayMaterialsList();
-            break;
-        case AssetViewMode::Textures:
-            displayTexturesList();
+        case AssetViewMode::Assets:
+            displayAssetsList();
             break;
     }
     
@@ -177,29 +175,29 @@ void AssetsPanel::displaySidebarPanel() {
         m_currentViewMode = AssetViewMode::Files;
     }
     
-    // Materials Category
-    bool materialsSelected = (m_currentViewMode == AssetViewMode::Materials);
+    // Assets Category
+    bool assetsSelected = (m_currentViewMode == AssetViewMode::Assets);
     
-    if (ImGui::Button("Materials", buttonSize)) {
-        m_currentViewMode = AssetViewMode::Materials;
-    }
-    
-    // Textures Category
-    bool texturesSelected = (m_currentViewMode == AssetViewMode::Textures);
-    
-    if (ImGui::Button("Textures", buttonSize)) {
-        m_currentViewMode = AssetViewMode::Textures;
+    if (ImGui::Button("Assets", buttonSize)) {
+        m_currentViewMode = AssetViewMode::Assets;
     }
     
     ImGui::PopStyleVar();
 }
 
-void AssetsPanel::displayMaterialsList() {
-    ImGui::Text("Materials");
+void AssetsPanel::displayAssetsList() {
+    ImGui::Text("Assets");
     ImGui::Separator();
     
-    // Show a grid of material names - similar to file display but simpler
-    const float thumbnailSize = 120.0f;
+    // Checkbox for showing loaded assets only
+    if (ImGui::Checkbox("Show Loaded Assets Only", &m_showLoadedAssetsOnly)) {
+        Rapture::GE_INFO("Show loaded assets only: {0}", m_showLoadedAssetsOnly ? "true" : "false");
+    }
+    
+    ImGui::Separator();
+    
+    // Use the same size and spacing as displayFileList
+    const float thumbnailSize = 160.0f;
     const float itemSpacing = 12.0f;
     const float textPadding = 6.0f;
     const float textHeight = ImGui::GetTextLineHeightWithSpacing() * 1.5f;
@@ -211,198 +209,377 @@ void AssetsPanel::displayMaterialsList() {
     float cursorY = ImGui::GetCursorPosY();
     float maxX = cursorX + panelSize.x;
     
-    // Get material names from MaterialLibrary
-    // For now, just show some placeholder names since we don't have direct access to the map
-    std::vector<std::string> materialNames;
-    
     try {
-        // In a real implementation, this would fetch actual material names
-        // For example:
-        // const auto& materials = Rapture::MaterialLibrary::getMaterials();
-        // for (const auto& [name, _] : materials) {
-        //     materialNames.push_back(name);
-        // }
+        // Get the asset registry and loaded assets
+        const auto& assetRegistry = Rapture::AssetManager::getAssetRegistry();
+        const auto& loadedAssets = Rapture::AssetManager::getLoadedAssets();
         
-        // Demo materials - replace with actual implementation
-        materialNames = {"Default", "Metal", "Plastic", "Glass", "Wood", "Stone", "Rubber", "Cloth"};
-        
-        float colCount = std::max(1.0f, std::floor(panelSize.x / (thumbnailSize + itemSpacing)));
+        // Layout items in a flow from left to right, wrapping to next line
+        bool firstItem = true;
         int index = 0;
+        int visibleCount = 0;
         
-        for (const auto& materialName : materialNames) {
-            // Calculate position
-            int col = index % static_cast<int>(colCount);
-            int row = index / static_cast<int>(colCount);
-            
-            cursorX = ImGui::GetCursorPosX() + col * (thumbnailSize + itemSpacing);
-            cursorY = ImGui::GetCursorPosY() + row * (totalItemHeight + itemSpacing);
-            
-            // Set cursor position
-            ImGui::SetCursorPos(ImVec2(cursorX, cursorY));
-            
-            // Create a material preview box
-            ImGui::PushID(index);
-            ImDrawList* drawList = ImGui::GetWindowDrawList();
-            
-            // Draw a material preview square with rounded corners
-            ImVec2 previewMin = ImVec2(cursorX, cursorY);
-            ImVec2 previewMax = ImVec2(cursorX + thumbnailSize, cursorY + thumbnailSize);
-            
-            // Use ImGui style colors
-            ImU32 bgColor = ImGui::GetColorU32(ImGuiCol_FrameBg);
-            ImU32 borderColor = ImGui::GetColorU32(ImGuiCol_Border);
-            ImU32 textColor = ImGui::GetColorU32(ImGuiCol_Text);
-            
-            drawList->AddRectFilled(previewMin, previewMax, bgColor, 8.0f);
-            drawList->AddRect(previewMin, previewMax, borderColor, 8.0f, 0, 1.0f);
-            
-            // Draw a simple spherical shape to represent the material
-            float centerX = (previewMin.x + previewMax.x) * 0.5f;
-            float centerY = (previewMin.y + previewMax.y) * 0.5f;
-            float radius = thumbnailSize * 0.35f;
-            
-            drawList->AddCircleFilled(ImVec2(centerX, centerY), radius, ImGui::GetColorU32(ImGuiCol_ButtonHovered), 32);
-            
-            // Material name label
-            ImVec2 textSize = ImGui::CalcTextSize(materialName.c_str());
-            float labelX = cursorX + (thumbnailSize - textSize.x) * 0.5f;
-            float labelY = cursorY + thumbnailSize + textPadding;
-            
-            drawList->AddText(ImVec2(labelX, labelY), textColor, materialName.c_str());
-            
-            // Material context menu
-            if (ImGui::BeginPopupContextItem("material_context_menu")) {
-                if (ImGui::MenuItem("Edit Material")) {
-                    Rapture::GE_INFO("Edit material: {0}", materialName);
-                }
-                
-                if (ImGui::MenuItem("Duplicate")) {
-                    Rapture::GE_INFO("Duplicate material: {0}", materialName);
-                }
-                
-                if (ImGui::MenuItem("Delete")) {
-                    Rapture::GE_INFO("Delete material: {0}", materialName);
-                }
-                
-                ImGui::EndPopup();
+        for (const auto& [handle, metadata] : assetRegistry) {
+            // Skip assets that aren't loaded if the filter is active
+            if (m_showLoadedAssetsOnly && loadedAssets.find(handle) == loadedAssets.end()) {
+                continue;
             }
             
-            ImGui::PopID();
-            index++;
-        }
-    } catch (const std::exception& e) {
-        Rapture::GE_INFO("Error displaying materials: {0}", e.what());
-    }
-}
-
-void AssetsPanel::displayTexturesList() {
-    ImGui::Text("Textures");
-    ImGui::Separator();
-    
-    // Show a grid of texture names - similar to file display
-    const float thumbnailSize = 120.0f;
-    const float itemSpacing = 12.0f;
-    const float textPadding = 6.0f;
-    const float textHeight = ImGui::GetTextLineHeightWithSpacing() * 1.5f;
-    const float totalItemHeight = thumbnailSize + textPadding + textHeight;
-    
-    // Get available panel size
-    ImVec2 panelSize = ImGui::GetContentRegionAvail();
-    float cursorX = ImGui::GetCursorPosX();
-    float cursorY = ImGui::GetCursorPosY();
-    float maxX = cursorX + panelSize.x;
-    
-    // Get texture names from TextureLibrary
-    // For now, just show some placeholder names
-    std::vector<std::string> textureNames;
-    
-    try {
-        // In a real implementation, this would fetch actual texture names
-        // For example:
-        // const auto& textures = Rapture::TextureLibrary::getTextures();
-        // for (const auto& [name, _] : textures) {
-        //     textureNames.push_back(name);
-        // }
-        
-        // Demo textures - replace with actual implementation
-        textureNames = {"brick.png", "metal.jpg", "wood.png", "grass.jpg", "concrete.png", "fabric.jpg"};
-        
-        float colCount = std::max(1.0f, std::floor(panelSize.x / (thumbnailSize + itemSpacing)));
-        int index = 0;
-        
-        for (const auto& textureName : textureNames) {
-            // Calculate position
-            int col = index % static_cast<int>(colCount);
-            int row = index / static_cast<int>(colCount);
+            // Variables to track ImGui state management
+            bool groupBegun = false;
+            bool idPushed = false;
+            bool fontPushed = false;
+            bool fontScaled = false;
             
-            cursorX = ImGui::GetCursorPosX() + col * (thumbnailSize + itemSpacing);
-            cursorY = ImGui::GetCursorPosY() + row * (totalItemHeight + itemSpacing);
-            
-            // Set cursor position
-            ImGui::SetCursorPos(ImVec2(cursorX, cursorY));
-            
-            // Create a texture preview box
-            ImGui::PushID(index);
-            ImDrawList* drawList = ImGui::GetWindowDrawList();
-            
-            // Draw a texture preview square
-            ImVec2 previewMin = ImVec2(cursorX, cursorY);
-            ImVec2 previewMax = ImVec2(cursorX + thumbnailSize, cursorY + thumbnailSize);
-            
-            // Use ImGui style colors
-            ImU32 bgColor = ImGui::GetColorU32(ImGuiCol_FrameBg);
-            ImU32 borderColor = ImGui::GetColorU32(ImGuiCol_Border);
-            ImU32 textColor = ImGui::GetColorU32(ImGuiCol_Text);
-            
-            // Checkerboard background for the texture using style colors
-            const int checkerSize = 10;
-            ImU32 color1 = ImGui::GetColorU32(ImGuiCol_FrameBg);
-            ImU32 color2 = ImGui::GetColorU32(ImGuiCol_FrameBgHovered);
-            
-            for (int y = 0; y < thumbnailSize; y += checkerSize) {
-                for (int x = 0; x < thumbnailSize; x += checkerSize) {
-                    bool isWhite = ((x / checkerSize) + (y / checkerSize)) % 2 == 0;
+            try {
+                // Get the filename from the metadata path
+                std::string filename = metadata.m_filePath.filename().string();
+                
+                // Skip if empty filename
+                if (filename.empty()) {
+                    filename = "Unknown";
+                }
+                
+                // If this item would go beyond panel width, move to next line
+                if (!firstItem && cursorX + thumbnailSize > maxX) {
+                    cursorX = ImGui::GetCursorPosX();
+                    cursorY += totalItemHeight + itemSpacing;
+                }
+                
+                // Set item position
+                ImGui::SetCursorPos(ImVec2(cursorX, cursorY));
+                
+                // Unique ID for the item
+                ImGui::PushID(index);
+                idPushed = true;
+                
+                // Begin item group (icon + text)
+                ImGui::BeginGroup();
+                groupBegun = true;
+                
+                // Remember the position where we start drawing the item
+                float itemStartX = cursorX;
+                float itemStartY = cursorY;
+                
+                // Button for the icon
+                if (ImGui::Button("##icon", ImVec2(thumbnailSize, thumbnailSize))) {
+                    // Handle asset click
+                    Rapture::GE_INFO("Asset clicked: {0} (Handle: {1})", filename, handle);
+                }
+                
+                // Right-click context menu
+                if (ImGui::BeginPopupContextItem("asset_context_menu")) {
+                    if (ImGui::MenuItem("View Details")) {
+                        Rapture::GE_INFO("View asset details: {0}", filename);
+                    }
                     
-                    drawList->AddRectFilled(
-                        ImVec2(previewMin.x + x, previewMin.y + y),
-                        ImVec2(previewMin.x + x + checkerSize, previewMin.y + y + checkerSize),
-                        isWhite ? color1 : color2
+                    if (ImGui::MenuItem("Unload Asset")) {
+                        Rapture::GE_INFO("Unload asset: {0}", filename);
+                    }
+                    
+                    ImGui::Separator();
+                    
+                    // Add a menu item for showing the UUID
+                    if (ImGui::MenuItem("Show UUID")) {
+                        // No direct action, we'll show it on hover
+                    }
+                    
+                    // Show UUID when hovering the "Show UUID" menu item
+                    if (ImGui::IsItemHovered()) {
+                        // Convert UUID to string
+                        std::string fullUUID = std::to_string(handle);
+                        
+                        // Show full UUID in tooltip and as disabled menu item
+                        ImGui::SetTooltip("UUID: %s", fullUUID.c_str());
+                        ImGui::Separator();
+                        ImGui::BeginDisabled();
+                        ImGui::MenuItem(fullUUID.c_str());
+                        ImGui::EndDisabled();
+                    }
+                    
+                    ImGui::EndPopup();
+                }
+                
+                // Draw a small indicator if the asset is loaded
+                ImVec2 buttonMin = ImGui::GetItemRectMin();
+                ImVec2 buttonMax = ImGui::GetItemRectMax();
+                ImVec2 buttonSize = ImVec2(buttonMax.x - buttonMin.x, buttonMax.y - buttonMin.y);
+                
+                ImDrawList* drawList = ImGui::GetWindowDrawList();
+                
+                // Check if the asset is loaded
+                bool isLoaded = loadedAssets.find(handle) != loadedAssets.end();
+                
+                // Draw a small indicator in the top-right corner if the asset is loaded
+                if (isLoaded) {
+                    const float indicatorSize = 8.0f;
+                    drawList->AddCircleFilled(
+                        ImVec2(buttonMax.x - indicatorSize - 4, buttonMin.y + indicatorSize + 4),
+                        indicatorSize,
+                        IM_COL32(0, 255, 0, 255), // Green for loaded assets
+                        8 // segments
                     );
                 }
+                
+                // Use colors from ImGuiPanelStyle where available
+                ImU32 bgColor = ImGui::GetColorU32(ImGuiCol_FrameBg);
+                ImU32 borderColor = ImGui::GetColorU32(ImGuiCol_Border);
+                ImU32 textColor = ImGui::GetColorU32(ImGuiCol_Text);
+                
+                // Get asset type name
+                std::string assetTypeName;
+                switch (metadata.m_assetType) {
+                    case Rapture::AssetType::Mesh: assetTypeName = "Mesh"; break;
+                    case Rapture::AssetType::Texture2D: assetTypeName = "Texture"; break;
+                    case Rapture::AssetType::Material: assetTypeName = "Material"; break;
+                    case Rapture::AssetType::Cubemap: assetTypeName = "Cubemap"; break;
+                    case Rapture::AssetType::Skeleton: assetTypeName = "Skeleton"; break;
+                    case Rapture::AssetType::Animation: assetTypeName = "Animation"; break;
+                    case Rapture::AssetType::Audio: assetTypeName = "Audio"; break;
+                    case Rapture::AssetType::Script: assetTypeName = "Script"; break;
+                    case Rapture::AssetType::Scene: assetTypeName = "Scene"; break;
+                    case Rapture::AssetType::Font: assetTypeName = "Font"; break;
+                    case Rapture::AssetType::Shader: assetTypeName = "Shader"; break;
+                    default: assetTypeName = "Unknown"; break;
+                }
+                
+                // Different colored icons for different asset types
+                ImU32 iconColor;
+                switch (metadata.m_assetType) {
+                    case Rapture::AssetType::Texture2D:
+                    case Rapture::AssetType::Cubemap:
+                        iconColor = IM_COL32(204, 102, 0, 255); // Darker orange for textures (was 255, 150, 50)
+                        break;
+                    case Rapture::AssetType::Mesh:
+                        iconColor = IM_COL32(50, 150, 255, 255); // Blue for meshes
+                        break;
+                    case Rapture::AssetType::Material:
+                        iconColor = IM_COL32(204, 51, 51, 255); // Darker red for materials (was 255, 100, 100)
+                        break;
+                    default:
+                        iconColor = IM_COL32(140, 140, 140, 255); // Darker gray for others (was 200, 200, 200)
+                        break;
+                }
+                
+                // Draw asset icon similar to file icon style
+                float iconPosX = buttonMin.x + buttonSize.x * 0.25f;
+                float iconPosY = buttonMin.y + buttonSize.y * 0.15f;
+                float iconWidth = buttonSize.x * 0.5f;
+                float iconHeight = buttonSize.y * 0.7f;
+                
+                // Background
+                drawList->AddRectFilled(
+                    ImVec2(iconPosX, iconPosY),
+                    ImVec2(iconPosX + iconWidth, iconPosY + iconHeight),
+                    iconColor,
+                    4.0f // rounded corners
+                );
+                
+                // Type label at the top of the icon
+                ImVec2 typeSize = ImGui::CalcTextSize(assetTypeName.c_str());
+                drawList->AddText(
+                    ImVec2(buttonMin.x + 5, buttonMin.y + 5),
+                    textColor,
+                    assetTypeName.c_str()
+                );
+                
+                // Enhanced name label below the icon - POSITIONED IMMEDIATELY UNDER THE ICON
+                std::string displayName = filename;
+                
+                // Safety check for empty names
+                if (displayName.empty()) {
+                    displayName = "[unnamed]";
+                }
+                
+                try {
+                    // Use a smaller font for labels to fit more text
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 3));
+                    ImGui::PushFont(ImGui::GetFont()); // Using current font but applying custom scaling
+                    ImGui::SetWindowFontScale(0.9f);   // Scale down text to fit more
+                    fontPushed = true;
+                    fontScaled = true;
+                    
+                    // Hard limit for filename length (characters) - increased from 30 to 60
+                    const size_t MAX_FILENAME_LENGTH = 60;
+                    
+                    // If filename exceeds max length, truncate with ellipsis
+                    if (displayName.length() > MAX_FILENAME_LENGTH) {
+                        // Preserve file extension during truncation
+                        std::string basename = displayName;
+                        std::string extension = "";
+                        
+                        // Find the last dot to extract extension
+                        size_t lastDot = displayName.find_last_of('.');
+                        if (lastDot != std::string::npos && lastDot > 0) {
+                            basename = displayName.substr(0, lastDot);
+                            extension = displayName.substr(lastDot); // includes the dot
+                        }
+                        
+                        // Keep start of basename and add ellipsis
+                        size_t keepLength = MAX_FILENAME_LENGTH - extension.length() - 3; // 3 for "..."
+                        if (keepLength < 3) keepLength = 3; // Ensure we show at least 3 chars
+                        
+                        displayName = basename.substr(0, keepLength) + "..." + extension;
+                    }
+                    
+                    ImVec2 textSize = ImGui::CalcTextSize(displayName.c_str());
+                    
+                    // Determine if we need wrapping
+                    bool needsWrapping = textSize.x > thumbnailSize * 0.95f;
+                    
+                    // Calculate label dimensions with possible wrapping
+                    // Use more of the available space - up to 95% of the thumbnail width
+                    float labelWidth = std::min(textSize.x + 16.0f, thumbnailSize * 0.95f);
+                    float labelHeight;
+                    
+                    if (needsWrapping) {
+                        // Estimate how many lines we need
+                        int estimatedLines = (int)std::ceil(textSize.x / (thumbnailSize * 0.95f));
+                        // Cap at max 2 lines
+                        estimatedLines = std::min(estimatedLines, 2);
+                        labelHeight = textSize.y * estimatedLines + 8.0f;
+                    } else {
+                        labelHeight = textSize.y + 8.0f;
+                    }
+                    
+                    // Position label directly under the icon
+                    float labelX = buttonMin.x + (buttonSize.x - labelWidth) * 0.5f;
+                    float labelY = buttonMax.y + 4.0f; // Position directly under the icon with minimal spacing
+                    
+                    // Set cursor position for the label
+                    ImGui::SetCursorPos(ImVec2(labelX, labelY - ImGui::GetCursorPosY()));
+                    
+                    // Draw the label background with rounded corners
+                    ImVec2 labelMin = ImVec2(labelX, labelY);
+                    ImVec2 labelMax = ImVec2(labelMin.x + labelWidth, labelMin.y + labelHeight);
+                    
+                    // Use asset type color for label background
+                    drawList->AddRectFilled(
+                        labelMin,
+                        labelMax,
+                        iconColor,
+                        4.0f  // Rounded corners
+                    );
+                    
+                    // Draw border
+                    drawList->AddRect(
+                        labelMin,
+                        labelMax,
+                        borderColor,
+                        4.0f,  // Rounded corners
+                        0,     // All corners
+                        1.0f   // Border thickness
+                    );
+                    
+                    // Position text inside the label with left alignment
+                    ImVec2 textPos;
+                    
+                    if (needsWrapping) {
+                        // For wrapped text, align to left with padding
+                        textPos = ImVec2(
+                            labelMin.x + 8.0f, // Fixed left padding
+                            labelMin.y + 4.0f  // Top padding
+                        );
+                        
+                        // Draw text with wrapping
+                        float wrapWidth = labelWidth - 16.0f; // Padding on both sides
+                        drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.9f,
+                            textPos, textColor, displayName.c_str(), nullptr, wrapWidth);
+                    } else {
+                        // For single-line text, align to left with padding
+                        textPos = ImVec2(
+                            labelMin.x + 8.0f, // Fixed left padding
+                            labelMin.y + (labelHeight - textSize.y) * 0.5f // Keep vertical centering
+                        );
+                        
+                        // Draw the actual text
+                        drawList->AddText(
+                            textPos,
+                            textColor,
+                            displayName.c_str()
+                        );
+                    }
+                    
+                    // Restore font scaling
+                    if (fontScaled) {
+                        ImGui::SetWindowFontScale(1.0f);
+                        fontScaled = false;
+                    }
+                    
+                    if (fontPushed) {
+                        ImGui::PopFont();
+                        ImGui::PopStyleVar();
+                        fontPushed = false;
+                    }
+                } catch (const std::exception& e) {
+                    Rapture::GE_INFO("Error rendering text: {0}", e.what());
+                    
+                    // Clean up font state if needed
+                    if (fontScaled) {
+                        ImGui::SetWindowFontScale(1.0f);
+                        fontScaled = false;
+                    }
+                    
+                    if (fontPushed) {
+                        ImGui::PopFont();
+                        ImGui::PopStyleVar();
+                        fontPushed = false;
+                    }
+                }
+                
+                // End the group and pop the ID
+                if (groupBegun) {
+                    ImGui::EndGroup();
+                    groupBegun = false;
+                }
+                
+                if (idPushed) {
+                    ImGui::PopID();
+                    idPushed = false;
+                }
+                
+                // Move cursor position for next item
+                cursorX += thumbnailSize + itemSpacing;
+                firstItem = false;
+                index++;
+                visibleCount++;
+            } catch (const std::exception& e) {
+                Rapture::GE_INFO("Error rendering asset item: {0}", e.what());
+                
+                // Ensure we clean up all ImGui state in case of an exception
+                // Clean up font state if needed
+                if (fontScaled) {
+                    ImGui::SetWindowFontScale(1.0f);
+                }
+                
+                if (fontPushed) {
+                    ImGui::PopFont();
+                    ImGui::PopStyleVar();
+                }
+                
+                // End group and pop ID if they were begun/pushed
+                if (groupBegun) {
+                    ImGui::EndGroup();
+                }
+                
+                if (idPushed) {
+                    ImGui::PopID();
+                }
+                
+                // Skip this item and continue with the next
+                index++;
+                continue;
             }
-            
-            // Border around the texture preview
-            drawList->AddRect(previewMin, previewMax, borderColor, 2.0f, 0, 1.0f);
-            
-            // Texture name label
-            ImVec2 textSize = ImGui::CalcTextSize(textureName.c_str());
-            float labelX = cursorX + (thumbnailSize - textSize.x) * 0.5f;
-            float labelY = cursorY + thumbnailSize + textPadding;
-            
-            drawList->AddText(ImVec2(labelX, labelY), textColor, textureName.c_str());
-            
-            // Texture context menu
-            if (ImGui::BeginPopupContextItem("texture_context_menu")) {
-                if (ImGui::MenuItem("View Texture")) {
-                    Rapture::GE_INFO("View texture: {0}", textureName);
-                }
-                
-                if (ImGui::MenuItem("Use in Material")) {
-                    Rapture::GE_INFO("Use texture in material: {0}", textureName);
-                }
-                
-                if (ImGui::MenuItem("Delete")) {
-                    Rapture::GE_INFO("Delete texture: {0}", textureName);
-                }
-                
-                ImGui::EndPopup();
-            }
-            
-            ImGui::PopID();
-            index++;
+        }
+        
+        // Display message if no assets shown due to filter
+        if (visibleCount == 0 && m_showLoadedAssetsOnly) {
+            ImGui::SetCursorPosY(cursorY + 20);
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "No loaded assets to display");
+            ImGui::TextWrapped("Uncheck 'Show Loaded Assets Only' to view all registered assets");
         }
     } catch (const std::exception& e) {
-        Rapture::GE_INFO("Error displaying textures: {0}", e.what());
+        Rapture::GE_INFO("Error displaying assets: {0}", e.what());
     }
 }
 
@@ -736,18 +913,34 @@ void AssetsPanel::displayFileList() {
                     1.0f   // Border thickness
                 );
                 
-                // Position text inside the label
-                ImVec2 textPos = ImVec2(
-                    labelMin.x + (labelWidth - textSize.x) * 0.5f,
-                    labelMin.y + (labelHeight - textSize.y) * 0.5f
-                );
+                // Position text inside the label with left alignment
+                ImVec2 textPos;
                 
-                // Draw the actual text
-                drawList->AddText(
-                    textPos,
-                    textColor,
-                    displayName.c_str()
-                );
+                if (textSize.x > thumbnailSize * 0.9f) {
+                    // For wrapped text, align to left with padding
+                    textPos = ImVec2(
+                        labelMin.x + 8.0f, // Fixed left padding
+                        labelMin.y + 4.0f  // Top padding
+                    );
+                    
+                    // Draw text with wrapping
+                    float wrapWidth = labelWidth - 16.0f; // Padding on both sides
+                    drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.9f,
+                        textPos, textColor, displayName.c_str(), nullptr, wrapWidth);
+                } else {
+                    // For single-line text, align to left with padding
+                    textPos = ImVec2(
+                        labelMin.x + 8.0f, // Fixed left padding
+                        labelMin.y + (labelHeight - textSize.y) * 0.5f // Keep vertical centering
+                    );
+                    
+                    // Draw the actual text
+                    drawList->AddText(
+                        textPos,
+                        textColor,
+                        displayName.c_str()
+                    );
+                }
                 
                 // Add drag source for files (not directories)
                 if (!item.isDirectory) {

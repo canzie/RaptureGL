@@ -8,6 +8,8 @@ in vec3 normalInterp;
 in vec3 vertPos;
 in vec3 camPos;
 in vec2 texCoord;
+in vec3 tangentInterp;  // Tangent from vertex shader
+in vec3 bitangentInterp; // Bitangent from vertex shader
 
 // Removed hardcoded light
 // const vec3 lightPos = vec3(1.25, 1.0, 2.0);
@@ -57,9 +59,6 @@ layout(std140, binding = 7) uniform Camera
     vec3 u_camPos;
 };
 
-
-
-
 // PBR textures
 layout(binding = 0) uniform sampler2D u_AlbedoMap;    // ALBEDO=0
 layout(binding = 1) uniform sampler2D u_NormalMap;    // NORMAL=1
@@ -68,6 +67,9 @@ layout(binding = 3) uniform sampler2D u_RoughnessMap; // ROUGHNESS=3
 layout(binding = 4) uniform sampler2D u_AOMap;        // AO=4
 layout(binding = 5) uniform sampler2D u_EmissiveMap;  // EMISSION=5
 layout(binding = 6) uniform sampler2D u_HeightMap;    // HEIGHT=6
+
+
+
 
 // Debug uniform to control visualization mode
 uniform int u_DebugMode = 0; // 0=Normal, 1=BaseColor, 2=Normals, 3=ID-based
@@ -111,8 +113,24 @@ vec3 fresnel(float HdotV, vec3 baseReflectivity)
     return baseReflectivity + (1.0 - baseReflectivity) * pow(1.0-HdotV, 5.0);
 }
 
-// Function to calculate tangent space normal from normal map
+// Function to calculate tangent space normal from normal map using pre-computed TBN
 vec3 getNormalFromMap()
+{
+    vec3 tangentNormal = texture(u_NormalMap, texCoord).xyz * 2.0 - 1.0;
+
+    // Use the pre-calculated tangent and bitangent
+    vec3 N = normalize(normalInterp);
+    vec3 T = normalize(tangentInterp);
+    vec3 B = normalize(bitangentInterp);
+    
+    // Form TBN matrix from pre-computed vectors
+    mat3 TBN = mat3(T, B, N);
+
+    return normalize(TBN * tangentNormal);
+}
+
+// Use derivative approach as fallback when no tangents are provided
+vec3 getNormalFromMapNoTangent()
 {
     vec3 tangentNormal = texture(u_NormalMap, texCoord).xyz * 2.0 - 1.0;
 
@@ -178,9 +196,17 @@ void main() {
                     vec3(0.0);
     
     // Get normal either from normal map or interpolated vertex normal
-    vec3 N = ((flags & NORMAL_MAP_FLAG) != 0) ? 
-             getNormalFromMap() : 
-             normalize(normalInterp);
+    vec3 N;
+    if ((flags & NORMAL_MAP_FLAG) != 0) {
+        // Check if tangent data exists by checking if it's not a zero vector
+        if (length(tangentInterp) > 0.01) {
+            N = getNormalFromMap();
+        } else {
+            N = getNormalFromMapNoTangent();
+        }
+    } else {
+        N = normalize(normalInterp);
+    }
              
     vec3 V = normalize(camPos - vertPos);
     vec3 visualColor;

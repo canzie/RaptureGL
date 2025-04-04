@@ -12,6 +12,8 @@
 #include "../Materials/MaterialLibrary.h"
 #include "../Buffers/BufferPools.h"
 
+#include "../AssetsManager/AssetManager.h"
+
 namespace Rapture {
 
 	Application* Application::s_instance = nullptr;
@@ -35,6 +37,7 @@ namespace Rapture {
 			TextureLibrary::init(4);
 			Rapture::MaterialLibrary::init();
 			BufferPoolManager::init();
+			AssetManager::init();
 			Renderer::init();
 			
 
@@ -43,13 +46,13 @@ namespace Rapture {
 
 	Application::~Application()
 	{
-		// Shutdown profilers
-		//GPUProfiler::shutdown();
-		//Profiler::shutdown();
+
 		TracyProfiler::shutdown();
+        AssetManager::shutdown();
         TextureLibrary::shutdown();
         MaterialLibrary::shutdown();
 		BufferPoolManager::shutdown();
+        Renderer::shutdown();
 
 		// closes twice...
 		//onWindowContextClose();

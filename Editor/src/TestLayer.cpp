@@ -14,7 +14,6 @@
 #include "Scenes/Systems/AnimationSystem.h"
 
 #include "File Loaders/glTF/glTF2Loader.h"
-#include "File Loaders/ModelLoader.h"
 #include "Textures/Texture.h"
 #include "Debug/Profiler.h"
 
@@ -26,6 +25,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include <filesystem>
 
 #include "Debug/TracyProfiler.h"
 
@@ -74,23 +74,23 @@ void TestLayer::onAttach()
 	
 	Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
 	//loader.loadModel("adamHead/adamHead.gltf");
-	//loader.loadModel("Sponza/glTF/Sponza.gltf");
+	loader.loadModel("Sponza/glTF/Sponza.gltf");
 
-	loader.loadModel("metalroughspheres/MetalRoughSpheres.gltf");
+	//loader.loadModel("metalroughspheres/MetalRoughSpheres.gltf");
 
 
     //loader.loadModel("Buggy/Buggy.gltf");
     //loader.loadModel("BoxAnimated/BoxAnimated.gltf");
     //loader.loadModel("RiggedSimple/RiggedSimple.gltf");
 
-    //loader.loadModel("BrainStem/BrainStem.gltf");
+    loader.loadModel("BrainStem/BrainStem.gltf");
     //loader.loadModel("CesiumMan/CesiumMan.gltf");
 
 	//loader.loadModel("sphere.gltf");
 	//loader.loadModel("donut.gltf");
     //loader.loadModel("cube.gltf");
 
-    std::vector<std::string> cubemapPaths = {
+    std::vector<std::string> cubemapPathsSTR = {
         "D:/downloads/skybox/skybox/right.jpg",
         "D:/downloads/skybox/skybox/left.jpg",
         "D:/downloads/skybox/skybox/top.jpg",
@@ -98,6 +98,16 @@ void TestLayer::onAttach()
         "D:/downloads/skybox/skybox/front.jpg", 
         "D:/downloads/skybox/skybox/back.jpg"
     };
+
+    std::vector<std::filesystem::path> cubemapPaths = {
+        "D:/downloads/skybox/skybox/right.jpg",
+        "D:/downloads/skybox/skybox/left.jpg",
+        "D:/downloads/skybox/skybox/top.jpg",
+        "D:/downloads/skybox/skybox/bottom.jpg",
+        "D:/downloads/skybox/skybox/front.jpg", 
+        "D:/downloads/skybox/skybox/back.jpg"
+    };
+
 
     m_activeScene->getSkyBox().setTexturePaths(cubemapPaths);
     m_showDebugRay = m_activeScene->getSettings().rayCastDebugEnabled;

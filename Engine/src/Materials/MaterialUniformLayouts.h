@@ -14,6 +14,14 @@ namespace Rapture
 		constexpr uint32_t HEIGHT_MAP    = (1 << 6);  // 0x40
 	}
 
+    namespace SpecularGlossinessTextureFlags {
+		constexpr uint32_t DIFFUSE_MAP    = (1 << 0);  // 0x01
+		constexpr uint32_t NORMAL_MAP     = (1 << 1);  // 0x02
+		constexpr uint32_t SPEC_GLOSS_MAP = (1 << 2);  // 0x04
+		constexpr uint32_t AO_MAP         = (1 << 3);  // 0x08
+		constexpr uint32_t EMISSIVE_MAP   = (1 << 4);  // 0x10
+	}
+
 	// This structure should match the PBR uniform block in PBR_fs.glsl
 	// std140 layout requires careful alignment (vec3 often needs padding)
 	struct PBRUniform
@@ -46,19 +54,21 @@ namespace Rapture
 	// This structure should match the KHR_SpecularGlossiness uniform block
 	struct KHR_SpecularGlossiness_Uniform
 	{
-		glm::vec4 ambientLight;   // vec4 for alignment
-		glm::vec4 diffuseColor;   // vec4 for alignment
-		glm::vec4 specularColor;  // vec4 for alignment
-		float flux;
-		float shininess;
+		alignas(16) glm::vec4 ambientLight;   // vec4 for alignment
+		alignas(16) glm::vec4 diffuseColor;   // vec4 for alignment
+		alignas(16) glm::vec4 specularColor;  // vec4 for alignment
+		alignas(4)float flux;
+		alignas(4)float shininess;
+        alignas(4) uint32_t flags;
 	};
 
 	// New struct for Specular-Glossiness materials
 	struct SpecularGlossinessUniform
 	{
 		alignas(16) glm::vec4 diffuseFactor;
+        alignas(4) float glossinessFactor;
 		alignas(16) glm::vec4 specularFactor; // RGB is specular color, A is glossiness factor
-		alignas(4) float flags;
+        alignas(4) uint32_t flags;
 	};
 
 	// Maximum number of lights supported in the shader

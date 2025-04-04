@@ -6,8 +6,9 @@ precision highp float;
 
 in vec3 normalInterp;
 in vec3 vertPos;
-in vec3 camPos;
 in vec2 texCoord;
+in vec3 tangentInterp;  // Tangent from vertex shader
+in vec3 bitangentInterp; // Bitangent from vertex shader
 
 // Removed hardcoded light
 // const vec3 lightPos = vec3(1.25, 1.0, 2.0);
@@ -39,8 +40,14 @@ layout (std140, binding=4) uniform SpecularGlossiness
 	vec3 diffuse_color;
 	float glossiness;
 	vec3 specular_color;
-    float padding;
+    uint flags;
 };
+
+layout(std140, binding = 7) uniform Camera
+{
+    vec3 u_camPos;
+};
+
 
 // Texture samplers
 layout(binding = 0) uniform sampler2D u_DiffuseMap;             // ALBEDO=0
@@ -49,20 +56,36 @@ layout(binding = 7) uniform sampler2D u_SpecularGlossinessMap;  // SPECULAR=7
 layout(binding = 4) uniform sampler2D u_AOMap;                  // AO=4
 layout(binding = 5) uniform sampler2D u_EmissiveMap;            // EMISSION=5
 
-// Texture availability flags
-uniform bool u_HasDiffuseMap = false;
-uniform bool u_HasSpecularGlossinessMap = false;
-uniform bool u_HasNormalMap = false;
-uniform bool u_HasAOMap = false;
-uniform bool u_HasEmissiveMap = false;
+// Define texture flag constants - must match C++ side
+#define DIFFUSE_MAP_FLAG     (1 << 0)
+#define NORMAL_MAP_FLAG      (1 << 1)
+#define SPEC_GLOSS_MAP_FLAG  (1 << 2)
+#define AO_MAP_FLAG          (1 << 3)
+#define EMISSIVE_MAP_FLAG    (1 << 4)
 
 // Debug uniform to control visualization mode
 uniform int u_DebugMode = 0; // 0=Normal, 1=Diffuse, 2=Normals, 3=ID-based
 
 #define PI 3.1415926535897932384626433832795
 
-// Function to calculate tangent space normal from normal map
+// Function to calculate tangent space normal from normal map using pre-computed TBN
 vec3 getNormalFromMap()
+{
+    vec3 tangentNormal = texture(u_NormalMap, texCoord).xyz * 2.0 - 1.0;
+
+    // Use the pre-calculated tangent and bitangent
+    vec3 N = normalize(normalInterp);
+    vec3 T = normalize(tangentInterp);
+    vec3 B  = -normalize(cross(N, T));
+
+    // Form TBN matrix from pre-computed vectors
+    mat3 TBN = mat3(T, B, N);
+
+    return normalize(TBN * tangentNormal);
+}
+
+// Use derivative approach as fallback when no tangents are provided
+vec3 getNormalFromMapNoTangent()
 {
     vec3 tangentNormal = texture(u_NormalMap, texCoord).xyz * 2.0 - 1.0;
 
@@ -107,23 +130,44 @@ float calculateSpotEffect(vec3 lightDir, vec3 spotDir, float innerConeAngle, flo
 
 void main() {
     // Get material properties from textures or fallback to uniforms
-    vec3 diffuseVal = u_HasDiffuseMap ? texture(u_DiffuseMap, texCoord).rgb : diffuse_color;
-    float glossinessVal = glossiness;
-    vec3 specularVal = specular_color;
+    vec3 diffuseVal = ((flags & DIFFUSE_MAP_FLAG) != 0) ? 
+                   texture(u_DiffuseMap, texCoord).rgb : 
+                   diffuse_color.rgb;
     
-    if (u_HasSpecularGlossinessMap) {
+    float glossinessVal = glossiness;
+    vec3 specularVal = specular_color.rgb;
+
+    if ((flags & SPEC_GLOSS_MAP_FLAG) != 0) {
         vec4 specGloss = texture(u_SpecularGlossinessMap, texCoord);
         specularVal = specGloss.rgb;
         glossinessVal = specGloss.a;
     }
     
-    float ao = u_HasAOMap ? texture(u_AOMap, texCoord).r : 1.0;
-    vec3 emission = u_HasEmissiveMap ? texture(u_EmissiveMap, texCoord).rgb : vec3(0.0);
+    float ao = ((flags & AO_MAP_FLAG) != 0) ? 
+               texture(u_AOMap, texCoord).r : 
+               1.0;
+               
+    vec3 emission = ((flags & EMISSIVE_MAP_FLAG) != 0) ? 
+                    texture(u_EmissiveMap, texCoord).rgb : 
+                    vec3(0.0);
     
     // Always calculate these basic values regardless of mode
-    vec3 N = u_HasNormalMap ? getNormalFromMap() : normalize(normalInterp);
-    vec3 V = normalize(camPos - vertPos);
+    vec3 N;
+    if ((flags & NORMAL_MAP_FLAG) != 0) {
+        // Check if tangent data exists by checking if it's not a zero vector
+        if (length(tangentInterp) > 0.01) {
+            N = getNormalFromMap();
+        } else {
+            N = getNormalFromMapNoTangent();
+        }
+    } else {
+        N = normalize(normalInterp);
+    }
+
+    vec3 V = normalize(u_camPos - vertPos);
     vec3 visualColor;
+
+
 
     // Debug visualization modes
     if (u_DebugMode == 1) {

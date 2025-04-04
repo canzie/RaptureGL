@@ -43,6 +43,20 @@ namespace Rapture {
 
     };
 
+    // Add new command types for deferred rendering
+    struct GeometryPassCommand : Command {
+        std::shared_ptr<Entity> entity = nullptr;
+        std::shared_ptr<Material> material = nullptr;
+        std::shared_ptr<Mesh> mesh = nullptr;
+        glm::mat4 transform;
+        bool isSkeletal = false;
+    };
+    
+    struct LightingPassCommand : Command {
+        std::shared_ptr<Entity> lightEntity = nullptr;
+        glm::mat4 transform;
+        // Light properties will be extracted from the entity's components
+    };
 
 
 

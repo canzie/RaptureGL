@@ -12,6 +12,7 @@
 #include <unordered_set>
 #include "Frustum.h"
 #include "RenderQueue.h"
+#include "Deferred Shading/GBuffer.h"
 
 namespace Rapture
 {
@@ -35,6 +36,7 @@ namespace Rapture
         static void drawLine(const Line& line);
         static void drawCube(const Cube& cube);
         static void drawQuad(const Quad& quad, const glm::mat4& transform=glm::mat4(1.0f));
+
 
 		// Bounding box rendering methods
 		// Show a bounding box for an entity
@@ -120,6 +122,8 @@ namespace Rapture
 		
 		// Visible entities for the current frame
 		static std::vector<Rapture::Entity> s_visibleEntities;
+
+
 	};
 
 } // namespace Rapture

@@ -6,6 +6,7 @@
 #include <queue>
 #include <mutex>
 #include <functional>
+#include <filesystem>
 
 namespace Rapture {
 
@@ -61,10 +62,14 @@ class Texture2D : public Texture {
 public:
     virtual void setData(void* data, uint32_t size) = 0;
 
+protected:
     static std::shared_ptr<Texture2D> create(const std::string& path);
     static std::shared_ptr<Texture2D> create(uint32_t width, uint32_t height, uint32_t channels);
 
     static std::shared_ptr<Texture2D> createCubemap(const std::vector<std::string>& filepaths);
+
+    // Give TextureLibrary access to protected create methods
+    friend class TextureLibrary;
 };
 
 struct TextureLoadRequest {
@@ -90,7 +95,10 @@ public:
     // Load a texture from a file
     static std::shared_ptr<Texture2D> load(const std::string& filepath);
     static std::shared_ptr<Texture2D> loadAsync(const std::string& filepath);
+    static std::shared_ptr<Texture2D> loadAsync(const std::filesystem::path filepath);
 
+    // Load a cubemap from a list of filepaths
+    static std::shared_ptr<Texture2D> loadCubemap(const std::vector<std::filesystem::path>& filepaths);
     static std::shared_ptr<Texture2D> loadCubemap(const std::vector<std::string>& filepaths);
     static std::shared_ptr<Texture2D> loadCubemapAsync(const std::vector<std::string>& filepaths);
 
@@ -104,6 +112,7 @@ public:
     static void shutdownWorkers();
 
     static void processLoadingQueue();
+
     
 
 private:

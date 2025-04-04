@@ -255,12 +255,12 @@ void SettingsPanel::renderSceneSettings()
         // Copy current skybox paths to the editing buffers if they exist and aren't already loaded
         if (!skybox.texturePaths.empty() && !m_skyboxPathsChanged) {
             if (skybox.texturePaths.size() >= 6) {
-                std::strncpy(m_skyboxRightPath.data(), skybox.texturePaths[0].c_str(), MAX_PATH_LENGTH - 1);
-                std::strncpy(m_skyboxLeftPath.data(), skybox.texturePaths[1].c_str(), MAX_PATH_LENGTH - 1);
-                std::strncpy(m_skyboxTopPath.data(), skybox.texturePaths[2].c_str(), MAX_PATH_LENGTH - 1);
-                std::strncpy(m_skyboxBottomPath.data(), skybox.texturePaths[3].c_str(), MAX_PATH_LENGTH - 1);
-                std::strncpy(m_skyboxFrontPath.data(), skybox.texturePaths[4].c_str(), MAX_PATH_LENGTH - 1);
-                std::strncpy(m_skyboxBackPath.data(), skybox.texturePaths[5].c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxRightPath.data(), skybox.texturePaths[0].string().c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxLeftPath.data(), skybox.texturePaths[1].string().c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxTopPath.data(), skybox.texturePaths[2].string().c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxBottomPath.data(), skybox.texturePaths[3].string().c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxFrontPath.data(), skybox.texturePaths[4].string().c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxBackPath.data(), skybox.texturePaths[5].string().c_str(), MAX_PATH_LENGTH - 1);
             }
         }
         
@@ -324,7 +324,7 @@ void SettingsPanel::renderSceneSettings()
         // Apply button to update the skybox
         if (ImGui::Button("Apply Skybox Changes") && m_skyboxPathsChanged) {
             // Create a vector of the new paths
-            std::vector<std::string> newPaths = {
+            std::vector<std::filesystem::path> newPaths = {
                 m_skyboxRightPath.data(),
                 m_skyboxLeftPath.data(),
                 m_skyboxTopPath.data(),
@@ -344,12 +344,12 @@ void SettingsPanel::renderSceneSettings()
         if (ImGui::Button("Reset to Current")) {
             // Reset the editing buffers to the current skybox paths
             if (!skybox.texturePaths.empty() && skybox.texturePaths.size() >= 6) {
-                std::strncpy(m_skyboxRightPath.data(), skybox.texturePaths[0].c_str(), MAX_PATH_LENGTH - 1);
-                std::strncpy(m_skyboxLeftPath.data(), skybox.texturePaths[1].c_str(), MAX_PATH_LENGTH - 1);
-                std::strncpy(m_skyboxTopPath.data(), skybox.texturePaths[2].c_str(), MAX_PATH_LENGTH - 1);
-                std::strncpy(m_skyboxBottomPath.data(), skybox.texturePaths[3].c_str(), MAX_PATH_LENGTH - 1);
-                std::strncpy(m_skyboxFrontPath.data(), skybox.texturePaths[4].c_str(), MAX_PATH_LENGTH - 1);
-                std::strncpy(m_skyboxBackPath.data(), skybox.texturePaths[5].c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxRightPath.data(), skybox.texturePaths[0].string().c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxLeftPath.data(), skybox.texturePaths[1].string().c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxTopPath.data(), skybox.texturePaths[2].string().c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxBottomPath.data(), skybox.texturePaths[3].string().c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxFrontPath.data(), skybox.texturePaths[4].string().c_str(), MAX_PATH_LENGTH - 1);
+                std::strncpy(m_skyboxBackPath.data(), skybox.texturePaths[5].string().c_str(), MAX_PATH_LENGTH - 1);
                 
                 m_skyboxPathsChanged = false;
             }

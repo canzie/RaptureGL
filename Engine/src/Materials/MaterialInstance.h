@@ -6,6 +6,8 @@
 #include <string>
 #include <memory>
 #include "../Buffers/OpenGLBuffers/UniformBuffers/OpenGLUniformBuffer.h"
+#include "../AssetsManager/Asset.h"
+
 
 namespace Rapture {
 
@@ -23,7 +25,22 @@ public:
     // Get instance-specific uniform buffer
     std::shared_ptr<UniformBuffer> getUniformBuffer() const { return m_uniformBuffer; }
 
-    // Parameter setting
+    // Enum-based parameter setting
+    void setFloat(ParameterID id, float value);
+    void setInt(ParameterID id, int value);
+    void setBool(ParameterID id, bool value);
+    void setVec2(ParameterID id, const glm::vec2& value);
+    void setVec3(ParameterID id, const glm::vec3& value);
+    void setVec4(ParameterID id, const glm::vec4& value);
+    void setMat3(ParameterID id, const glm::mat3& value);
+    void setMat4(ParameterID id, const glm::mat4& value);
+    void setTexture(ParameterID id, std::shared_ptr<Texture2D> texture, AssetHandle handle);
+    void setParameter(ParameterID id, const MaterialParameter& parameter);
+    bool hasParameterOverride(ParameterID id) const;
+    const MaterialParameter& getParameterOverride(ParameterID id) const;
+    void clearParameterOverride(ParameterID id);
+
+    // String-based parameter setting (for backward compatibility)
     void setFloat(const std::string& name, float value);
     void setInt(const std::string& name, int value);
     void setBool(const std::string& name, bool value);
@@ -32,18 +49,10 @@ public:
     void setVec4(const std::string& name, const glm::vec4& value);
     void setMat3(const std::string& name, const glm::mat3& value);
     void setMat4(const std::string& name, const glm::mat4& value);
-    void setTexture(const std::string& name, std::shared_ptr<Texture2D> texture);
-
-    // Generic parameter setting
+    void setTexture(const std::string& name, std::shared_ptr<Texture2D> texture, AssetHandle handle);
     void setParameter(const std::string& name, const MaterialParameter& parameter);
-    
-    // Check if a parameter is overridden
     bool hasParameterOverride(const std::string& name) const;
-    
-    // Get a parameter override
     const MaterialParameter& getParameterOverride(const std::string& name) const;
-    
-    // Clear an override
     void clearParameterOverride(const std::string& name);
     
     // Binding
@@ -53,7 +62,7 @@ public:
 private:
     std::shared_ptr<Material> m_baseMaterial;
     std::string m_name;
-    std::shared_ptr<UniformBuffer> m_uniformBuffer;
+    std::shared_ptr<UniformBuffer> m_uniformBuffer = nullptr;
     MaterialParameterMap m_parameterOverrides;
     bool m_uniformDataDirty = false;
 

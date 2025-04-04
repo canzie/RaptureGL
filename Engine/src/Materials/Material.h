@@ -10,6 +10,8 @@
 #include "../Buffers/Buffers.h"
 #include "../Buffers/OpenGLBuffers/UniformBuffers/OpenGLUniformBuffer.h"
 
+#include <variant>
+
 namespace Rapture {
 
 enum class MaterialType {
@@ -26,7 +28,7 @@ enum class MaterialType {
 
 
 enum class MaterialFlagBitLocations {
-	TRANSPARENT=0,
+	TRANSPARENT_=0,
 	OCCLUSION=1
 	// add more on the go
 };
@@ -59,7 +61,22 @@ class Material : public std::enable_shared_from_this<Material> {
         void setFlag(MaterialFlagBitLocations flag, bool enabled);
         bool hasFlag(MaterialFlagBitLocations flag) const;
         
-        // Parameter setting
+        // New parameter setting methods using ParameterID
+        void setFloat(ParameterID id, float value);
+        void setInt(ParameterID id, int value);
+        void setBool(ParameterID id, bool value);
+        void setVec2(ParameterID id, const glm::vec2& value);
+        void setVec3(ParameterID id, const glm::vec3& value);
+        void setVec4(ParameterID id, const glm::vec4& value);
+        void setMat3(ParameterID id, const glm::mat3& value);
+        void setMat4(ParameterID id, const glm::mat4& value);
+        void setTexture(ParameterID id, std::shared_ptr<Texture2D> texture, AssetHandle handle);
+        void setParameter(ParameterID id, const MaterialParameter& parameter);
+        bool hasParameter(ParameterID id) const;
+        const MaterialParameter& getParameter(ParameterID id) const;
+        
+        // Backward compatible string-based parameter methods
+        // These now internally convert strings to ParameterID and call the ID-based methods
         void setFloat(const std::string& name, float value);
         void setInt(const std::string& name, int value);
         void setBool(const std::string& name, bool value);
@@ -68,15 +85,9 @@ class Material : public std::enable_shared_from_this<Material> {
         void setVec4(const std::string& name, const glm::vec4& value);
         void setMat3(const std::string& name, const glm::mat3& value);
         void setMat4(const std::string& name, const glm::mat4& value);
-        void setTexture(const std::string& name, std::shared_ptr<Texture2D> texture);
-
-        // Generic parameter setting
+        void setTexture(const std::string& name, std::shared_ptr<Texture2D> texture, AssetHandle handle);
         void setParameter(const std::string& name, const MaterialParameter& parameter);
-        
-        // Check if material has a parameter
         bool hasParameter(const std::string& name) const;
-        
-        // Get a parameter 
         const MaterialParameter& getParameter(const std::string& name) const;
         
         // Binding and drawing
@@ -115,8 +126,6 @@ class PBRMaterial : public Material {
         // Make static members public so they can be initialized by MaterialLibrary
         static Shader* s_shader;
 
-        void setTextureFlags(uint32_t flags);
-
     protected:
         PBRUniform m_uniformData;
 };
@@ -152,7 +161,7 @@ class SolidMaterial : public Material {
 class CubeMapMaterial : public Material {
     public:
         CubeMapMaterial();
-        CubeMapMaterial(std::shared_ptr<Texture2D> skybox);
+        CubeMapMaterial(std::shared_ptr<Texture2D> skybox, AssetHandle handle);
 
         virtual void bindData() override;
 

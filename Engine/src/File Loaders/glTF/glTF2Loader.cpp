@@ -788,42 +788,32 @@ namespace Rapture {
         // Diffuse texture
         if (specularGlossiness.contains("diffuseTexture")) {
             int texIndex = specularGlossiness["diffuseTexture"]["index"];
-            if (loadAndSetTexture(material, "diffuseMap", texIndex)) {
-                material->setBool("u_HasDiffuseMap", true);
-            }
+            loadAndSetTexture(material, ParameterID::TEXTURE_DIFFUSE, texIndex);
         }
         
         // Specular-glossiness texture
         if (specularGlossiness.contains("specularGlossinessTexture")) {
             int texIndex = specularGlossiness["specularGlossinessTexture"]["index"];
-            if (loadAndSetTexture(material, "specularGlossinessMap", texIndex)) {
-                material->setBool("u_HasSpecularGlossinessMap", true);
-            }
+            loadAndSetTexture(material, ParameterID::TEXTURE_SPECULAR, texIndex);
         }
         
         // Process additional textures common to both workflows
         // Normal map
         if (materialJSON.contains("normalTexture")) {
             int texIndex = materialJSON["normalTexture"]["index"];
-            if (loadAndSetTexture(material, "normalMap", texIndex)) {
-                material->setBool("u_HasNormalMap", true);
-            }
+            loadAndSetTexture(material, ParameterID::TEXTURE_NORMAL, texIndex);
         }
         
         // Occlusion map
         if (materialJSON.contains("occlusionTexture")) {
             int texIndex = materialJSON["occlusionTexture"]["index"];
-            if (loadAndSetTexture(material, "aoMap", texIndex)) {
-                material->setBool("u_HasAOMap", true);
-            }
+            loadAndSetTexture(material, ParameterID::TEXTURE_AO, texIndex);
         }
         
         // Emissive map
         if (materialJSON.contains("emissiveTexture")) {
             int texIndex = materialJSON["emissiveTexture"]["index"];
-            if (loadAndSetTexture(material, "emissiveMap", texIndex)) {
-                material->setBool("u_HasEmissiveMap", true);
-            }
+            loadAndSetTexture(material, ParameterID::TEXTURE_EMISSIVE, texIndex);
         }
         
         // Emissive factor
@@ -833,7 +823,7 @@ namespace Rapture {
                 materialJSON["emissiveFactor"][1],
                 materialJSON["emissiveFactor"][2]
             );
-            material->setVec3("emissiveFactor", emissiveFactor);
+            material->setVec3(ParameterID::EMISSION, emissiveFactor);
         }
         
         return material;
@@ -903,8 +893,7 @@ namespace Rapture {
             // Base color texture
             if (pbrMetallicRoughness.contains("baseColorTexture")) {
                 int texIndex = pbrMetallicRoughness["baseColorTexture"]["index"];
-                loadAndSetTexture(material, "albedoMap", texIndex);
-                // Flag will be set in the callback
+                loadAndSetTexture(material, ParameterID::TEXTURE_ALBEDO, texIndex);
             }
             
             // Metallic roughness texture
@@ -912,33 +901,27 @@ namespace Rapture {
                 int texIndex = pbrMetallicRoughness["metallicRoughnessTexture"]["index"];
                 
                 // In glTF, metallicRoughness is combined: R=unused, G=roughness, B=metallic
-                loadAndSetTexture(material, "metallicMap", texIndex);
-                // Flag will be set in the callback
-                
-                loadAndSetTexture(material, "roughnessMap", texIndex);
-                // Flag will be set in the callback
+                loadAndSetTexture(material, ParameterID::TEXTURE_METALLIC, texIndex);
+                loadAndSetTexture(material, ParameterID::TEXTURE_ROUGHNESS, texIndex);
             }
         }
         
         // Normal map - common to both workflows
         if (materialJSON.contains("normalTexture")) {
             int texIndex = materialJSON["normalTexture"]["index"];
-            loadAndSetTexture(material, "normalMap", texIndex);
-            // Flag will be set in the callback
+            loadAndSetTexture(material, ParameterID::TEXTURE_NORMAL, texIndex);
         }
         
         // Occlusion map - common to both workflows
         if (materialJSON.contains("occlusionTexture")) {
             int texIndex = materialJSON["occlusionTexture"]["index"];
-            loadAndSetTexture(material, "aoMap", texIndex);
-            // Flag will be set in the callback
+            loadAndSetTexture(material, ParameterID::TEXTURE_AO, texIndex);
         }
         
         // Emissive map - common to both workflows
         if (materialJSON.contains("emissiveTexture")) {
             int texIndex = materialJSON["emissiveTexture"]["index"];
-            loadAndSetTexture(material, "emissiveMap", texIndex);
-            // Flag will be set in the callback
+            loadAndSetTexture(material, ParameterID::TEXTURE_EMISSIVE, texIndex);
         }
         
         // Emissive factor - common to both workflows
@@ -948,7 +931,7 @@ namespace Rapture {
                 materialJSON["emissiveFactor"][1],
                 materialJSON["emissiveFactor"][2]
             );
-            material->setVec3("emissiveFactor", emissiveFactor);
+            material->setVec3(ParameterID::EMISSION, emissiveFactor);
         }
         
         return material;
@@ -1085,7 +1068,7 @@ namespace Rapture {
         //m_progressCallback(progress);
     }
 
-    bool glTF2Loader::loadAndSetTexture(std::shared_ptr<Material> material, const std::string& textureName, int textureIndex)
+    bool glTF2Loader::loadAndSetTexture(std::shared_ptr<Material> material, ParameterID paramID, int textureIndex)
     {
         if (textureIndex < 0 || textureIndex >= m_textures.size()) {
             GE_CORE_ERROR("glTF2Loader: Invalid texture index {}", textureIndex);
@@ -1118,15 +1101,145 @@ namespace Rapture {
         
         // Load the texture
         std::string texturePath = m_basePath + imageURI;
-        
-        std::shared_ptr<Texture2D> tex = TextureLibrary::loadAsync(texturePath);
+        std::filesystem::path texturePathFS = std::filesystem::path(texturePath);
 
-        if (!tex) {
-            GE_CORE_ERROR("glTF2Loader: Failed to load texture {}", texturePath);
+        //std::shared_ptr<Texture2D> tex = TextureLibrary::loadAsync(texturePath);
+        uint32_t clampedIndex = std::max(textureIndex, 0);
+
+        auto [tex, handle] = AssetManager::importAsset<Texture2D>(texturePathFS, {clampedIndex});
+
+        if (!tex || !handle) {
+            GE_CORE_ERROR("glTF2Loader::loadAndSetTexture - Failed to import or get texture {}", texturePath);
             return false;
         }
 
-            // Apply sampler parameters if present
+        // Apply sampler parameters if present
+        if (texture.contains("sampler")) {
+            int samplerIndex = texture["sampler"];
+            if (samplerIndex >= 0 && samplerIndex < m_samplers.size()) {
+                json& sampler = m_samplers[samplerIndex];
+                
+                // Apply filter settings
+                if (sampler.contains("magFilter")) {
+                    int magFilter = sampler["magFilter"];
+                    if (magFilter == 9728) { // GL_NEAREST
+                        tex->setMagFilter(TextureFilter::Nearest);
+                    } else if (magFilter == 9729) { // GL_LINEAR
+                        tex->setMagFilter(TextureFilter::Linear);
+                    }
+                }
+                
+                if (sampler.contains("minFilter")) {
+                    int minFilter = sampler["minFilter"];
+                    if (minFilter == 9728) { // GL_NEAREST
+                        tex->setMinFilter(TextureFilter::Nearest);
+                    } else if (minFilter == 9729) { // GL_LINEAR
+                        tex->setMinFilter(TextureFilter::Linear);
+                    } else if (minFilter == 9984) { // GL_NEAREST_MIPMAP_NEAREST
+                        tex->setMinFilter(TextureFilter::NearestMipmapNearest);
+                    } else if (minFilter == 9985) { // GL_LINEAR_MIPMAP_NEAREST
+                        tex->setMinFilter(TextureFilter::LinearMipmapNearest);
+                    } else if (minFilter == 9986) { // GL_NEAREST_MIPMAP_LINEAR
+                        tex->setMinFilter(TextureFilter::NearestMipmapLinear);
+                    } else if (minFilter == 9987) { // GL_LINEAR_MIPMAP_LINEAR
+                        tex->setMinFilter(TextureFilter::LinearMipmapLinear);
+                    }
+                }
+                
+                if (sampler.contains("wrapS")) {
+                    int wrapS = sampler["wrapS"];
+                    if (wrapS == 33071) { // GL_CLAMP_TO_EDGE
+                        tex->setWrapS(TextureWrap::ClampToEdge);
+                    } else if (wrapS == 33648) { // GL_MIRRORED_REPEAT
+                        tex->setWrapS(TextureWrap::MirroredRepeat);
+                    } else if (wrapS == 10497) { // GL_REPEAT
+                        tex->setWrapS(TextureWrap::Repeat);
+                    }
+                }
+                
+                if (sampler.contains("wrapT")) {
+                    int wrapT = sampler["wrapT"];
+                    if (wrapT == 33071) { // GL_CLAMP_TO_EDGE
+                        tex->setWrapT(TextureWrap::ClampToEdge);
+                    } else if (wrapT == 33648) { // GL_MIRRORED_REPEAT
+                        tex->setWrapT(TextureWrap::MirroredRepeat);
+                    } else if (wrapT == 10497) { // GL_REPEAT
+                        tex->setWrapT(TextureWrap::Repeat);
+                    }
+                }
+            } else {
+                // Set default texture parameters if no sampler is specified
+                tex->setMinFilter(TextureFilter::LinearMipmapLinear);
+                tex->setMagFilter(TextureFilter::Linear);
+                tex->setWrapS(TextureWrap::Repeat);
+                tex->setWrapT(TextureWrap::Repeat);
+            }
+            
+            // Set the texture on the material using the enum ID
+            material->setTexture(paramID, tex, handle);
+            
+            
+            return true;
+        }
+        
+        return false;
+    }
+
+    bool glTF2Loader::loadAndSetTexture(std::shared_ptr<Material> material, const std::string& textureName, int textureIndex)
+    {
+        // Convert string parameter name to enum
+        ParameterID paramID = StringToParameterID(textureName);
+        
+        // If we got a valid parameter ID, use that
+        if (paramID != ParameterID::NONE) {
+            return loadAndSetTexture(material, paramID, textureIndex);
+        }
+        
+        // Otherwise, use the legacy string-based implementation (left for backward compatibility)
+        if (textureIndex < 0 || textureIndex >= m_textures.size()) {
+            GE_CORE_ERROR("glTF2Loader: Invalid texture index {}", textureIndex);
+            return false;
+        }
+
+        json& texture = m_textures[textureIndex];
+        
+        // Get the image index
+        if (!texture.contains("source")) {
+            GE_CORE_ERROR("glTF2Loader: Texture missing source property");
+            return false;
+        }
+        
+        int imageIndex = texture["source"];
+        if (imageIndex < 0 || imageIndex >= m_images.size()) {
+            GE_CORE_ERROR("glTF2Loader: Invalid image index {}", imageIndex);
+            return false;
+        }
+        
+        json& image = m_images[imageIndex];
+        
+        // Get the image URI
+        if (!image.contains("uri")) {
+            GE_CORE_ERROR("glTF2Loader: Image missing URI");
+            return false;
+        }
+        
+        std::string imageURI = image["uri"];
+        
+        // Load the texture
+        std::string texturePath = m_basePath + imageURI;
+        std::filesystem::path texturePathFS = std::filesystem::path(texturePath);
+
+        //std::shared_ptr<Texture2D> tex = TextureLibrary::loadAsync(texturePath);
+        uint32_t clampedIndex = std::max(textureIndex, 0);
+
+        auto [tex, handle] = AssetManager::importAsset<Texture2D>(texturePathFS, {clampedIndex});
+
+        if (!tex || !handle) {
+            GE_CORE_ERROR("glTF2Loader::loadAndSetTexture - Failed to import or get texture {}", texturePath);
+            return false;
+        }
+
+        // Apply sampler parameters if present
         if (texture.contains("sampler")) {
             int samplerIndex = texture["sampler"];
             if (samplerIndex >= 0 && samplerIndex < m_samplers.size()) {
@@ -1170,7 +1283,6 @@ namespace Rapture {
                     }
                 }
                 
-                // Apply wrap settings
                 if (sampler.contains("wrapS")) {
                     int wrapS = sampler["wrapS"];
                     if (wrapS == 33071) { // GL_CLAMP_TO_EDGE
@@ -1201,34 +1313,15 @@ namespace Rapture {
             }
             
             // Set the texture on the material
-            material->setTexture(textureName, tex);
+            material->setTexture(textureName, tex, handle);
             
-            // Set the appropriate flag in the material
-            std::string uniformName = "u_Has";
-            if (textureName == "albedoMap" || textureName == "diffuseMap") 
-                uniformName += textureName == "albedoMap" ? "AlbedoMap" : "DiffuseMap";
-            else if (textureName == "normalMap") 
-                uniformName += "NormalMap";
-            else if (textureName == "metallicMap") 
-                uniformName += "MetallicMap";
-            else if (textureName == "roughnessMap") 
-                uniformName += "RoughnessMap";
-            else if (textureName == "aoMap") 
-                uniformName += "AOMap";
-            else if (textureName == "emissiveMap") 
-                uniformName += "EmissiveMap";
-            else if (textureName == "specularGlossinessMap") 
-                uniformName += "SpecularGlossinessMap";
             
-            material->setBool(uniformName, true);
-            
-        //GE_CORE_INFO("glTF2Loader: Successfully loaded texture '{}' for material '{}'", 
-        //   texturePath, material->getName());
+            return true;
+        }
         
-        return true; // Return true to indicate the texture was queued for loading
+        return false;
     }
-    return false;
-}
+
     // Animation loading methods
     std::vector<std::shared_ptr<Animation>> glTF2Loader::loadAnimations(const std::string& filepath, bool isAbsolute) {
         // Reset state to ensure clean loading

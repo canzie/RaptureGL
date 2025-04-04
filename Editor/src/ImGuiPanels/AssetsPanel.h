@@ -18,8 +18,7 @@ struct FileItem {
 // Define view modes for the assets panel
 enum class AssetViewMode {
     Files,
-    Materials,
-    Textures
+    Assets
 };
 
 class AssetsPanel {
@@ -35,12 +34,12 @@ private:
     void displayNavigationBar();
     void displayFileList();
     void displaySidebarPanel();
-    void displayMaterialsList();
-    void displayTexturesList();
+    void displayAssetsList();
     
     std::string m_rootDirectory;
     std::string m_currentDirectory;
     std::vector<FileItem> m_fileItems;
     AssetViewMode m_currentViewMode = AssetViewMode::Files;
+    bool m_showLoadedAssetsOnly = false;
 };
 

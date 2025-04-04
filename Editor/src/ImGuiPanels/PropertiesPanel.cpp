@@ -581,7 +581,7 @@ void PropertiesPanel::drawMaterialTextures(std::shared_ptr<Rapture::Entity> enti
             if (materialComp.material->hasParameter(paramName)) {
                 const auto& param = materialComp.material->getParameter(paramName);
                 if (param.getType() == Rapture::MaterialParameterType::TEXTURE2D) {
-                    auto texture = param.asTexture();
+                    auto texture = param.asTexture().lock();
                     if (texture) {
                         textures.push_back({paramName, texture});
                     }
@@ -617,7 +617,7 @@ void PropertiesPanel::drawMaterialTextures(std::shared_ptr<Rapture::Entity> enti
             if (!selectedTextureName.empty() && materialComp.material->hasParameter(selectedTextureName)) {
                 const auto& param = materialComp.material->getParameter(selectedTextureName);
                 if (param.getType() == Rapture::MaterialParameterType::TEXTURE2D) {
-                    auto texture = param.asTexture();
+                    auto texture = param.asTexture().lock();
                     if (texture) {
                         ImGui::Text("Preview: %s", selectedTextureName.c_str());
                         

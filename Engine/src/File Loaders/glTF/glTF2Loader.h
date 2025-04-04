@@ -157,6 +157,7 @@ namespace Rapture
 		 * @return true if the texture was loaded and set successfully
 		 */
 		bool loadAndSetTexture(std::shared_ptr<Material> material, const std::string& textureName, int textureIndex);
+		bool loadAndSetTexture(std::shared_ptr<Material> material, ParameterID paramID, int textureIndex);
 
         /**
          * @brief Process a PBR material and create a Material from the JSON data

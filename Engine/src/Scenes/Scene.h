@@ -7,6 +7,7 @@
 #include "../Textures/Texture.h"
 #include "../Renderer/PrimitiveShapes.h"
 #include "../Materials/Material.h"
+#include "../AssetsManager/AssetManager.h"
 
 namespace Rapture
 {
@@ -25,7 +26,7 @@ namespace Rapture
 
     struct SkyBox {
 
-        std::vector<std::string> texturePaths;
+        std::vector<std::filesystem::path> texturePaths;
         std::shared_ptr<Texture2D> texture;
         Cube skybox;
 
@@ -34,19 +35,21 @@ namespace Rapture
             skybox = Cube(true);
         }
 
-        SkyBox(std::vector<std::string> texturePaths)
+        SkyBox(std::vector<std::filesystem::path> texturePaths)
         {
             this->texturePaths = texturePaths;
-            texture = TextureLibrary::loadCubemap(texturePaths);
+            //texture = TextureLibrary::loadCubemap(texturePaths);
+            auto [asset, handle] = AssetManager::importAsset<Texture2D>(texturePaths);
             skybox = Cube(true);
-            skybox.getMaterial()->setTexture("skybox", texture);
+            skybox.getMaterial()->setTexture("skybox", asset, handle);
         }
 
-        void setTexturePaths(std::vector<std::string> texturePaths)
+        void setTexturePaths(std::vector<std::filesystem::path> texturePaths)
         {
             this->texturePaths = texturePaths;
-            texture = TextureLibrary::loadCubemap(texturePaths);
-            skybox.getMaterial()->setTexture("skybox", texture);
+            //texture = TextureLibrary::loadCubemap(texturePaths);
+            auto [asset, handle] = AssetManager::importAsset<Texture2D>(texturePaths);
+            skybox.getMaterial()->setTexture("skybox", asset, handle);
         }
         
     };

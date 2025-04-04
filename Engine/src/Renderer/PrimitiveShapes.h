@@ -86,4 +86,24 @@ namespace Rapture {
             std::shared_ptr<Material> m_material;
     };  
 
+    class Sphere {
+        public:
+            Sphere(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color, bool filled = false);
+            // New constructor with texture path
+            Sphere(glm::vec4 color, const std::string& texturePath);
+            Sphere(glm::vec3 scale, bool filled, const std::shared_ptr<Material>& material);
+
+            void setMaterial(const std::shared_ptr<Material>& material);
+            std::shared_ptr<Material> getMaterial() const { return m_material; }
+
+        private:
+            glm::vec3 m_position;
+            glm::vec3 m_rotation;
+            glm::vec3 m_scale;
+            glm::vec4 m_color;
+            bool m_filled;
+            std::shared_ptr<Mesh> m_mesh;
+            std::shared_ptr<Material> m_material;
+    };
+
 }

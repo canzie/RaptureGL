@@ -77,82 +77,145 @@ namespace Rapture
 		return (m_renderFlags & (1 << static_cast<int>(flag))) != 0;
 	}
 
+	void Material::setFloat(ParameterID id, float value)
+	{
+		m_parameters[id] = MaterialParameter::createFloat(value);
+		markDirty();
+	}
+
+	void Material::setInt(ParameterID id, int value)
+	{
+		m_parameters[id] = MaterialParameter::createInt(value);
+		markDirty();
+	}
+
+	void Material::setBool(ParameterID id, bool value)
+	{
+		m_parameters[id] = MaterialParameter::createBool(value);
+		markDirty();
+	}
+
+	void Material::setVec2(ParameterID id, const glm::vec2& value)
+	{
+		m_parameters[id] = MaterialParameter::createVec2(value);
+		markDirty();
+	}
+
+	void Material::setVec3(ParameterID id, const glm::vec3& value)
+	{
+		m_parameters[id] = MaterialParameter::createVec3(value);
+		markDirty();
+	}
+
+	void Material::setVec4(ParameterID id, const glm::vec4& value)
+	{
+		m_parameters[id] = MaterialParameter::createVec4(value);
+		markDirty();
+	}
+
+	void Material::setMat3(ParameterID id, const glm::mat3& value)
+	{
+		m_parameters[id] = MaterialParameter::createMat3(value);
+		markDirty();
+	}
+
+	void Material::setMat4(ParameterID id, const glm::mat4& value)
+	{
+		m_parameters[id] = MaterialParameter::createMat4(value);
+		markDirty();
+	}
+
+	void Material::setTexture(ParameterID id, std::shared_ptr<Texture2D> texture, AssetHandle handle)
+	{
+		m_parameters[id] = MaterialParameter::createTexture(texture, handle);
+		markDirty();
+	}
+
+	void Material::setParameter(ParameterID id, const MaterialParameter& parameter)
+	{
+		m_parameters[id] = parameter;
+		markDirty();
+	}
+
+	bool Material::hasParameter(ParameterID id) const
+	{
+		RAPTURE_PROFILE_SCOPE("Material hasParameter");
+		return m_parameters.find(id) != m_parameters.end();
+	}
+
+	const MaterialParameter& Material::getParameter(ParameterID id) const
+	{
+		RAPTURE_PROFILE_SCOPE("Material getParameter");
+		static MaterialParameter s_defaultParameter;
+		auto it = m_parameters.find(id);
+		if (it != m_parameters.end()) {
+			return it->second;
+		}
+		GE_CORE_WARN("Material parameter '{0}' not found in material '{1}'", static_cast<uint16_t>(id), m_name);
+		return s_defaultParameter;
+	}
+
+	// String-based parameter methods now delegate to the ID-based methods
 	void Material::setFloat(const std::string& name, float value)
 	{
-		m_parameters[name] = MaterialParameter::createFloat(value);
-		markDirty();
+		setFloat(StringToParameterID(name), value);
 	}
 
 	void Material::setInt(const std::string& name, int value)
 	{
-		m_parameters[name] = MaterialParameter::createInt(value);
-		markDirty();
+		setInt(StringToParameterID(name), value);
 	}
 
 	void Material::setBool(const std::string& name, bool value)
 	{
-		m_parameters[name] = MaterialParameter::createBool(value);
-		markDirty();
+		setBool(StringToParameterID(name), value);
 	}
 
 	void Material::setVec2(const std::string& name, const glm::vec2& value)
 	{
-		m_parameters[name] = MaterialParameter::createVec2(value);
-		markDirty();
+		setVec2(StringToParameterID(name), value);
 	}
 
 	void Material::setVec3(const std::string& name, const glm::vec3& value)
 	{
-		m_parameters[name] = MaterialParameter::createVec3(value);
-		markDirty();
+		setVec3(StringToParameterID(name), value);
 	}
 
 	void Material::setVec4(const std::string& name, const glm::vec4& value)
 	{
-		m_parameters[name] = MaterialParameter::createVec4(value);
-		markDirty();
+		setVec4(StringToParameterID(name), value);
 	}
 
 	void Material::setMat3(const std::string& name, const glm::mat3& value)
 	{
-		m_parameters[name] = MaterialParameter::createMat3(value);
-		markDirty();
+		setMat3(StringToParameterID(name), value);
 	}
 
 	void Material::setMat4(const std::string& name, const glm::mat4& value)
 	{
-		m_parameters[name] = MaterialParameter::createMat4(value);
-		markDirty();
+		setMat4(StringToParameterID(name), value);
 	}
 
-	void Material::setTexture(const std::string& name, std::shared_ptr<Texture2D> texture)
+	void Material::setTexture(const std::string& name, std::shared_ptr<Texture2D> texture, AssetHandle handle)
 	{
-		m_parameters[name] = MaterialParameter::createTexture(texture);
-		markDirty();
+		setTexture(StringToParameterID(name), texture, handle);
 	}
 
 	void Material::setParameter(const std::string& name, const MaterialParameter& parameter)
 	{
-		m_parameters[name] = parameter;
-		markDirty();
+		setParameter(StringToParameterID(name), parameter);
 	}
 
 	bool Material::hasParameter(const std::string& name) const
 	{
-        RAPTURE_PROFILE_SCOPE("Material hasParameter");
-		return m_parameters.find(name) != m_parameters.end();
+		RAPTURE_PROFILE_SCOPE("Material hasParameter");
+		return hasParameter(StringToParameterID(name));
 	}
 
 	const MaterialParameter& Material::getParameter(const std::string& name) const
 	{
-        RAPTURE_PROFILE_SCOPE("Material getParameter");
-		static MaterialParameter s_defaultParameter;
-		auto it = m_parameters.find(name);
-		if (it != m_parameters.end()) {
-			return it->second;
-		}
-		GE_CORE_WARN("Material parameter '{0}' not found in material '{1}'", name, m_name);
-		return s_defaultParameter;
+		RAPTURE_PROFILE_SCOPE("Material getParameter");
+		return getParameter(StringToParameterID(name));
 	}
 
 	void Material::bind()
@@ -178,9 +241,9 @@ namespace Rapture
 		// Unbind all textures in the material parameters
 		for (const auto& [name, param] : m_parameters) {
 			if (param.getType() == MaterialParameterType::TEXTURE2D) {
-				std::shared_ptr<Texture2D> texture = param.asTexture();
-				if (texture) {
-					texture->unbind();
+				std::weak_ptr<Texture2D> texture = param.asTexture();
+				if (auto tex = texture.lock()) {
+					tex->unbind();
 				}
 			}
 		}
@@ -233,96 +296,95 @@ namespace Rapture
 	void PBRMaterial::bindData()
 	{
 		RAPTURE_PROFILE_GPU_SCOPE("PBR Material Bind Data");
-        RAPTURE_PROFILE_SCOPE("PBR Material Bind Data");
+		RAPTURE_PROFILE_SCOPE("PBR Material Bind Data");
 
 		if (!m_uniformBuffer) {
 			GE_CORE_ERROR("PBR material {0} has no uniform buffer!", m_name);
 			return;
 		}
-        {
-            RAPTURE_PROFILE_SCOPE("PBR Material Uniform Data Update");
-            RAPTURE_PROFILE_GPU_SCOPE("PBR Material Uniform Data Update");
-            
-		// Update uniform data from parameters
-		if (m_isDirty && hasParameter("baseColor") ) {
-			m_uniformData.baseColorFactor = getParameter("baseColor").asVec4();
-		}
-		if (m_isDirty && hasParameter("roughness") ) {
-			m_uniformData.roughnessFactor = getParameter("roughness").asFloat();
-		}
-		if (m_isDirty && hasParameter("metallic") ) {
-			m_uniformData.metallicFactor = getParameter("metallic").asFloat();
-		}
-		if (m_isDirty && hasParameter("specular") ) {
-			m_uniformData.specularFactor = getParameter("specular").asFloat();
-		}
-        }
-        
-        {
-            RAPTURE_PROFILE_SCOPE("PBR Material Uniform Texture bindings");
-            RAPTURE_PROFILE_GPU_SCOPE("PBR Material Uniform Texture bindings");
-
-        // Reset texture flags
-        uint32_t textureFlags = 0;
-
-        // Bind all PBR textures to their respective slots and update flags
-        if (hasParameter("albedoMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("albedoMap").asTexture();
-            if (texture) {
-                texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
-                textureFlags |= PBRTextureFlags::ALBEDO_MAP;
-            }
-        }
-        
-        if (hasParameter("normalMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("normalMap").asTexture();
-            if (texture) {
-                texture->bind(static_cast<uint32_t>(TextureActiveSlot::NORMAL));
-                textureFlags |= PBRTextureFlags::NORMAL_MAP;
-            }
-        }
-        
-        if (hasParameter("metallicMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("metallicMap").asTexture();
-            if (texture) {
-                texture->bind(static_cast<uint32_t>(TextureActiveSlot::METALLIC));
-                textureFlags |= PBRTextureFlags::METALLIC_MAP;
-            }
-        }
-        
-        if (hasParameter("roughnessMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("roughnessMap").asTexture();
-            if (texture) {
-                texture->bind(static_cast<uint32_t>(TextureActiveSlot::ROUGHNESS));
-                textureFlags |= PBRTextureFlags::ROUGHNESS_MAP;
-            }
-        }
-        
-        if (hasParameter("aoMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("aoMap").asTexture();
-            if (texture) {
-                texture->bind(static_cast<uint32_t>(TextureActiveSlot::AO));
-                textureFlags |= PBRTextureFlags::AO_MAP;
-            }
-        }
-        
-        if (hasParameter("emissiveMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("emissiveMap").asTexture();
-            if (texture) {
-                texture->bind(static_cast<uint32_t>(TextureActiveSlot::EMISSION));
-                textureFlags |= PBRTextureFlags::EMISSIVE_MAP;
-            }
-        }
-
-            // Store the texture flags in the uniform data
-            if (m_uniformData.flags != textureFlags) setTextureFlags(textureFlags);
-
-        }
-
 		{
-            RAPTURE_PROFILE_GPU_SCOPE("PBR Material UBO binding");
-            RAPTURE_PROFILE_SCOPE("PBR Material UBO binding");
+			RAPTURE_PROFILE_SCOPE("PBR Material Uniform Data Update");
+			RAPTURE_PROFILE_GPU_SCOPE("PBR Material Uniform Data Update");
+			
+			// Update uniform data from parameters using enum keys
+			if (m_isDirty && hasParameter(ParameterID::BASE_COLOR)) {
+				m_uniformData.baseColorFactor = getParameter(ParameterID::BASE_COLOR).asVec4();
+			}
+			if (m_isDirty && hasParameter(ParameterID::ROUGHNESS)) {
+				m_uniformData.roughnessFactor = getParameter(ParameterID::ROUGHNESS).asFloat();
+			}
+			if (m_isDirty && hasParameter(ParameterID::METALLIC)) {
+				m_uniformData.metallicFactor = getParameter(ParameterID::METALLIC).asFloat();
+			}
+			if (m_isDirty && hasParameter(ParameterID::SPECULAR)) {
+				m_uniformData.specularFactor = getParameter(ParameterID::SPECULAR).asFloat();
+			}
+		}
+		
+		{
+			RAPTURE_PROFILE_SCOPE("PBR Material Uniform Texture bindings");
+			RAPTURE_PROFILE_GPU_SCOPE("PBR Material Uniform Texture bindings");
 
+			// Reset texture flags
+			uint32_t textureFlags = 0;
+
+			// Bind all PBR textures to their respective slots and update flags
+			if (hasParameter(ParameterID::TEXTURE_ALBEDO)) {
+                
+				std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_ALBEDO).asTexture().lock();
+				if (texture) {
+					texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
+					textureFlags |= PBRTextureFlags::ALBEDO_MAP;
+				}
+			}
+			
+			if (hasParameter(ParameterID::TEXTURE_NORMAL)) {
+				std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_NORMAL).asTexture().lock();
+				if (texture) {
+					texture->bind(static_cast<uint32_t>(TextureActiveSlot::NORMAL));
+					textureFlags |= PBRTextureFlags::NORMAL_MAP;
+				}
+			}
+			
+			if (hasParameter(ParameterID::TEXTURE_METALLIC)) {
+				std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_METALLIC).asTexture().lock();
+				if (texture) {
+					texture->bind(static_cast<uint32_t>(TextureActiveSlot::METALLIC));
+					textureFlags |= PBRTextureFlags::METALLIC_MAP;
+				}
+			}
+			
+			if (hasParameter(ParameterID::TEXTURE_ROUGHNESS)) {
+				std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_ROUGHNESS).asTexture().lock();
+				if (texture) {
+					texture->bind(static_cast<uint32_t>(TextureActiveSlot::ROUGHNESS));
+					textureFlags |= PBRTextureFlags::ROUGHNESS_MAP;
+				}
+			}
+			
+			if (hasParameter(ParameterID::TEXTURE_AO)) {
+				std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_AO).asTexture().lock();
+				if (texture) {
+					texture->bind(static_cast<uint32_t>(TextureActiveSlot::AO));
+					textureFlags |= PBRTextureFlags::AO_MAP;
+				}
+			}
+			
+			if (hasParameter(ParameterID::TEXTURE_EMISSIVE)) {
+				std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_EMISSIVE).asTexture().lock();
+				if (texture) {
+					texture->bind(static_cast<uint32_t>(TextureActiveSlot::EMISSION));
+					textureFlags |= PBRTextureFlags::EMISSIVE_MAP;
+				}
+			}
+
+			// Update texture flags in uniform data
+			if (m_uniformData.flags != textureFlags) {
+				m_uniformData.flags = textureFlags;
+				markDirty();
+			}
+		}
+		
 		// Explicitly bind UBO to binding point before updating
 		m_uniformBuffer->bindBase(PBR_BINDING_POINT_IDX);
 		
@@ -330,23 +392,13 @@ namespace Rapture
 		if (m_isDirty) {
 			// Now update the data
 			m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
-
 			// Force flush to ensure data is sent to GPU
 			m_uniformBuffer->flush();
 			// Reset the dirty flag
 			m_isDirty = false;
 		}
-
-        }
 	}
 
-        
-    void PBRMaterial::setTextureFlags(uint32_t flags)
-    {
-        m_uniformData.flags = flags;
-        markDirty();
-
-    }
 
     // default constructor
 	PhongMaterial::PhongMaterial()
@@ -400,17 +452,17 @@ namespace Rapture
 			return;
 		}
 		
-		// Update uniform data from parameters
-		if (hasParameter("flux"))
-			m_uniformData.flux = getParameter("flux").asFloat();
-		if (hasParameter("diffuseColor"))
-			m_uniformData.diffuseColor = getParameter("diffuseColor").asVec4();
-		if (hasParameter("specularColor"))
-			m_uniformData.specularColor = getParameter("specularColor").asVec4();
-		if (hasParameter("ambientLight"))
-			m_uniformData.ambientLight = getParameter("ambientLight").asVec4();
-		if (hasParameter("shininess"))
-			m_uniformData.shininess = getParameter("shininess").asFloat();
+		// Update uniform data from parameters using enum keys
+		if (hasParameter(ParameterID::FLUX))
+			m_uniformData.flux = getParameter(ParameterID::FLUX).asFloat();
+		if (hasParameter(ParameterID::DIFFUSE_COLOR))
+			m_uniformData.diffuseColor = getParameter(ParameterID::DIFFUSE_COLOR).asVec4();
+		if (hasParameter(ParameterID::SPECULAR_COLOR))
+			m_uniformData.specularColor = getParameter(ParameterID::SPECULAR_COLOR).asVec4();
+		if (hasParameter(ParameterID::AMBIENT_LIGHT))
+			m_uniformData.ambientLight = getParameter(ParameterID::AMBIENT_LIGHT).asVec4();
+		if (hasParameter(ParameterID::SHININESS))
+			m_uniformData.shininess = getParameter(ParameterID::SHININESS).asFloat();
 		
 		// Explicitly bind UBO to binding point before updating
 		m_uniformBuffer->bindBase(PHONG_BINDING_POINT_IDX);
@@ -470,29 +522,29 @@ namespace Rapture
 			return;
 		}
 		
-		// Update uniform data from parameters
-		if (hasParameter("color")) {
-			glm::vec3 color = getParameter("color").asVec3();
+		// Update uniform data from parameters using enum keys
+		if (hasParameter(ParameterID::BASE_COLOR)) {
+			glm::vec3 color = getParameter(ParameterID::BASE_COLOR).asVec3();
 			m_uniformData.baseColorFactor = glm::vec4(color, 1.0f);
 		}
-        // Bind all PBR textures to their respective slots
-        if (hasParameter("albedoMap")) {
-            
-            std::shared_ptr<Texture2D> texture = getParameter("albedoMap").asTexture();
-            if (texture) {
-                texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
-                m_shader->setInt("u_AlbedoMap", static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
-                m_shader->setBool("u_HasAlbedoMap", true);
-            } else {
-                m_shader->setBool("u_HasAlbedoMap", false);
-            }
-        } else {
-            m_shader->setBool("u_HasAlbedoMap", false);
-        }
+		// Bind all PBR textures to their respective slots
+		if (hasParameter(ParameterID::TEXTURE_ALBEDO)) {
+			
+			std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_ALBEDO).asTexture().lock();
+			if (texture) {
+				texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
+				m_shader->setInt("u_AlbedoMap", static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
+				m_shader->setBool("u_HasAlbedoMap", true);
+			} else {
+				m_shader->setBool("u_HasAlbedoMap", false);
+			}
+		} else {
+			m_shader->setBool("u_HasAlbedoMap", false);
+		}
 
 
-		if (hasParameter("normalMap")) {
-			std::shared_ptr<Texture2D> texture = getParameter("normalMap").asTexture();
+		if (hasParameter(ParameterID::TEXTURE_NORMAL)) {
+			std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_NORMAL).asTexture().lock();
 			if (texture) {
 				texture->bind(static_cast<uint32_t>(TextureActiveSlot::NORMAL));
 			}
@@ -544,9 +596,10 @@ namespace Rapture
             SPECULAR_GLOSSINESS_BINDING_POINT_IDX);
         
         m_uniformData.diffuseFactor = glm::vec4(diffuseColor, 1.0f);
-        m_uniformData.specularFactor = glm::vec4(specularColor, glossiness);
-        m_uniformData.flags = 0.0f;
-        
+        m_uniformData.glossinessFactor = glossiness;
+        m_uniformData.specularFactor = glm::vec4(specularColor, 1.0f);
+        m_uniformData.flags = 0;
+
         // Store as parameters for serialization/deserialization
         setVec3("diffuseColor", diffuseColor);
         setVec3("specularColor", specularColor);
@@ -561,86 +614,67 @@ namespace Rapture
             return;
         }
         
-        // Update uniform data from parameters
-        if (hasParameter("diffuseColor")) {
-            glm::vec3 diffuse = getParameter("diffuseColor").asVec3();
+        // Update uniform data from parameters using enum keys
+        if (m_isDirty && hasParameter(ParameterID::DIFFUSE_COLOR)) {
+            glm::vec3 diffuse = getParameter(ParameterID::DIFFUSE_COLOR).asVec3();
             m_uniformData.diffuseFactor = glm::vec4(diffuse, m_uniformData.diffuseFactor.a);
         }
         
-        if (hasParameter("specularColor")) {
-            glm::vec3 specular = getParameter("specularColor").asVec3();
+        if (m_isDirty && hasParameter(ParameterID::SPECULAR_COLOR)) {
+            glm::vec3 specular = getParameter(ParameterID::SPECULAR_COLOR).asVec3();
             m_uniformData.specularFactor = glm::vec4(specular, m_uniformData.specularFactor.a);
         }
         
-        if (hasParameter("glossiness")) {
-            float glossiness = getParameter("glossiness").asFloat();
+        if (m_isDirty && hasParameter(ParameterID::SHININESS)) {
+            float glossiness = getParameter(ParameterID::SHININESS).asFloat();
             m_uniformData.specularFactor.a = glossiness;
         }
         
+        uint32_t flags = 0;
         // Bind textures
-        if (hasParameter("diffuseMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("diffuseMap").asTexture();
+        if (hasParameter(ParameterID::TEXTURE_DIFFUSE)) {
+            std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_DIFFUSE).asTexture().lock();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
-                m_shader->setInt("u_DiffuseMap", static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
-                m_shader->setBool("u_HasDiffuseMap", true);
-            } else {
-                m_shader->setBool("u_HasDiffuseMap", false);
+                flags |= SpecularGlossinessTextureFlags::DIFFUSE_MAP;
             }
-        } else {
-            m_shader->setBool("u_HasDiffuseMap", false);
-        }
+        } 
         
-        if (hasParameter("specularGlossinessMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("specularGlossinessMap").asTexture();
+        if (hasParameter(ParameterID::TEXTURE_SPECULAR)) {
+            std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_SPECULAR).asTexture().lock();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::SPECULAR));
-                m_shader->setInt("u_SpecularGlossinessMap", static_cast<uint32_t>(TextureActiveSlot::SPECULAR));
-                m_shader->setBool("u_HasSpecularGlossinessMap", true);
-            } else {
-                m_shader->setBool("u_HasSpecularGlossinessMap", false);
-            }
-        } else {
-            m_shader->setBool("u_HasSpecularGlossinessMap", false);
-        }
+                flags |= SpecularGlossinessTextureFlags::SPEC_GLOSS_MAP;
+            } 
+        } 
 
-        if (hasParameter("normalMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("normalMap").asTexture();
+        if (hasParameter(ParameterID::TEXTURE_NORMAL)) {
+            std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_NORMAL).asTexture().lock();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::NORMAL));
-                m_shader->setInt("u_NormalMap", static_cast<uint32_t>(TextureActiveSlot::NORMAL));
-                m_shader->setBool("u_HasNormalMap", true);
-            } else {
-                m_shader->setBool("u_HasNormalMap", false);
-            }
-        } else {
-            m_shader->setBool("u_HasNormalMap", false);
-        }
+                flags |= SpecularGlossinessTextureFlags::NORMAL_MAP;
+            } 
+        } 
         
-        if (hasParameter("aoMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("aoMap").asTexture();
+        if (hasParameter(ParameterID::TEXTURE_AO)) {
+            std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_AO).asTexture().lock();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::AO));
-                m_shader->setInt("u_AOMap", static_cast<uint32_t>(TextureActiveSlot::AO));
-                m_shader->setBool("u_HasAOMap", true);
-            } else {
-                m_shader->setBool("u_HasAOMap", false);
-            }
-        } else {
-            m_shader->setBool("u_HasAOMap", false);
+                flags |= SpecularGlossinessTextureFlags::AO_MAP;
+            } 
         }
         
-        if (hasParameter("emissiveMap")) {
-            std::shared_ptr<Texture2D> texture = getParameter("emissiveMap").asTexture();
+        if (hasParameter(ParameterID::TEXTURE_EMISSIVE)) {
+            std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_EMISSIVE).asTexture().lock();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::EMISSION));
-                m_shader->setInt("u_EmissiveMap", static_cast<uint32_t>(TextureActiveSlot::EMISSION));
-                m_shader->setBool("u_HasEmissiveMap", true);
-            } else {
-                m_shader->setBool("u_HasEmissiveMap", false);
-            }
-        } else {
-            m_shader->setBool("u_HasEmissiveMap", false);
+                flags |= SpecularGlossinessTextureFlags::EMISSIVE_MAP;
+            } 
+        }
+
+        if (m_uniformData.flags != flags) {
+            m_uniformData.flags = flags;
+            markDirty();
         }
         
         // Explicitly bind UBO to binding point before updating
@@ -662,24 +696,23 @@ namespace Rapture
         setShader(s_shader);
     }
 
-    CubeMapMaterial::CubeMapMaterial(std::shared_ptr<Texture2D> skybox)
+    CubeMapMaterial::CubeMapMaterial(std::shared_ptr<Texture2D> skybox, AssetHandle handle)
     : Material(MaterialType::CUBE_MAP, "CubeMap_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
     {
         setShader(s_shader);
 
-        setTexture("skybox", skybox);
+        setTexture(ParameterID::TEXTURE_CUBEMAP, skybox, handle);
 
     }
 
     void CubeMapMaterial::bindData()
     {
-
-        if (hasParameter("skybox")) {
-            std::shared_ptr<Texture2D> texture = getParameter("skybox").asTexture();
+        // Bind the skybox texture to texture slot 0
+        if (hasParameter(ParameterID::TEXTURE_CUBEMAP)) {
+            std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_CUBEMAP).asTexture().lock();
             if (texture) {
                 texture->bind(static_cast<uint32_t>(TextureActiveSlot::CUBEMAP));
             }
         }
-
     }
 }

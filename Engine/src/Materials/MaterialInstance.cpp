@@ -26,88 +26,153 @@ MaterialInstance::MaterialInstance(const std::shared_ptr<Material>& material, co
     }
 }
 
-void MaterialInstance::setFloat(const std::string& name, float value)
+void MaterialInstance::setFloat(ParameterID id, float value)
 {
-    m_parameterOverrides[name] = MaterialParameter::createFloat(value);
+    m_parameterOverrides[id] = MaterialParameter::createFloat(value);
     if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
-void MaterialInstance::setInt(const std::string& name, int value)
+void MaterialInstance::setInt(ParameterID id, int value)
 {
-    m_parameterOverrides[name] = MaterialParameter::createInt(value);
+    m_parameterOverrides[id] = MaterialParameter::createInt(value);
     if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
-void MaterialInstance::setBool(const std::string& name, bool value)
+void MaterialInstance::setBool(ParameterID id, bool value)
 {
-    m_parameterOverrides[name] = MaterialParameter::createBool(value);
+    m_parameterOverrides[id] = MaterialParameter::createBool(value);
     if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
-void MaterialInstance::setVec2(const std::string& name, const glm::vec2& value)
+void MaterialInstance::setVec2(ParameterID id, const glm::vec2& value)
 {
-    m_parameterOverrides[name] = MaterialParameter::createVec2(value);
+    m_parameterOverrides[id] = MaterialParameter::createVec2(value);
     if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
-void MaterialInstance::setVec3(const std::string& name, const glm::vec3& value)
+void MaterialInstance::setVec3(ParameterID id, const glm::vec3& value)
 {
-    m_parameterOverrides[name] = MaterialParameter::createVec3(value);
+    m_parameterOverrides[id] = MaterialParameter::createVec3(value);
     if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
-void MaterialInstance::setVec4(const std::string& name, const glm::vec4& value)
+void MaterialInstance::setVec4(ParameterID id, const glm::vec4& value)
 {
-    m_parameterOverrides[name] = MaterialParameter::createVec4(value);
+    m_parameterOverrides[id] = MaterialParameter::createVec4(value);
     if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
-void MaterialInstance::setMat3(const std::string& name, const glm::mat3& value)
+void MaterialInstance::setMat3(ParameterID id, const glm::mat3& value)
 {
-    m_parameterOverrides[name] = MaterialParameter::createMat3(value);
+    m_parameterOverrides[id] = MaterialParameter::createMat3(value);
     if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
-void MaterialInstance::setMat4(const std::string& name, const glm::mat4& value)
+void MaterialInstance::setMat4(ParameterID id, const glm::mat4& value)
 {
-    m_parameterOverrides[name] = MaterialParameter::createMat4(value);
+    m_parameterOverrides[id] = MaterialParameter::createMat4(value);
     if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
-void MaterialInstance::setTexture(const std::string& name, std::shared_ptr<Texture2D> texture)
+void MaterialInstance::setTexture(ParameterID id, std::shared_ptr<Texture2D> texture, AssetHandle handle)
 {
-    m_parameterOverrides[name] = MaterialParameter::createTexture(texture);
+    m_parameterOverrides[id] = MaterialParameter::createTexture(texture, handle);
     if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
-void MaterialInstance::setParameter(const std::string& name, const MaterialParameter& parameter)
+void MaterialInstance::setParameter(ParameterID id, const MaterialParameter& parameter)
 {
-    m_parameterOverrides[name] = parameter;
+    m_parameterOverrides[id] = parameter;
     if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
-bool MaterialInstance::hasParameterOverride(const std::string& name) const
+bool MaterialInstance::hasParameterOverride(ParameterID id) const
 {
-    return m_parameterOverrides.find(name) != m_parameterOverrides.end();
+    return m_parameterOverrides.find(id) != m_parameterOverrides.end();
 }
 
-const MaterialParameter& MaterialInstance::getParameterOverride(const std::string& name) const
+const MaterialParameter& MaterialInstance::getParameterOverride(ParameterID id) const
 {
     static MaterialParameter s_defaultParameter;
-    auto it = m_parameterOverrides.find(name);
+    auto it = m_parameterOverrides.find(id);
     if (it != m_parameterOverrides.end()) {
         return it->second;
     }
     return s_defaultParameter;
 }
 
-void MaterialInstance::clearParameterOverride(const std::string& name)
+void MaterialInstance::clearParameterOverride(ParameterID id)
 {
-    auto it = m_parameterOverrides.find(name);
+    auto it = m_parameterOverrides.find(id);
     if (it != m_parameterOverrides.end()) {
         m_parameterOverrides.erase(it);
         if (m_baseMaterial) m_baseMaterial->markAsDirty();
     }
+}
+
+void MaterialInstance::setFloat(const std::string& name, float value)
+{
+    setFloat(StringToParameterID(name), value);
+}
+
+void MaterialInstance::setInt(const std::string& name, int value)
+{
+    setInt(StringToParameterID(name), value);
+}
+
+void MaterialInstance::setBool(const std::string& name, bool value)
+{
+    setBool(StringToParameterID(name), value);
+}
+
+void MaterialInstance::setVec2(const std::string& name, const glm::vec2& value)
+{
+    setVec2(StringToParameterID(name), value);
+}
+
+void MaterialInstance::setVec3(const std::string& name, const glm::vec3& value)
+{
+    setVec3(StringToParameterID(name), value);
+}
+
+void MaterialInstance::setVec4(const std::string& name, const glm::vec4& value)
+{
+    setVec4(StringToParameterID(name), value);
+}
+
+void MaterialInstance::setMat3(const std::string& name, const glm::mat3& value)
+{
+    setMat3(StringToParameterID(name), value);
+}
+
+void MaterialInstance::setMat4(const std::string& name, const glm::mat4& value)
+{
+    setMat4(StringToParameterID(name), value);
+}
+
+void MaterialInstance::setTexture(const std::string& name, std::shared_ptr<Texture2D> texture, AssetHandle handle)
+{
+    setTexture(StringToParameterID(name), texture, handle);
+}
+
+void MaterialInstance::setParameter(const std::string& name, const MaterialParameter& parameter)
+{
+    setParameter(StringToParameterID(name), parameter);
+}
+
+bool MaterialInstance::hasParameterOverride(const std::string& name) const
+{
+    return hasParameterOverride(StringToParameterID(name));
+}
+
+const MaterialParameter& MaterialInstance::getParameterOverride(const std::string& name) const
+{
+    return getParameterOverride(StringToParameterID(name));
+}
+
+void MaterialInstance::clearParameterOverride(const std::string& name)
+{
+    clearParameterOverride(StringToParameterID(name));
 }
 
 void MaterialInstance::bind()
@@ -152,31 +217,31 @@ void MaterialInstance::bind()
         for (const auto& [name, parameter] : m_parameterOverrides) {
             switch (parameter.getType()) {
                 case MaterialParameterType::FLOAT:
-                    shader->setFloat(name, parameter.asFloat());
+                    shader->setFloat(ParameterIDToString(name), parameter.asFloat());
                     break;
                 case MaterialParameterType::INT:
-                    shader->setInt(name, parameter.asInt());
+                    shader->setInt(ParameterIDToString(name), parameter.asInt());
                     break;
                 case MaterialParameterType::BOOL:
-                    shader->setBool(name, parameter.asBool());
+                    shader->setBool(ParameterIDToString(name), parameter.asBool());
                     break;
                 case MaterialParameterType::VEC2:
-                    shader->setVec2(name, parameter.asVec2());
+                    shader->setVec2(ParameterIDToString(name), parameter.asVec2());
                     break;
                 case MaterialParameterType::VEC3:
-                    shader->setVec3(name, parameter.asVec3());
+                    shader->setVec3(ParameterIDToString(name), parameter.asVec3());
                     break;
                 case MaterialParameterType::VEC4:
-                    shader->setVec4(name, parameter.asVec4());
+                    shader->setVec4(ParameterIDToString(name), parameter.asVec4());
                     break;
                 case MaterialParameterType::MAT3:
-                    shader->setMat3(name, parameter.asMat3());
+                    shader->setMat3(ParameterIDToString(name), parameter.asMat3());
                     break;
                 case MaterialParameterType::MAT4:
-                    shader->setMat4(name, parameter.asMat4());
+                    shader->setMat4(ParameterIDToString(name), parameter.asMat4());
                     break;
                 case MaterialParameterType::TEXTURE2D:
-                    shader->setTexture(name, parameter.asTexture());
+                    shader->setTexture(ParameterIDToString(name), parameter.asTexture().lock());
                     break;
                 default:
                     break;

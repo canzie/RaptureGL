@@ -16,6 +16,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+
 namespace Rapture
 {
 
@@ -43,6 +44,7 @@ namespace Rapture
 	Frustum Renderer::s_frustum;
 	bool Renderer::s_frustumCullingEnabled = true; // Enabled by default
 	uint32_t Renderer::s_entitiesCulled = 0;
+
 
 	std::vector<Rapture::Entity> Renderer::s_visibleEntities;
 
@@ -813,4 +815,6 @@ namespace Rapture
             }
         }
     }
+
+
 }

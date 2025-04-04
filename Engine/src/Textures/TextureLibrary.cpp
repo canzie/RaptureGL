@@ -1,7 +1,6 @@
 #include "Texture.h"
 #include "../Logger/Log.h"
 #include "../Debug/TracyProfiler.h"
-#include <filesystem>
 #include <stb_image.h>
 
 namespace Rapture {
@@ -173,6 +172,22 @@ std::shared_ptr<Texture2D> TextureLibrary::loadAsync(const std::string &filepath
 
     
     return texture;
+}
+
+std::shared_ptr<Texture2D> TextureLibrary::loadAsync(const std::filesystem::path filepath)
+{
+    return loadAsync(filepath.string());
+}
+
+std::shared_ptr<Texture2D> TextureLibrary::loadCubemap(const std::vector<std::filesystem::path> &filepaths)
+{
+    RAPTURE_PROFILE_FUNCTION();
+
+    std::vector<std::string> paths;
+    for (const auto& path : filepaths) {
+        paths.push_back(path.string());
+    }
+    return loadCubemap(paths);
 }
 
 std::shared_ptr<Texture2D> TextureLibrary::loadCubemap(const std::vector<std::string> &filepaths)

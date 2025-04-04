@@ -20,6 +20,9 @@
 #include "../../Animations/Skeleton/Skeleton.h"
 #include "../../Animations/Animation.h"
 
+#include "../../AssetsManager/AssetManager.h"
+
+
 #include <vector>
 //#include <string>
 
@@ -162,7 +165,14 @@ namespace Rapture {
 
 	struct MeshComponent
 	{
+
+    private:
+        //AssetHandle m_assetHandle;
+        std::weak_ptr<Mesh> m_weakMesh;
+
+    public:
 		std::shared_ptr<Mesh> mesh;
+        
         bool isLoading = false;
 		
 		MeshComponent(std::string fname)
@@ -416,16 +426,18 @@ namespace Rapture {
         SpriteComponent(std::string texturePath)
         {
             this->texturePath = texturePath;
-            texture = TextureLibrary::loadAsync(texturePath);
+            auto [texture, handle] = AssetManager::importAsset<Texture2D>(texturePath);
+            //texture = TextureLibrary::loadAsync(texturePath);
             quad = Quad();
-            quad.getMaterial()->setTexture("albedoMap", texture);
+            quad.getMaterial()->setTexture("albedoMap", texture, handle);
         };
 
         void setTexture(std::string texturePath)
         {
             this->texturePath = texturePath;
-            texture = TextureLibrary::loadAsync(texturePath);
-            quad.getMaterial()->setTexture("albedoMap", texture);
+            auto [texture, handle] = AssetManager::importAsset<Texture2D>(texturePath);
+            //texture = TextureLibrary::loadAsync(texturePath);
+            quad.getMaterial()->setTexture("albedoMap", texture, handle);
         }
         
 

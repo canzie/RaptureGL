@@ -76,6 +76,8 @@ namespace Rapture
 		
 		uint32_t getColorAttachmentRendererID(uint32_t index = 0) const;
 		uint32_t getDepthAttachmentRendererID() const { return m_depthAttachmentID; }
+
+        void clearAttachments();
 		
 		// For backward compatibility
 		uint32_t getColorAID() const { return getColorAttachmentRendererID(); }

@@ -321,4 +321,8 @@ namespace Rapture
 		
 		return m_colorAttachments[index];
 	}
+    void Framebuffer::clearAttachments()
+    {
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    }
 }

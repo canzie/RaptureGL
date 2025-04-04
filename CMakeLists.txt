@@ -15,6 +15,14 @@ else()
     endif()
 endif()
 
+# Set MSVC diagnostic options for clearer error messages
+if(MSVC)
+    add_compile_options(
+        /FC     # Display full path of source code in diagnostics
+        /diagnostics:caret # Show column and caret location in errors
+    )
+endif()
+
 # Add subdirectories
 add_subdirectory(Engine)
 add_subdirectory(Editor) 

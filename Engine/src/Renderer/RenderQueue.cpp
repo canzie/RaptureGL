@@ -102,6 +102,54 @@ namespace Rapture {
         GE_RENDER_INFO("CommandQueueBuilder: Initialized with {} worker threads", numThreads);
     }
 
+
+
+    void CommandQueueBuilder::shutdownWorkers()
+    {
+        RAPTURE_PROFILE_FUNCTION();
+        GE_RENDER_INFO("CommandQueueBuilder: Shutting down worker threads");
+        s_shuttingDown = true;
+
+        // Check if we're already shutting down
+        if (s_shuttingDown.exchange(true)) {
+            GE_RENDER_INFO("CommandQueueBuilder: Already shutting down");
+            return;
+        }
+
+        if (s_workerThreads.size() > 0 && s_workerThreads[0].joinable()) {
+            GE_RENDER_INFO("CommandQueueBuilder: Waiting for worker thread to join");
+            for (auto& thread : s_workerThreads) {
+                if (thread.joinable()) {
+                    thread.join();
+                }
+            }
+        }
+        s_workerThreads.clear();
+
+        // Signal all threads to wake up and check the shutdown flag
+        s_queueCV.notify_all();
+        
+        
+        // Clear thread vector
+        
+        // Clear pending builds
+        {
+            std::lock_guard<std::mutex> lock(s_queueMutex);
+            while (!s_pendingBuilds.empty()) {
+                auto& request = s_pendingBuilds.front();
+                if (request.resultQueue) {
+                    request.resultQueue->markAsDone();
+                }
+                s_pendingBuilds.pop();
+            }
+        }
+        
+        // Reset initialized flag
+        s_initialized = false;
+        
+        GE_RENDER_INFO("CommandQueueBuilder: All worker threads shut down");
+    }
+
     void CommandQueueBuilder::queueBuilderThread()
     {
         RAPTURE_PROFILE_THREAD("QueueBuilderWorker");
@@ -110,7 +158,7 @@ namespace Rapture {
         while (!s_shuttingDown) {
             QueueBuildRequest request;
             bool hasRequest = false;
-            
+
             // Wait for work or shutdown signal
             {
                 std::unique_lock<std::mutex> lock(s_queueMutex);
@@ -631,47 +679,6 @@ namespace Rapture {
         return std::move(queue);
     }
 
-    void CommandQueueBuilder::shutdownWorkers()
-    {
-        RAPTURE_PROFILE_FUNCTION();
-        GE_RENDER_INFO("CommandQueueBuilder: Shutting down worker threads");
-        
-        // Check if we're already shutting down
-        if (s_shuttingDown.exchange(true)) {
-            GE_RENDER_INFO("CommandQueueBuilder: Already shutting down");
-            return;
-        }
-        
-        // Signal all threads to wake up and check the shutdown flag
-        s_queueCV.notify_all();
-        
-        // Join all worker threads
-        for (auto& thread : s_workerThreads) {
-            if (thread.joinable()) {
-                thread.join();
-            }
-        }
-        
-        // Clear thread vector
-        s_workerThreads.clear();
-        
-        // Clear pending builds
-        {
-            std::lock_guard<std::mutex> lock(s_queueMutex);
-            while (!s_pendingBuilds.empty()) {
-                auto& request = s_pendingBuilds.front();
-                if (request.resultQueue) {
-                    request.resultQueue->markAsDone();
-                }
-                s_pendingBuilds.pop();
-            }
-        }
-        
-        // Reset initialized flag
-        s_initialized = false;
-        
-        GE_RENDER_INFO("CommandQueueBuilder: All worker threads shut down");
-    }
 
     void CommandQueueBuilder::processCompletedQueues()
     {
