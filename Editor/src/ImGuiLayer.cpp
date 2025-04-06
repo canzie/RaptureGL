@@ -4,6 +4,7 @@
 #include "Logger/Log.h"
 #include "Scenes/Components/Components.h"
 #include "Scenes/Entity.h"
+#include "Scenes/SceneManager.h"
 #include <glm/gtc/type_ptr.hpp>
 #include <filesystem>
 
@@ -124,13 +125,18 @@ void ImGuiLayer::onUpdate(float ts)
     begin();
     RAPTURE_PROFILE_GPU_SCOPE("ImGui Layer");
     RAPTURE_PROFILE_SCOPE("ImGui Layer");
-    // Get access to the TestLayer to retrieve its framebuffer
+    
+    // Store TestLayer pointer for later use throughout the function
     TestLayer* testLayer = nullptr;
-    for (Rapture::Layer* layer : Rapture::Application::getInstance().getLayerStack())
-    {
-        if (TestLayer* tl = dynamic_cast<TestLayer*>(layer))
-        {
-            testLayer = tl;
+    
+    // Use SceneManager instead of looking for TestLayer directly
+    auto activeScene = Rapture::SceneManager::getInstance().getActiveScene();
+    if (activeScene) {
+        // Get reference to TestLayer for its framebuffer and other functionality
+        testLayer = dynamic_cast<TestLayer*>(
+            Rapture::Application::getInstance().getLayerByName("Test Layer"));
+            
+        if (testLayer) {
             // Set the ViewportPanel reference in TestLayer
             testLayer->setViewportPanel(&m_ViewportPanel);
             
@@ -162,13 +168,11 @@ void ImGuiLayer::onUpdate(float ts)
                     m_SelectedEntity = entity;
                 }
             });
-            
-            break;
         }
     }
 
     // ImGuizmo keyboard shortcuts
-    if (testLayer && testLayer->getSelectedEntity()) {
+    if (m_SelectedEntity && m_SelectedEntity->isValid()) {
         // Only handle shortcuts if we have a selected entity
         ImGuiIO& io = ImGui::GetIO();
         
@@ -261,12 +265,15 @@ void ImGuiLayer::onUpdate(float ts)
     }
     
     // Render all panels using our panel classes
-    m_ViewportPanel.renderSceneViewport(testLayer);
-    m_ViewportPanel.renderDepthBufferViewport(testLayer);
+    if (testLayer) {
+        m_ViewportPanel.renderSceneViewport(testLayer);
+        m_ViewportPanel.renderDepthBufferViewport(testLayer);
+        m_MaterialViewerPanel.render(testLayer->getMaterialFramebuffer());
+    }
     
     //m_StatsPanel.render(ts);
     
-    m_EntityBrowserPanel.render(testLayer->getActiveScene().get(), 
+    m_EntityBrowserPanel.render(activeScene.get(), 
         [this, testLayer](std::shared_ptr<Rapture::Entity> entity) {
             if (entity) {
                 m_SelectedEntity = entity;
@@ -287,7 +294,7 @@ void ImGuiLayer::onUpdate(float ts)
     
     // Render the settings panel
     if (m_SettingsPanel) {
-        m_SettingsPanel->setActiveScene(testLayer->getActiveScene());
+        m_SettingsPanel->setActiveScene(activeScene);
         m_SettingsPanel->render();
     }
     

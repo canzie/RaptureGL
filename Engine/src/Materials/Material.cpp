@@ -511,7 +511,7 @@ namespace Rapture
 		m_uniformData.baseColorFactor = glm::vec4(base_color, 1.0f);
 		
 		// Store as parameters for serialization/deserialization
-		setVec3("color", base_color);
+		setVec3(ParameterID::BASE_COLOR, base_color);
 	}
 
 	void SolidMaterial::bindData()
@@ -533,7 +533,6 @@ namespace Rapture
 			std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_ALBEDO).asTexture().lock();
 			if (texture) {
 				texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
-				m_shader->setInt("u_AlbedoMap", static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
 				m_shader->setBool("u_HasAlbedoMap", true);
 			} else {
 				m_shader->setBool("u_HasAlbedoMap", false);

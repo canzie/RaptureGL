@@ -16,17 +16,19 @@
 
 #include "../../Scenes/Systems/BoundingBoxSystem.h"
 
-
-
 #define DIRNAME "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/build/bin/Debug/assets/models/"
 
 namespace Rapture {
+
+    bool ModelLoadersCache::s_initialized = false;
+    std::map<std::string, std::weak_ptr<glTF2Loader>> ModelLoadersCache::s_loaders;
+    std::mutex ModelLoadersCache::s_mutex;
 
     glTF2Loader::glTF2Loader(std::shared_ptr<Scene> scene)
         : m_scene(scene)
     {
         if (!m_scene) {
-            GE_CORE_ERROR("glTF2Loader: Scene pointer is null");
+            GE_CORE_WARN("glTF2Loader: Scene pointer is null");
         }
     }
 
@@ -35,26 +37,22 @@ namespace Rapture {
         cleanUp();
     }
 
-    bool glTF2Loader::loadModel(const std::string& filepath, bool isAbsolute, bool calculateBoundingBoxes)
+    
+    bool glTF2Loader::initialize(const std::string &filepath)
     {
-        // Reset state to ensure clean loading
-        cleanUp();
-        
-        // Set the bounding box calculation flag
-        m_calculateBoundingBoxes = true;
-        
-        // Report initial progress
-        reportProgress(0.0f);
-        
-        std::string fullPath = isAbsolute ? filepath : DIRNAME + filepath;
+
+        m_isLoaded = false;
+        if (m_isInitialized) return true;
 
         // Load the gltf file
-        std::ifstream gltf_file(fullPath);
+        std::ifstream gltf_file(filepath);
         if (!gltf_file)
         {
-            GE_CORE_ERROR("glTF2Loader: Couldn't load glTF file '{}'", fullPath);
+            GE_CORE_ERROR("glTF2Loader: Couldn't load glTF file '{}'", filepath);
             return false;
         }
+        
+        m_filepath = filepath;
 
         // Parse the JSON file
         try {
@@ -88,9 +86,9 @@ namespace Rapture {
 
         // Extract the directory path from the filepath
         m_basePath = "";
-        size_t lastSlashPos = fullPath.find_last_of("/\\");
+        size_t lastSlashPos = filepath.find_last_of("/\\");
         if (lastSlashPos != std::string::npos) {
-            m_basePath = fullPath.substr(0, lastSlashPos + 1);
+            m_basePath = filepath.substr(0, lastSlashPos + 1);
         }
 
         // Load the bin file with all the buffer data
@@ -127,6 +125,35 @@ namespace Rapture {
         
         binary_file.close();
 
+        m_isInitialized = true;
+
+        return true;
+    }
+
+    bool glTF2Loader::loadModel(const std::string& filepath, bool isAbsolute, bool calculateBoundingBoxes)
+    {
+
+        if (m_scene == nullptr) {
+            GE_CORE_ERROR("glTF2Loader: Scene pointer is null");
+            return false;
+        }
+
+        // Reset state to ensure clean loading
+        cleanUp();
+        
+        // Set the bounding box calculation flag
+        m_calculateBoundingBoxes = true;
+        
+        // Report initial progress
+        reportProgress(0.0f);
+        
+        std::string fullPath = isAbsolute ? filepath : DIRNAME + filepath;
+
+        if (!initialize(fullPath)) {
+            GE_CORE_ERROR("glTF2Loader: Failed to initialize loader for '{}'", fullPath);
+            return false;
+        }
+
         // Create a root entity for the model
         Entity rootEntity = m_scene->createEntity("glTF_Model");
         
@@ -152,6 +179,8 @@ namespace Rapture {
         
         // Clean up
         cleanUp();
+
+        m_isLoaded = true;
         
         return true;
     }
@@ -689,10 +718,11 @@ namespace Rapture {
         
         // Set material if present
         if (primitive.contains("material")) {
-            unsigned int materialIdx = primitive["material"];
+            uint32_t materialIdx = primitive["material"];
             if (materialIdx < m_materials.size()) {
                 if (!entity.hasComponent<MaterialComponent>()) {
                     GE_CORE_WARN("Entity missing MaterialComponent for material index {}", materialIdx);
+                    entity.addComponent<MaterialComponent>();
                 }
 
                 json& materialJSON = m_materials[materialIdx];
@@ -700,6 +730,15 @@ namespace Rapture {
                 // Check if this material uses the KHR_materials_pbrSpecularGlossiness extension
                 bool hasSpecularGlossiness = false;
                 
+                auto [material, handle] = AssetManager::importAsset<Material>(std::filesystem::path(m_filepath), {materialIdx}, AssetType::Material);
+                if (material){
+                    entity.getComponent<MaterialComponent>().material = material;
+                    entity.getComponent<MaterialComponent>().materialName = material->getName();
+                }
+
+                //loadMaterialByIndex(materialIdx);
+
+                /*
                 if (materialJSON.contains("extensions") && 
                     materialJSON["extensions"].contains("KHR_materials_pbrSpecularGlossiness")) {
                     hasSpecularGlossiness = true;
@@ -721,6 +760,7 @@ namespace Rapture {
                     entity.getComponent<MaterialComponent>().material = material;
                     entity.getComponent<MaterialComponent>().materialName = material->getName();
                 }
+                */
             }
         }
 
@@ -1060,6 +1100,17 @@ namespace Rapture {
         m_samplers.clear();
         
         m_binVec.clear();
+
+        // scuffed way to force the cache cleanup to clean this loader, otherwise there is a case where the destructor was called before the model was loaded (or never started to load)
+        // could be because some error or wathever. 
+        //dont know what will happen when this entire loader gets multithreaded. could possibly cause some bugs?
+        m_isLoaded = true;
+        // Clean up the cache when a loader is cleaned up
+        ModelLoadersCache::cleanup();
+
+        m_isInitialized = false;
+        m_isLoaded = false;
+        
     }
 
     void glTF2Loader::reportProgress(float progress)
@@ -1411,6 +1462,38 @@ namespace Rapture {
         return animations;
     }
 
+    std::shared_ptr<Material> glTF2Loader::loadMaterialByIndex(size_t materialIndex)
+    {
+        if (materialIndex >= m_materials.size()) {
+            GE_CORE_ERROR("glTF2Loader: Material index out of range");
+            return nullptr;
+        }
+
+        json& materialJSON = m_materials[materialIndex];
+        if (materialJSON.contains("pbrMetallicRoughness")) {
+            // Process material properties
+            std::shared_ptr<Material> material = processPBRMaterial(materialJSON);
+
+            return material;
+        } else if (materialJSON.contains("extensions")) {
+            // Process material properties
+            json& extensionsJSON = materialJSON["extensions"];
+            if (extensionsJSON.contains("KHR_materials_pbrSpecularGlossiness")) {
+                std::shared_ptr<Material> material = processPBRMaterial(extensionsJSON);
+
+                return material;
+            }
+        } else {
+            
+            auto material = MaterialLibrary::createSolidMaterial(materialJSON.value("name", "DefaultMaterial"), glm::vec3(0.5f, 0.5f, 0.5f));
+            if (material) {
+                return material;
+            }
+        }
+
+        return nullptr;
+    }
+
     std::vector<std::shared_ptr<Animation>> glTF2Loader::processAnimations(json& animationsJSON) {
         std::vector<std::shared_ptr<Animation>> animations;
         
@@ -1642,6 +1725,74 @@ namespace Rapture {
             // Default to LINEAR
             return InterpolationType::LINEAR;
         }
+    }
+
+    glTFMetadata glTF2Loader::getFileMetadata(const std::string& filepath, bool isAbsolute) {
+        glTFMetadata metadata;
+        
+        // Construct full path
+        std::string fullPath = isAbsolute ? filepath : DIRNAME + filepath;
+        
+        // Open and read the glTF file
+        std::ifstream gltf_file(fullPath);
+        if (!gltf_file) {
+            GE_CORE_ERROR("glTF2Loader: Couldn't load glTF file '{}'", fullPath);
+            return metadata;
+        }
+        
+        try {
+            // Parse JSON but only read what we need
+            json glTFfile;
+            gltf_file >> glTFfile;
+            gltf_file.close();
+            
+            // Get version and generator info
+            metadata.version = glTFfile.value("asset", json::object()).value("version", "unknown");
+            metadata.generator = glTFfile.value("asset", json::object()).value("generator", "unknown");
+            
+            // Count materials
+            if (glTFfile.contains("materials")) {
+                metadata.materialCount = glTFfile["materials"].size();
+            }
+            
+            // Count animations
+            if (glTFfile.contains("animations")) {
+                metadata.animationCount = glTFfile["animations"].size();
+            }
+            
+            // Count nodes
+            if (glTFfile.contains("nodes")) {
+                metadata.nodeCount = glTFfile["nodes"].size();
+            }
+            
+            // Count textures
+            if (glTFfile.contains("textures")) {
+                metadata.textureCount = glTFfile["textures"].size();
+            }
+            
+            // Count meshes and primitives
+            if (glTFfile.contains("meshes")) {
+                metadata.meshCount = glTFfile["meshes"].size();
+                
+                // Count total primitives across all meshes
+                for (const auto& mesh : glTFfile["meshes"]) {
+                    if (mesh.contains("primitives")) {
+                        metadata.primitiveCount += mesh["primitives"].size();
+                    }
+                }
+            }
+            
+            // Check for skeletons
+            if (glTFfile.contains("skins")) {
+                metadata.hasSkeletons = !glTFfile["skins"].empty();
+            }
+            
+        } catch (const std::exception& e) {
+            GE_CORE_ERROR("glTF2Loader: Failed to parse glTF JSON: {}", e.what());
+            return metadata;
+        }
+        
+        return metadata;
     }
 
 }

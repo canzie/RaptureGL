@@ -349,7 +349,7 @@ namespace Rapture
         const auto& material = cmd.material;
         const auto& transform = cmd.transform;
         const auto& meshData = mesh->getMeshData();
-        
+
         // Bind VAO once
         meshData.vao->bind();
         
@@ -816,5 +816,24 @@ namespace Rapture
         }
     }
 
+    void Renderer::drawSphere(std::shared_ptr<Sphere> sphere)
+    {
+        RAPTURE_PROFILE_FUNCTION();
 
+        auto material = sphere->getMaterial();
+        if (material) {
+            material->bind();
+        }
+
+        auto mesh = sphere->getMesh();
+        if (mesh) {
+            auto vao = mesh->getMeshData().vao;
+            if (vao) {
+                vao->bind();
+                glDrawElementsBaseVertex(GL_TRIANGLES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes, mesh->getMeshData().vertexOffsetInVertices);
+                vao->unbind();
+            }
+        }
+        material->unbind();
+    }
 }

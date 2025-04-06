@@ -113,6 +113,9 @@ namespace Rapture {
         // Check if the shader is valid
         bool isValid() const { return m_status == ShaderStatus::COMPILED; }
 
+        static std::shared_ptr<Shader> create(const std::string& vertex_source, const std::string& fragment_source);
+        static Shader* createRaw(const std::string& vertex_source, const std::string& fragment_source);
+
 	protected:
         std::string m_name;
         std::map<ShaderType, std::string> m_sources;

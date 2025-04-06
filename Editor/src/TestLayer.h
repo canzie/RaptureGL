@@ -25,7 +25,7 @@ public:
 	TestLayer()
 		: Layer("Test Layer")
 	{
-		m_activeScene = std::make_shared<Rapture::Scene>();
+	    // Scene is now managed by SceneManager, no need to create it here
 	}
 
 	void onAttach() override;
@@ -33,10 +33,15 @@ public:
 
 	void onUpdate(float ts) override;
 	void onEvent(Rapture::Event& event) override;
+
+    void onNewActiveScene(std::shared_ptr<Rapture::Scene> scene);
     
     // Getter for the framebuffer to use in ImGui viewport
     std::shared_ptr<Rapture::Framebuffer> getFramebuffer() const { return m_framebuffer; }
-    std::shared_ptr<Rapture::Scene> getActiveScene() const { return m_activeScene; }
+    std::shared_ptr<Rapture::Framebuffer> getMaterialFramebuffer() const { return m_materialViewerFramebuffer; }
+    
+    // Use SceneManager to get the active scene
+    std::shared_ptr<Rapture::Scene> getActiveScene() const;
     
     // Set the viewport panel reference
     void setViewportPanel(ViewportPanel* viewportPanel) { m_viewportPanel = viewportPanel; }
@@ -57,8 +62,9 @@ public:
     void notifyCameraChange();
 
 private:
-	std::shared_ptr<Rapture::Scene> m_activeScene;
     std::shared_ptr<Rapture::Framebuffer> m_framebuffer;
+    std::shared_ptr<Rapture::Framebuffer> m_materialViewerFramebuffer;
+
     std::shared_ptr<Rapture::Mesh> m_testCube;  // Store the test cube to keep it alive
     
     // Camera references
@@ -84,4 +90,10 @@ private:
     
     // Camera matrices callback
     CameraMatricesCallback m_cameraMatricesCallback;
+
+    // Sphere for material viewer
+    std::shared_ptr<Rapture::Sphere> m_materialViewerSphere;
+    
+    // Event listener IDs for cleanup
+    size_t m_sceneActivatedListenerId = 0;
 };

@@ -13,6 +13,7 @@
 #include "../Buffers/BufferPools.h"
 
 #include "../AssetsManager/AssetManager.h"
+#include "../Scenes/SceneManager.h"
 
 namespace Rapture {
 
@@ -40,13 +41,13 @@ namespace Rapture {
 			AssetManager::init();
 			Renderer::init();
 			
-
+			// Initialize project - this will setup default world and scene
+			m_project = std::make_shared<Project>();
 		}
 	}
 
 	Application::~Application()
 	{
-
 		TracyProfiler::shutdown();
         AssetManager::shutdown();
         TextureLibrary::shutdown();
@@ -92,6 +93,13 @@ namespace Rapture {
                     layer->onUpdate((float)Timestep::deltaTimeMs().count());
                 }
                 
+                // Update active world
+                auto activeWorld = SceneManager::getInstance().getActiveWorld();
+                if (activeWorld && activeWorld->isActive()) {
+                    RAPTURE_PROFILE_SCOPE("World Update");
+                    activeWorld->update((float)Timestep::deltaTimeMs().count());
+                }
+                
                 // Update timestep
                 {
                     RAPTURE_PROFILE_SCOPE("Timestep Update");
@@ -124,22 +132,23 @@ namespace Rapture {
 	{
 		RAPTURE_PROFILE_FUNCTION();
 		
-		switch (e.getEventType())
-		{
-		case EventType::WINDOW_CLOSE:
-			onWindowContextClose();
-			break;
-		case EventType::WINDOW_RESIZE:
-			// TODO: this is hella scuffed, fix this in some way
-			onWindowContextResize(*(WindowResizeEvent*)&e);
-			break;
-		default:
-			break;
-
-			for (auto layer : m_layerStack)
-			{
-				layer->onEvent(e);
-			}
+		// Use an EventDispatcher to handle different event types
+		EventDispatcher dispatcher(e);
+		
+		// Dispatch window close event
+		dispatcher.dispatch<WindowCloseEvent>([this](WindowCloseEvent& e) {
+			return onWindowContextClose();
+		});
+		
+		// Dispatch window resize event
+		dispatcher.dispatch<WindowResizeEvent>([this](WindowResizeEvent& e) {
+			return onWindowContextResize(e);
+		});
+		
+		// Forward the event to layers in reverse order (top to bottom)
+		for (auto it = m_layerStack.rbegin(); it != m_layerStack.rend(); ++it) {
+			if (e.handled) break;
+			(*it)->onEvent(e);
 		}
 	}
 
@@ -181,6 +190,43 @@ namespace Rapture {
         
 		m_layerStack.pushOverlay(overlay);
 		overlay->onAttach();
+	}
+	
+	// Project management
+	void Application::loadProject(const std::string& projectPath) {
+		// Destroy old project and all its children automatically
+		m_project = Project::loadProject(projectPath);
+	}
+	
+	void Application::saveProject(const std::string& projectPath) {
+		Project::saveProject(projectPath);
+	}
+	
+	std::shared_ptr<Project> Application::getProject() const {
+		return m_project;
+	}
+	
+	// World operations
+	void Application::transitionToWorld(const std::string& worldName) {
+		// Make sure the world exists
+		auto world = m_project->getWorld(worldName);
+		if (!world) {
+			// Create the world if it doesn't exist
+			world = m_project->createWorld(worldName);
+		}
+		
+		// Set as active
+		m_project->setActiveWorld(worldName);
+	}
+	
+	// Layer access
+	Layer* Application::getLayerByName(const std::string& name) {
+		for (auto layer : m_layerStack) {
+			if (layer->getLayerName() == name) {
+				return layer;
+			}
+		}
+		return nullptr;
 	}
 
 }

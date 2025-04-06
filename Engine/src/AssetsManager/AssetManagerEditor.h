@@ -11,8 +11,6 @@ namespace Rapture {
 
     using AssetRegistry = std::unordered_map<AssetHandle, AssetMetadata>;
 
-
-
     class AssetManagerEditor : public AssetManagerBase {
         public:
             AssetManagerEditor();
@@ -27,21 +25,24 @@ namespace Rapture {
             // Get metadata for an asset
             const AssetMetadata& getAssetMetadata(AssetHandle handle) const;
 
-            std::pair<std::shared_ptr<Asset>, AssetHandle> importAsset(std::filesystem::path path, std::vector<uint32_t> indices = {0});
+            std::pair<std::shared_ptr<Asset>, AssetHandle> importAsset(std::filesystem::path path, std::vector<uint32_t> indices = {0}, AssetType assetType = AssetType::None);
             // currentyl only intended to be used for cubemaps
             std::pair<std::shared_ptr<Asset>, AssetHandle> importAsset(std::vector<std::filesystem::path> paths);
 
             const AssetRegistry& getAssetRegistry() const { return m_assetRegistry; }
             const AssetMap& getLoadedAssets() const { return m_loadedAssets; }
 
+            std::pair<std::shared_ptr<Asset>, AssetHandle> getDefaultAsset(AssetType assetType);
         private:
             // Determine asset type from file extension
             AssetType determineAssetType(const std::string& path);
             
             AssetRegistry m_assetRegistry;
     };
-}
 
+
+
+}
 
 // asset manager
 // - get assets

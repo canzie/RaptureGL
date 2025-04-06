@@ -13,7 +13,8 @@ layout (std140, binding=0) uniform BaseTransformMats
 	mat4 u_view;
 };
 
-layout (std140, binding=3) uniform SOLID
+
+layout (std140, binding=4) uniform SOLID
 {
 	vec4 color;
 };

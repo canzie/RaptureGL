@@ -80,7 +80,6 @@ OpenGLShader::OpenGLShader(std::string vertex_source, std::string fragment_sourc
 		GLsizei length; // name length
 
 	glGetProgramiv(m_programID, GL_ACTIVE_UNIFORM_BLOCKS, &count);
-	GE_CORE_INFO("OpenGLShader: '{0}' has {1} uniform blocks", m_name, count);
 	
 	for (i = 0; i < count; i++)
 	{
@@ -88,7 +87,6 @@ OpenGLShader::OpenGLShader(std::string vertex_source, std::string fragment_sourc
 		glGetActiveUniformBlockiv(m_programID, (GLuint)i, GL_UNIFORM_BLOCK_DATA_SIZE, &blockSize);
 		glGetActiveUniformBlockiv(m_programID, (GLuint)i, GL_UNIFORM_BLOCK_NAME_LENGTH, &length);
 		glGetActiveUniformBlockName(m_programID, (GLuint)i, length, NULL, name);
-		GE_CORE_INFO("OpenGLShader: Uniform Block({0}): '{1}' (size: {2} bytes)", i, name, blockSize);
 
 		std::string blockName(name);
 		GLuint bindingPoint = 0;
@@ -122,12 +120,9 @@ OpenGLShader::OpenGLShader(std::string vertex_source, std::string fragment_sourc
 		// Set the binding point if it's different from current
 		if (currentBinding != bindingPoint) {
 			glUniformBlockBinding(m_programID, blockIndex, bindingPoint);
-			GE_CORE_INFO("OpenGLShader: Bound block '{0}' to binding point {1} (was {2})", 
-				blockName, bindingPoint, currentBinding);
+
 		}
-		else {
-			GE_CORE_INFO("OpenGLShader: Block '{0}' already bound to point {1}", blockName, bindingPoint);
-		}
+
 		
 		// Validate that binding worked
 		glGetActiveUniformBlockiv(m_programID, blockIndex, GL_UNIFORM_BLOCK_BINDING, &currentBinding);
@@ -166,7 +161,6 @@ bool OpenGLShader::compile(const std::string& variantName) {
             GE_CORE_ERROR("OpenGLShader::compileVariant: Variant '{0}' not found, compiling default variant", variantName);
         }
         
-        GE_CORE_INFO("OpenGLShader::compile: Compiling shader variant '{0}' for shader '{1}'", variantName, m_name);
     }
 
         for (auto& [type, source] : m_sources) {
@@ -258,7 +252,6 @@ bool OpenGLShader::reload()
             }
         }
         
-        GE_CORE_INFO("OpenGLShader::addVariant: Added shader variant '{0}' to shader '{1}'", variant.name, m_name);
         m_variants.push_back(variant);
     }
 
@@ -573,6 +566,15 @@ UniformType GLToUniformType(GLenum type)
 	}
 }
 
+std::shared_ptr<Shader> Shader::create(const std::string& vertex_source, const std::string& fragment_source)
+{
+    return std::make_shared<OpenGLShader>(vertex_source, fragment_source);
+}
+
+Shader* Shader::createRaw(const std::string& vertex_source, const std::string& fragment_source)
+{
+    return new OpenGLShader(vertex_source, fragment_source);
+}
 
 }
 

@@ -3,6 +3,8 @@
 #include <glm/glm.hpp>
 #include <memory>
 #include <string>
+#include "../AssetsManager/AssetManager.h"
+
 
 namespace Rapture {
 
@@ -88,22 +90,30 @@ namespace Rapture {
 
     class Sphere {
         public:
-            Sphere(glm::vec3 position, glm::vec3 rotation, glm::vec3 scale, glm::vec4 color, bool filled = false);
             // New constructor with texture path
-            Sphere(glm::vec4 color, const std::string& texturePath);
-            Sphere(glm::vec3 scale, bool filled, const std::shared_ptr<Material>& material);
+            Sphere(float radius);
 
-            void setMaterial(const std::shared_ptr<Material>& material);
-            std::shared_ptr<Material> getMaterial() const { return m_material; }
 
+            void setMaterial(const AssetHandle& handle);
+            inline std::shared_ptr<Material> getMaterial() { 
+                if (auto material = m_material.lock()) {
+                    return material;
+                } else {
+                    auto mat = AssetManager::getAsset<Material>(m_sphereAsset);
+                    if (mat) {
+                        m_material = mat;
+                        return mat;
+                    }
+                }
+                return nullptr;
+            }
+
+            inline std::shared_ptr<Mesh> getMesh() const { return m_mesh; }
         private:
-            glm::vec3 m_position;
-            glm::vec3 m_rotation;
-            glm::vec3 m_scale;
-            glm::vec4 m_color;
-            bool m_filled;
+
             std::shared_ptr<Mesh> m_mesh;
-            std::shared_ptr<Material> m_material;
+            std::weak_ptr<Material> m_material;
+            AssetHandle m_sphereAsset;
     };
 
 }

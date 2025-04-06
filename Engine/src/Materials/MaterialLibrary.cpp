@@ -1,6 +1,6 @@
 #include "MaterialLibrary.h"
 #include "MaterialInstance.h"
-#include "../Shaders/OpenGLShaders/OpenGLShader.h"
+#include "../Shaders/Shader.h"
 #include "../Logger/Log.h"
 
 namespace Rapture {
@@ -26,30 +26,30 @@ void MaterialLibrary::init()
     // Initialize static shaders for material types
     // PBR material shader
     if (!PBRMaterial::s_shader) {
-        PBRMaterial::s_shader = new OpenGLShader("PBR_vs.glsl", "PBR_fs.glsl");
+        PBRMaterial::s_shader = Shader::createRaw("PBR_vs.glsl", "PBR_fs.glsl");
         GE_CORE_INFO("MaterialLibrary: Initialized PBR shader");
     }
     
     // Phong material shader
     if (!PhongMaterial::s_shader) {
-        PhongMaterial::s_shader = new OpenGLShader("blinn_phong_vs.glsl", "blinn_phong_fs.glsl");
+        PhongMaterial::s_shader = Shader::createRaw("blinn_phong_vs.glsl", "blinn_phong_fs.glsl");
         GE_CORE_INFO("MaterialLibrary: Initialized Phong shader");
     }
     
     // Solid material shader
     if (!SolidMaterial::s_shader) {
-        SolidMaterial::s_shader = new OpenGLShader("default_vs.glsl", "default_fs.glsl");
+        SolidMaterial::s_shader = Shader::createRaw("default_vs.glsl", "default_fs.glsl");
         GE_CORE_INFO("MaterialLibrary: Initialized Solid shader");
     }
     
     // Specular-Glossiness material shader
     if (!SpecularGlossinessMaterial::s_shader) {
-        SpecularGlossinessMaterial::s_shader = new OpenGLShader("SpecularGlossiness_vs.glsl", "SpecularGlossiness_fs.glsl");
+        SpecularGlossinessMaterial::s_shader = Shader::createRaw("SpecularGlossiness_vs.glsl", "SpecularGlossiness_fs.glsl");
         GE_CORE_INFO("MaterialLibrary: Initialized Specular-Glossiness shader");
     }
 
     if (!CubeMapMaterial::s_shader) {
-        CubeMapMaterial::s_shader = new OpenGLShader("cubemap_vs.glsl", "cubemap_fs.glsl");
+        CubeMapMaterial::s_shader = Shader::createRaw("cubemap_vs.glsl", "cubemap_fs.glsl");
         GE_CORE_INFO("MaterialLibrary: Initialized CubeMap shader");
     }
     

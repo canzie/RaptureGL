@@ -36,6 +36,7 @@ namespace Rapture
         static void drawLine(const Line& line);
         static void drawCube(const Cube& cube);
         static void drawQuad(const Quad& quad, const glm::mat4& transform=glm::mat4(1.0f));
+        static void drawSphere(std::shared_ptr<Sphere> sphere);
 
 
 		// Bounding box rendering methods

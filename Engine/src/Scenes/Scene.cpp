@@ -5,8 +5,9 @@
 
 namespace Rapture
 {
-	Scene::Scene()
+	Scene::Scene(std::string sceneName)
 	{
+		m_config.sceneName = sceneName;
 	}
 	Scene::~Scene()
 	{

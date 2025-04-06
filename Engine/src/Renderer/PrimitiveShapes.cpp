@@ -4,6 +4,7 @@
 #include "../Mesh/Mesh.h"
 #include "../Materials/Material.h"
 #include "../Materials/MaterialLibrary.h"
+#include "../AssetsManager/AssetManager.h"
 #include "Renderer.h"
 #include "../Logger/Log.h"
 #include <glm/gtc/matrix_transform.hpp>
@@ -658,4 +659,90 @@ namespace Rapture {
         m_material = MaterialLibrary::createSolidMaterial(materialName, glm::vec3(color));
     }
 
-} // namespace Rapture 
+    Sphere::Sphere(float radius)
+    {
+        // Generate sphere mesh
+        const int segments = 32;
+        const int rings = 16;
+        
+        std::vector<float> positions;
+        std::vector<float> normals;
+        std::vector<float> texcoords;
+        std::vector<uint32_t> indices;
+        
+        // Generate vertices
+        for (int ring = 0; ring <= rings; ++ring) {
+            float phi = ring * glm::pi<float>() / rings;
+            float sinPhi = std::sin(phi);
+            float cosPhi = std::cos(phi);
+            
+            for (int segment = 0; segment <= segments; ++segment) {
+                float theta = segment * 2.0f * glm::pi<float>() / segments;
+                float sinTheta = std::sin(theta);
+                float cosTheta = std::cos(theta);
+                
+                // Position
+                float x = sinPhi * cosTheta * radius;
+                float y = cosPhi * radius;
+                float z = sinPhi * sinTheta * radius;
+                positions.push_back(x);
+                positions.push_back(y);
+                positions.push_back(z);
+                
+                // Normal (normalize the position)
+                glm::vec3 normal = glm::normalize(glm::vec3(x / radius, y / radius, z / radius));
+                normals.push_back(normal.x);
+                normals.push_back(normal.y);
+                normals.push_back(normal.z);
+                
+                // Texture coordinates
+                float u = static_cast<float>(segment) / segments;
+                float v = static_cast<float>(ring) / rings;
+                texcoords.push_back(u);
+                texcoords.push_back(v);
+            }
+        }
+        
+        // Generate indices
+        for (int ring = 0; ring < rings; ++ring) {
+            for (int segment = 0; segment < segments; ++segment) {
+                // Calculate indices for the current quad
+                uint32_t current = ring * (segments + 1) + segment;
+                uint32_t next = current + 1;
+                uint32_t currentBelow = (ring + 1) * (segments + 1) + segment;
+                uint32_t nextBelow = currentBelow + 1;
+                
+                // Create two triangles for the quad
+                indices.push_back(current);
+                indices.push_back(nextBelow);
+                indices.push_back(next);
+                
+                indices.push_back(current);
+                indices.push_back(currentBelow);
+                indices.push_back(nextBelow);
+            }
+        }
+        
+        // Create the mesh with all attributes
+        m_mesh = createFullAttributeMesh(positions, normals, texcoords, indices);
+        
+        // Get default material from AssetManager
+        auto [material, handle] = AssetManager::getDefaultAsset<Material>(AssetType::Material);
+        if (material) {
+            m_material = material;
+            m_sphereAsset = handle;
+        } else {
+            GE_CORE_ERROR("Sphere: Failed to get default material");
+        }
+    }
+
+    void Sphere::setMaterial(const AssetHandle &handle)
+    {
+        auto mat = AssetManager::getAsset<Material>(handle);
+        if (mat) {
+            m_material = mat;
+            m_sphereAsset = handle;
+        }
+    }
+
+} // namespace Rapture

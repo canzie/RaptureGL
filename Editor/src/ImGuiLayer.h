@@ -11,6 +11,7 @@
 #include "ImGuiPanels/LogPanel.h"
 #include "ImGuiPanels/AssetsPanel.h"
 #include "ImGuiPanels/SettingsPanel.h"
+#include "ImGuiPanels/MaterialViewerPanel.h"
 #include "Scenes/Entity.h"
 #include "vendor/ImGuizmo/ImGuizmo.h"
 
@@ -41,6 +42,7 @@ private:
     StatsPanel m_StatsPanel;
     LogPanel m_LogPanel;
     AssetsPanel m_AssetsPanel; // Using global namespace for AssetsPanel
+    MaterialViewerPanel m_MaterialViewerPanel; // Material viewer panel
     SettingsPanel* m_SettingsPanel = nullptr; // Created after Window context is available
     
     // Currently selected entity (shared between panels through callbacks)

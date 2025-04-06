@@ -1,5 +1,8 @@
 #pragma once
 
+#include "AssetManagerEditor.h"
+
+
 #include <string>
 #include <unordered_map>
 #include <memory>
@@ -7,7 +10,6 @@
 #include <vector>
 
 #include "Asset.h"
-#include "AssetManagerEditor.h"
 #include "../Utils/UUID.h"
 
 #include "../Logger/Log.h"
@@ -47,8 +49,8 @@ namespace Rapture {
         }
 
         template<typename T>
-        static std::pair<std::shared_ptr<T>, AssetHandle> importAsset(std::filesystem::path path, std::vector<uint32_t> indices) {
-            auto [asset, handle] = s_activeAssetManager->importAsset(path, indices);
+        static std::pair<std::shared_ptr<T>, AssetHandle> importAsset(std::filesystem::path path, std::vector<uint32_t> indices = {0}, AssetType assetType = AssetType::None) {
+            auto [asset, handle] = s_activeAssetManager->importAsset(path, indices, assetType);
             return std::make_pair(asset->getUnderlyingAsset<T>(), handle);
         }
 
@@ -66,6 +68,16 @@ namespace Rapture {
                 return emptyRegistry;
             }
             return s_activeAssetManager->getAssetRegistry();
+        }
+
+        template<typename T>
+        static std::pair<std::shared_ptr<T>, AssetHandle> getDefaultAsset(AssetType assetType) {
+            auto [asset, handle] = s_activeAssetManager->getDefaultAsset(assetType);
+            if (!asset) {
+                GE_CORE_ERROR("AssetManager::getDefaultAsset - Failed to get default asset");
+                return std::make_pair(nullptr, AssetHandle());
+            }
+            return std::make_pair(asset->getUnderlyingAsset<T>(), handle);
         }
 
         static const AssetMap& getLoadedAssets() {

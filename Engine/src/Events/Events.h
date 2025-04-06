@@ -1,8 +1,10 @@
 #pragma once
-#include <string>
-#include <format>
-#include <utility>
+#include "Event.h"
 
+// This file is kept for backward compatibility.
+// It includes the unified event system from Event.h
+
+/*
 namespace Rapture {
 	enum class EventType {
 		None = 0,
@@ -24,4 +26,7 @@ namespace Rapture {
 	protected:
 		EventType m_event_type;
 	};
+
+	// Any additional event-related helpers could go here
 }
+*/

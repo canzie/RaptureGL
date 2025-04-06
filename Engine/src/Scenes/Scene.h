@@ -14,6 +14,7 @@ namespace Rapture
 
 
     struct SceneSettings {
+        std::string sceneName;
 
         bool frustumCullingEnabled = false;
         bool rayCastDebugEnabled = false;
@@ -58,7 +59,7 @@ namespace Rapture
 	class Scene
 	{
 	public:
-		Scene();
+		Scene(std::string sceneName="Untitled Scene");
 		~Scene();
 
 		Entity createEntity(const std::string& name = "Untitled Entity");
@@ -71,8 +72,10 @@ namespace Rapture
 
 		entt::registry& getRegistry() { return m_Registry; }
 
-        SceneSettings& getSettings() { return m_Settings; }
+        SceneSettings& getSettings() { return m_config; }
         SkyBox& getSkyBox() { return m_SkyBox; }
+
+        std::string getSceneName() { return m_config.sceneName; }
 
 	private:
 		entt::registry m_Registry;
@@ -80,7 +83,7 @@ namespace Rapture
 
 		friend class Entity;
 
-        SceneSettings m_Settings;
+        SceneSettings m_config;
         SkyBox m_SkyBox;
 
 

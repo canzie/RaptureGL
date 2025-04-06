@@ -157,6 +157,11 @@ void AssetsPanel::render(TestLayer* testLayer) {
     
     ImGui::EndChild();
     
+    // Render import window if active
+    if (m_showImportWindow) {
+        renderImportWindow(m_importFilePath, m_importFileType);
+    }
+    
     ImGui::End();
 }
 
@@ -319,6 +324,18 @@ void AssetsPanel::displayAssetsList() {
                         IM_COL32(0, 255, 0, 255), // Green for loaded assets
                         8 // segments
                     );
+                    
+                    // Add drag source for material assets
+                    if (metadata.m_assetType == Rapture::AssetType::Material) {
+                        if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+                            // Set payload to carry the material handle
+                            ImGui::SetDragDropPayload("ASSET_MATERIAL", &handle, sizeof(uint64_t));
+                            
+                            // Preview display while dragging
+                            ImGui::Text("Material: %s", filename.c_str());
+                            ImGui::EndDragDropSource();
+                        }
+                    }
                 }
                 
                 // Use colors from ImGuiPanelStyle where available
@@ -739,6 +756,15 @@ void AssetsPanel::displayFileList() {
                     ImGui::Separator();
                 } else {
                     // File-specific actions
+                    if (isFileSupported(item.path)) {
+                        if (ImGui::MenuItem("Import Asset")) {
+                            m_showImportWindow = true;
+                            m_importFilePath = item.path;
+                            m_importFileType = getFileType(item.path);
+                        }
+                        ImGui::Separator();
+                    }
+
                     if (item.name.find(".gltf") != std::string::npos) { 
                         if (ImGui::MenuItem("Open in Editor")) {
                             Rapture::GE_INFO("Open File action for: {0}", item.path);
@@ -1030,4 +1056,178 @@ void AssetsPanel::displayFileList() {
             continue;
         }
     }
+}
+
+bool AssetsPanel::isFileSupported(const std::string& filePath) const {
+    return getFileType(filePath) != ImportFileType::Unknown;
+}
+
+ImportFileType AssetsPanel::getFileType(const std::string& filePath) const {
+    std::string extension = std::filesystem::path(filePath).extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+
+    // Check for model files
+    if (extension == ".gltf" || extension == ".glb") {
+        return ImportFileType::Model;
+    }
+    // Check for image files
+    else if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" 
+             || extension == ".bmp" || extension == ".tga" || extension == ".hdr") {
+        return ImportFileType::Texture;
+    }
+
+    return ImportFileType::Unknown;
+}
+
+bool AssetsPanel::renderCollapsibleMultiSelect(const char* label, uint8_t* selections, int count, bool* allSelected) {
+    bool changed = false;
+    
+    if (ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Indent();
+        
+        if (ImGui::Checkbox("Select All", allSelected)) {
+            for (int i = 0; i < count; i++) {
+                selections[i] = *allSelected ? 1 : 0;
+            }
+            changed = true;
+        }
+        
+        for (int i = 0; i < count; i++) {
+            ImGui::PushID(i);
+            bool selected = selections[i] != 0;
+            if (ImGui::Checkbox(std::to_string(i).c_str(), &selected)) {
+                selections[i] = selected ? 1 : 0;
+                if (!selected) *allSelected = false;
+                else {
+                    *allSelected = true;
+                    for (int j = 0; j < count; j++) {
+                        if (selections[j] == 0) {
+                            *allSelected = false;
+                            break;
+                        }
+                    }
+                }
+                changed = true;
+            }
+            ImGui::PopID();
+        }
+        
+        ImGui::Unindent();
+    } else {
+        ImGui::SameLine();
+        int selectedCount = 0;
+        for (int i = 0; i < count; i++) {
+            if (selections[i] != 0) selectedCount++;
+        }
+        ImGui::Text("(%d/%d selected)", selectedCount, count);
+    }
+    
+    return changed;
+}
+
+void AssetsPanel::renderModelImportOptions(const std::string& filePath) {
+    // Get model metadata if not already loaded or if file changed
+    static std::string lastFile;
+    if (lastFile != filePath) {
+        m_modelMetadata = Rapture::glTF2Loader::getFileMetadata(filePath, true);
+        lastFile = filePath;
+        
+        // Initialize selection vectors
+        m_selectedMaterials.resize(m_modelMetadata.materialCount, true);
+        m_selectedPrimitives.resize(m_modelMetadata.primitiveCount, true);
+        m_selectedAnimations.resize(m_modelMetadata.animationCount, true);
+    }
+    
+    // Display metadata
+    ImGui::Text("Model Information:");
+    ImGui::BulletText("Version: %s", m_modelMetadata.version.c_str());
+    ImGui::BulletText("Generator: %s", m_modelMetadata.generator.c_str());
+    ImGui::BulletText("Nodes: %zu", m_modelMetadata.nodeCount);
+    ImGui::BulletText("Meshes: %zu", m_modelMetadata.meshCount);
+    ImGui::BulletText("Has Skeleton: %s", m_modelMetadata.hasSkeletons ? "Yes" : "No");
+    ImGui::Separator();
+
+    // Import options
+    ImGui::Text("Import Options:");
+    
+    // Materials section
+    if (m_modelMetadata.materialCount > 0) {
+        ImGui::PushStyleColor(ImGuiCol_Header, ImGui::GetColorU32(ImGuiCol_ButtonHovered));
+        renderCollapsibleMultiSelect("Materials", m_selectedMaterials.data(), m_modelMetadata.materialCount, &m_allMaterialsSelected);
+        ImGui::PopStyleColor();
+    }
+    
+    // Primitives section
+    if (m_modelMetadata.primitiveCount > 0) {
+        ImGui::PushStyleColor(ImGuiCol_Header, ImGui::GetColorU32(ImGuiCol_ButtonHovered));
+        renderCollapsibleMultiSelect("Primitives", m_selectedPrimitives.data(), m_modelMetadata.primitiveCount, &m_allPrimitivesSelected);
+        ImGui::PopStyleColor();
+    }
+    
+    // Animations section
+    if (m_modelMetadata.animationCount > 0) {
+        ImGui::PushStyleColor(ImGuiCol_Header, ImGui::GetColorU32(ImGuiCol_ButtonHovered));
+        renderCollapsibleMultiSelect("Animations", m_selectedAnimations.data(), m_modelMetadata.animationCount, &m_allAnimationsSelected);
+        ImGui::PopStyleColor();
+    }
+    
+    ImGui::Separator();
+    
+    // General import options
+    ImGui::Checkbox("Import as Static Mesh", &m_importAsStaticMesh);
+    if (m_modelMetadata.materialCount > 0) {
+        ImGui::Checkbox("Import Materials", &m_importMaterials);
+    }
+    if (m_modelMetadata.animationCount > 0 && !m_importAsStaticMesh) {
+        ImGui::Checkbox("Import Animations", &m_importAnimations);
+    }
+}
+
+void AssetsPanel::renderTextureImportOptions() {
+    static bool generateMipmaps = true;
+    static bool sRGB = true;
+    static const char* textureTypes[] = { "Albedo", "Normal", "Roughness", "Metallic", "Height" };
+    static int selectedType = 0;
+
+    ImGui::Text("Import Options:");
+    ImGui::Checkbox("Generate Mipmaps", &generateMipmaps);
+    ImGui::Checkbox("sRGB", &sRGB);
+    ImGui::Combo("Texture Type", &selectedType, textureTypes, IM_ARRAYSIZE(textureTypes));
+}
+
+void AssetsPanel::renderImportWindow(const std::string& filePath, ImportFileType fileType) {
+    if (!m_showImportWindow) return;
+
+    ImGui::SetNextWindowSize(ImVec2(m_importWindowWidth, m_importWindowHeight), ImGuiCond_FirstUseEver);
+    
+    std::string windowTitle = "Import Asset - " + std::filesystem::path(filePath).filename().string();
+    if (ImGui::Begin(windowTitle.c_str(), &m_showImportWindow)) {
+        // Display file information
+        ImGui::Text("File: %s", std::filesystem::path(filePath).filename().string().c_str());
+        ImGui::Text("Type: %s", fileType == ImportFileType::Model ? "Model" : "Texture");
+        ImGui::Separator();
+
+        // Different options based on file type
+        if (fileType == ImportFileType::Model) {
+            renderModelImportOptions(filePath);
+        }
+        else if (fileType == ImportFileType::Texture) {
+            renderTextureImportOptions();
+        }
+
+        ImGui::Separator();
+
+        // Import and Cancel buttons at the bottom
+        ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 40);
+        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 240 - 10);
+        if (ImGui::Button("Import", ImVec2(120, 0))) {
+            // TODO: Implement actual import functionality
+            m_showImportWindow = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+            m_showImportWindow = false;
+        }
+    }
+    ImGui::End();
 }

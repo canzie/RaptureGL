@@ -7,9 +7,7 @@
 #include <functional>
 #include <variant>
 
-#include "../Textures/Texture.h"
-#include "../Logger/Log.h"
-#include "../Materials/MaterialLibrary.h"
+
 
 namespace Rapture {
 
@@ -47,70 +45,20 @@ namespace Rapture {
             return s_assetImporters[metadata.m_assetType](handle, metadata);
         }
 
-        static std::shared_ptr<Asset> loadTexture2D(const AssetHandle& handle, const AssetMetadata& metadata){
-            // TODO: update the loadasync to take in a filepath handle
-            // TODO: remove the overhead of storing textures in the texture library
-            //       only keep a list of textures queued for loading so we dont get duplicates in the queue when spamming the load function
-            std::shared_ptr<Texture2D> texture = TextureLibrary::loadAsync(metadata.m_filePath.string());
+    private:
 
-            if (!texture) {
-                GE_CORE_ERROR("AssetImporter:loadTexture2D - Failed to load texture {}", metadata.m_filePath.string());
-                return nullptr;
-            }
+        static std::shared_ptr<Asset> loadTexture2D(const AssetHandle& handle, const AssetMetadata& metadata);
 
-            AssetVariant assetVariant = texture;
-            std::shared_ptr<AssetVariant> variantPtr = std::make_shared<AssetVariant>(assetVariant);
-            std::shared_ptr<Asset> asset = std::make_shared<Asset>(variantPtr);
-
-            return asset;
-        
-        
-        }
-
-        static std::shared_ptr<Asset> loadCubemap(const AssetHandle& handle, const AssetMetadata& metadata){
-            // TODO: update the loadasync to take in a filepath handle
-            // TODO: remove the overhead of storing textures in the texture library
-            //       only keep a list of textures queued for loading so we dont get duplicates in the queue when spamming the load function
-            std::shared_ptr<Texture2D> texture = TextureLibrary::loadCubemap(metadata.m_cubemapPaths);
-
-            if (!texture) {
-                GE_CORE_ERROR("AssetImporter:loadCubemap - Failed to load cubemap {}", metadata.m_cubemapPaths[0].string());
-                return nullptr;
-            }
-
-            AssetVariant assetVariant = texture;
-            std::shared_ptr<AssetVariant> variantPtr = std::make_shared<AssetVariant>(assetVariant);
-            std::shared_ptr<Asset> asset = std::make_shared<Asset>(variantPtr);
-
-            return asset;
-        
-        
-        }
+        static std::shared_ptr<Asset> loadCubemap(const AssetHandle& handle, const AssetMetadata& metadata);
 
 
-        static std::shared_ptr<Asset> loadShader(const AssetHandle& handle, const AssetMetadata& metadata){
-            GE_CORE_ERROR("AssetImporter:loadShader - Not implemented");
-            return nullptr;
-        }
+        static std::shared_ptr<Asset> loadShader(const AssetHandle& handle, const AssetMetadata& metadata);
 
-        static std::shared_ptr<Asset> loadMaterial(const AssetHandle& handle, const AssetMetadata& metadata){
+        static std::shared_ptr<Asset> loadMaterial(const AssetHandle& handle, const AssetMetadata& metadata);
 
+        static std::shared_ptr<Asset> loadMesh(const AssetHandle& handle, const AssetMetadata& metadata);
 
-
-            GE_CORE_ERROR("AssetImporter:loadMaterial - Not implemented");
-            return nullptr;
-        }
-
-        static std::shared_ptr<Asset> loadMesh(const AssetHandle& handle, const AssetMetadata& metadata){
-            GE_CORE_ERROR("AssetImporter:loadMesh - Not implemented");
-            return nullptr;
-        }
-
-        static std::shared_ptr<Asset> loadAnimation(const AssetHandle& handle, const AssetMetadata& metadata){
-            GE_CORE_ERROR("AssetImporter:loadAnimation - Not implemented");
-            return nullptr;
-
-        }
+        static std::shared_ptr<Asset> loadAnimation(const AssetHandle& handle, const AssetMetadata& metadata);
 
     private:
         static bool s_isInitialized;

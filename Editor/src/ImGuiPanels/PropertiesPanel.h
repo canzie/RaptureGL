@@ -50,5 +50,9 @@ private:
     
     // Helper method to render skeleton bone transforms
     void renderSkeletonBones(std::shared_ptr<Rapture::Entity> entity);
+    
+    // Added methods for material drag-drop support
+    void renderMaterialComponent(std::shared_ptr<Rapture::Entity> entity);
+    bool handleMaterialDragDrop(std::shared_ptr<Rapture::Entity> entity);
 };
 

@@ -14,6 +14,12 @@ layout(binding = 0) uniform sampler2D u_AlbedoMap;    // ALBEDO=0
 
 uniform bool u_HasAlbedoMap = false;
 
+layout (std140, binding=4) uniform SOLID
+{
+	vec4 color;
+};
+
+
 
 void main()
 {
@@ -46,9 +52,9 @@ void main()
 		);
 	}
     if (u_HasAlbedoMap) {
-        outColor = texture(u_AlbedoMap, v_TexCoord);
+        outColor = texture(u_AlbedoMap, v_TexCoord) * color;
     } else {
-        outColor = vec4(0.0, 1.0, 0.0, 1.0);
+        outColor = color;
     }
 	
 }

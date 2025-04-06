@@ -217,20 +217,36 @@ namespace Rapture {
     
 	struct MaterialComponent
 	{
+    private:
+        std::weak_ptr<Material> m_weakMaterial;
+        AssetHandle m_assetHandle;
+
+    public:
+
+
 		std::shared_ptr<Material> material;
         std::string materialName;
+
+        MaterialComponent(const AssetHandle& handle) : m_assetHandle(handle)
+        {
+            m_weakMaterial = AssetManager::getAsset<Material>(handle);
+            materialName = m_weakMaterial.lock()->getName();
+            material = m_weakMaterial.lock();
+        }
 
 		MaterialComponent()
 		{
 			// Create a default metal material with dark gray color
-			material = MaterialLibrary::createPBRMaterial(
-				"DefaultMaterial",
-				glm::vec3(1.0f, 0.0f, 1.0f), // Base color
-				0.0f,  // Roughness
-				0.0f,  // Metallic
-				0.2f   // Specular
-			);
-            materialName = material->getName();
+			auto [material, handle] = AssetManager::getDefaultAsset<Material>(AssetType::Material);
+            if (material) {
+                this->material = material;
+                this->m_assetHandle = handle;
+                materialName = material->getName();
+            }
+            else {
+                MaterialComponent(glm::vec3(0.5f, 0.5f, 0.5f));
+                GE_CORE_ERROR("MaterialComponent: Failed to get default material");
+            }
 		}
 
         MaterialComponent(glm::vec3 base_color)
@@ -262,8 +278,16 @@ namespace Rapture {
 			material = MaterialLibrary::getMaterial(materialName);
             this->materialName = materialName;
 		}
+
+        void setMaterial(const AssetHandle& handle)
+        {
+            m_weakMaterial = AssetManager::getAsset<Material>(handle);
+            m_assetHandle = handle;
+            materialName = m_weakMaterial.lock()->getName();
+            material = m_weakMaterial.lock();
+        }
 		
-		~MaterialComponent() 
+		~MaterialComponent()
 		{
 			// No need to manually delete the material as it's now managed by shared_ptr
 		}
@@ -283,7 +307,7 @@ namespace Rapture {
 				// For solid materials, it might be called "color"
 				else if (material->getType() == MaterialType::SOLID)
 				{
-					material->setVec4("color", color);
+					material->setVec3(ParameterID::BASE_COLOR, glm::vec3(color));
 				}
 			}
 		}
@@ -336,9 +360,9 @@ namespace Rapture {
 				{
 					return glm::vec3(material->getParameter("baseColor").asVec4());
 				}
-				else if (material->getType() == MaterialType::SOLID && material->hasParameter("color"))
+				else if (material->getType() == MaterialType::SOLID && material->hasParameter(ParameterID::BASE_COLOR))
 				{
-					return glm::vec3(material->getParameter("color").asVec4());
+					return glm::vec3(material->getParameter(ParameterID::BASE_COLOR).asVec3());
 				}
 			}
 			return glm::vec3(0.0f);
@@ -426,7 +450,8 @@ namespace Rapture {
         SpriteComponent(std::string texturePath)
         {
             this->texturePath = texturePath;
-            auto [texture, handle] = AssetManager::importAsset<Texture2D>(texturePath);
+            auto [tex, handle] = AssetManager::importAsset<Texture2D>(std::filesystem::path(texturePath));
+            texture = tex;
             //texture = TextureLibrary::loadAsync(texturePath);
             quad = Quad();
             quad.getMaterial()->setTexture("albedoMap", texture, handle);
@@ -435,7 +460,8 @@ namespace Rapture {
         void setTexture(std::string texturePath)
         {
             this->texturePath = texturePath;
-            auto [texture, handle] = AssetManager::importAsset<Texture2D>(texturePath);
+            auto [tex, handle] = AssetManager::importAsset<Texture2D>(std::filesystem::path(texturePath));
+            texture = tex;
             //texture = TextureLibrary::loadAsync(texturePath);
             quad.getMaterial()->setTexture("albedoMap", texture, handle);
         }

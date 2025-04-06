@@ -8,6 +8,8 @@
 
 namespace Rapture {
 
+    const std::filesystem::path s_defaultMaterialPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Editor/assets/materials/default.rmat";
+
     AssetManagerEditor::AssetManagerEditor()
     : AssetManagerBase()
     {
@@ -34,7 +36,7 @@ namespace Rapture {
     std::shared_ptr<Asset> AssetManagerEditor::getAsset(AssetHandle handle) {
         
         if (!isAssetHandleValid(handle)) {
-            GE_CORE_ERROR("AssetManager::getAsset - Invalid asset handle");
+            GE_CORE_ERROR("AssetManagerEditor::getAsset - Invalid asset handle");
             return nullptr;
         }
 
@@ -49,9 +51,9 @@ namespace Rapture {
             // Cache the loaded asset
             if (asset) {
                 m_loadedAssets.insert_or_assign(handle, asset);
-                GE_CORE_INFO("AssetManager::getAsset - Asset loaded: {}", metadata.m_filePath.string());
+                GE_CORE_INFO("AssetManagerEditor::getAsset - Asset loaded: {}", metadata.m_filePath.string());
             } else {
-                GE_CORE_ERROR("AssetManager::getAsset - Failed to load asset: {}", metadata.m_filePath.string());
+                GE_CORE_ERROR("AssetManagerEditor::getAsset - Failed to load asset: {}", metadata.m_filePath.string());
             }
             
             return asset;
@@ -68,11 +70,11 @@ namespace Rapture {
         return s_nullMetadata;
     }
 
-    std::pair<std::shared_ptr<Asset>, AssetHandle> AssetManagerEditor::importAsset(std::filesystem::path path, std::vector<uint32_t> indices)
+    std::pair<std::shared_ptr<Asset>, AssetHandle> AssetManagerEditor::importAsset(std::filesystem::path path, std::vector<uint32_t> indices, AssetType assetType)
     {
 
         if (path.empty()) {
-            GE_CORE_ERROR("AssetManager::importAsset - Path is empty");
+            GE_CORE_ERROR("AssetManagerEditor::importAsset - Path is empty");
             return std::make_pair(nullptr, AssetHandle());
         }
 
@@ -86,11 +88,17 @@ namespace Rapture {
 
         AssetMetadata metadata;
         metadata.m_filePath = path;
-        metadata.m_assetType = determineAssetType(path.string());
+
+        if (assetType == AssetType::None) {
+            metadata.m_assetType = determineAssetType(path.string());
+        } else {
+            metadata.m_assetType = assetType;
+        }
+
         metadata.m_indices = indices;
 
         if (metadata.m_assetType == AssetType::None) {
-            GE_CORE_ERROR("AssetManager::importAsset - Unknown asset type for extension: {}", path.extension().string());
+            GE_CORE_ERROR("AssetManagerEditor::importAsset - Unknown asset type for extension: {}", path.extension().string());
             return std::make_pair(nullptr, AssetHandle());
         }
 
@@ -107,7 +115,7 @@ namespace Rapture {
 
         } 
 
-        GE_CORE_ERROR("AssetManager::importAsset - Failed to import asset: {}", path.string());
+        GE_CORE_ERROR("AssetManagerEditor::importAsset - Failed to import asset: {}", path.string());
         return std::make_pair(nullptr, AssetHandle());
 
 
@@ -117,7 +125,7 @@ namespace Rapture {
     {
         for (const auto& path : paths) {
             if (path.empty()) {
-                GE_CORE_ERROR("AssetManager::importAsset - Path({}) is empty", path.string());
+                GE_CORE_ERROR("AssetManagerEditor::importAsset - Path({}) is empty", path.string());
                 return std::make_pair(nullptr, AssetHandle());
             }
         }
@@ -138,7 +146,7 @@ namespace Rapture {
         metadata.m_assetType = AssetType::Cubemap;
 
         if (metadata.m_assetType == AssetType::None) {
-            GE_CORE_ERROR("AssetManager::importAsset - Unknown asset type for extension: {}", paths[0].extension().string());
+            GE_CORE_ERROR("AssetManagerEditor::importAsset - Unknown asset type for extension: {}", paths[0].extension().string());
             return std::make_pair(nullptr, AssetHandle());
         }
 
@@ -172,12 +180,31 @@ namespace Rapture {
         else if (extension == ".gltf") {
             return AssetType::Mesh;
         }
-        else if (extension == ".mat") {
+        else if (extension == ".rmat") {
             return AssetType::Material;
         }
         // Add more asset types as needed
         
-        GE_CORE_WARN("AssetManager::determineAssetType - Unknown asset type for extension: {}", extension);
+        GE_CORE_WARN("AssetManagerEditor::determineAssetType - Unknown asset type for extension: {}", extension);
         return AssetType::None;
     }
+
+
+    std::pair<std::shared_ptr<Asset>, AssetHandle> AssetManagerEditor::getDefaultAsset(AssetType assetType)
+    {
+
+        if (assetType == AssetType::Texture2D) {
+            return importAsset(std::filesystem::path("assets/textures/white.png"));
+
+
+        } else if (assetType == AssetType::Material) {
+            return importAsset(s_defaultMaterialPath);
+
+        } else {
+            GE_CORE_ERROR("AssetManagerEditor::getDefaultAsset - No default asset found");
+        }
+
+        return std::make_pair(nullptr, AssetHandle());
+    }
+
 }

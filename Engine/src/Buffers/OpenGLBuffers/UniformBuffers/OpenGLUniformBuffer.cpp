@@ -151,10 +151,8 @@ namespace Rapture {
 			RAPTURE_PROFILE_SCOPE("BufferSubData Update");
 			
 			if (GLCapabilities::hasDSA()) {
-				GE_CORE_INFO("UNIFORM BUFFER: Using DSA to set buffer data");
 				glNamedBufferSubData(m_rendererId, offset, size, data);
 			} else {
-				GE_CORE_INFO("UNIFORM BUFFER: Using legacy bind/set to set buffer data");
 				glBindBuffer(GL_UNIFORM_BUFFER, m_rendererId);
 				glBufferSubData(GL_UNIFORM_BUFFER, offset, size, data);
 				glBindBuffer(GL_UNIFORM_BUFFER, 0);

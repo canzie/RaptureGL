@@ -6,6 +6,8 @@
 
 namespace Rapture {
 	static unsigned int s_layer_ID = 0;
+    
+    //using pushLayerCallback = std::function<void(Layer*)>;
 
 	class Layer {
 	public:
@@ -20,12 +22,15 @@ namespace Rapture {
 		virtual void onUpdate(float ts) = 0;
 		virtual void onEvent(Event& event) = 0;
 
+        //void setPushLayerCallback(const pushLayerCallback& callback) { m_pushLayerCallback = callback; }
+
 		std::string getLayerName() { return m_debug_name; }
 		// Alias to match the function name used in profiler
 		const char* getName() { return m_debug_name.c_str(); }
 		
 
 	private:
+        //pushLayerCallback m_pushLayerCallback;
 		std::string m_debug_name;
 
 	};

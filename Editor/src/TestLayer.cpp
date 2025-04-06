@@ -1,5 +1,6 @@
 #include "TestLayer.h"
 #include "Scenes/Entity.h"
+#include "Scenes/SceneManager.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/OpenGLRendererAPI.h"
 #include "Logger/Log.h"
@@ -57,6 +58,9 @@ void TestLayer::setSelectedEntity(std::shared_ptr<Rapture::Entity> entity)
 
 void TestLayer::onAttach()
 {
+
+    Rapture::GE_INFO("TestLayer attached");
+
     // Initialize the framebuffer with proper specs
     Rapture::FramebufferSpecification fbSpec;
     fbSpec.width = 1920;
@@ -66,38 +70,48 @@ void TestLayer::onAttach()
         Rapture::FramebufferTextureFormat::DEPTH24STENCIL8  // Depth attachment
     };
     m_framebuffer = Rapture::Framebuffer::create(fbSpec);
-
+    m_materialViewerFramebuffer = Rapture::Framebuffer::create(fbSpec);
 
 	// Initialize keybindings from config file
 	KeyBindings::init("keybindings.cfg");
 
-	
-	Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
-	//loader.loadModel("adamHead/adamHead.gltf");
-	loader.loadModel("Sponza/glTF/Sponza.gltf");
+    Rapture::ModelLoadersCache::init();
 
-	//loader.loadModel("metalroughspheres/MetalRoughSpheres.gltf");
+    m_materialViewerSphere = std::make_shared<Rapture::Sphere>(1.0f);
 
+    // Register for scene activation events - store the ID for cleanup
+    m_sceneActivatedListenerId = Rapture::GameEvents::onSceneActivated().addListener(
+        [this](std::shared_ptr<Rapture::Scene> scene) {
+            Rapture::GE_INFO("TestLayer::onSceneActivated - New active scene: {0}", scene->getSceneName());
+            onNewActiveScene(scene);
+        });
 
-    //loader.loadModel("Buggy/Buggy.gltf");
-    //loader.loadModel("BoxAnimated/BoxAnimated.gltf");
-    //loader.loadModel("RiggedSimple/RiggedSimple.gltf");
+    // Get initial scene and set it up
+    auto activeScene = Rapture::SceneManager::getInstance().getActiveScene();
+    if (activeScene) {
+        onNewActiveScene(activeScene);
+    }
 
-    loader.loadModel("BrainStem/BrainStem.gltf");
-    //loader.loadModel("CesiumMan/CesiumMan.gltf");
+    // Initialize FPS counter variables
+    m_fpsCounter = 0;
+    m_fpsTimer = 0.0f;
+}
 
-	//loader.loadModel("sphere.gltf");
-	//loader.loadModel("donut.gltf");
-    //loader.loadModel("cube.gltf");
+void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
+{
+    auto activeScene = scene;
 
-    std::vector<std::string> cubemapPathsSTR = {
-        "D:/downloads/skybox/skybox/right.jpg",
-        "D:/downloads/skybox/skybox/left.jpg",
-        "D:/downloads/skybox/skybox/top.jpg",
-        "D:/downloads/skybox/skybox/bottom.jpg",
-        "D:/downloads/skybox/skybox/front.jpg", 
-        "D:/downloads/skybox/skybox/back.jpg"
-    };
+    if (!activeScene) {
+        Rapture::GE_ERROR("No active scene found");
+        return;
+    }
+    
+	//Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
+	auto loader = Rapture::ModelLoadersCache::getLoader("E:/Dev/Games/LiDAR Game v1/LiDAR-Game/build/bin/Debug/assets/models/Sponza/glTF/Sponza.gltf", activeScene);
+    if (loader){
+        loader->loadModel("Sponza/glTF/Sponza.gltf");
+        loader->loadModel("sphere.gltf");
+    }
 
     std::vector<std::filesystem::path> cubemapPaths = {
         "D:/downloads/skybox/skybox/right.jpg",
@@ -108,12 +122,10 @@ void TestLayer::onAttach()
         "D:/downloads/skybox/skybox/back.jpg"
     };
 
+    activeScene->getSkyBox().setTexturePaths(cubemapPaths);
+    m_showDebugRay = activeScene->getSettings().rayCastDebugEnabled;
 
-    m_activeScene->getSkyBox().setTexturePaths(cubemapPaths);
-    m_showDebugRay = m_activeScene->getSettings().rayCastDebugEnabled;
-
-
-    Rapture::Entity light1 = m_activeScene->createEntity("Light 1");
+    Rapture::Entity light1 = activeScene->createEntity("Light 1");
     light1.addComponent<Rapture::TransformComponent>(
         glm::vec3(2.0f, 1.0f, -3.0f),  // Position to the right of the sphere, same Z coordinate
         glm::vec3(0.0f),              // No rotation needed for point light
@@ -128,7 +140,7 @@ void TestLayer::onAttach()
     light1.addComponent<Rapture::SpriteComponent>();
     
     // Light 2: A blue-tinted light to the left side
-    Rapture::Entity light2 = m_activeScene->createEntity("Light 2");
+    Rapture::Entity light2 = activeScene->createEntity("Light 2");
     light2.addComponent<Rapture::TransformComponent>(
         glm::vec3(-2.0f, 0.5f, -3.0f), // Position to the left of the sphere, same Z coordinate
         glm::vec3(0.0f),               // No rotation needed for point light
@@ -138,9 +150,8 @@ void TestLayer::onAttach()
     light2.addComponent<Rapture::LightComponent>();
     light2.addComponent<Rapture::SpriteComponent>();
 
-
 	// Create camera controller
-	Rapture::Entity camera_controller = m_activeScene->createEntity("Camera Controller");
+	Rapture::Entity camera_controller = activeScene->createEntity("Camera Controller");
 	camera_controller.addComponent<Rapture::CameraControllerComponent>(60.0f, 1920.0f / 1080.0f, 0.1f, 1000.0f);
     m_cameraEntity = std::make_shared<Rapture::Entity>(camera_controller);
 	// Initialize the camera controller
@@ -150,14 +161,19 @@ void TestLayer::onAttach()
 	auto pos = Rapture::Input::getMousePos();
 	CameraController::setMousePosition(pos.first, pos.second);
     
-    // Initialize FPS counter variables
-    m_fpsCounter = 0;
-    m_fpsTimer = 0.0f;
+}
+
+
+// Return the active scene from SceneManager
+std::shared_ptr<Rapture::Scene> TestLayer::getActiveScene() const
+{
+    return Rapture::SceneManager::getInstance().getActiveScene();
 }
 
 void TestLayer::onDetach()
 {
-
+    Rapture::ModelLoadersCache::clear();
+    Rapture::GameEvents::onSceneActivated().removeListener(m_sceneActivatedListenerId);
 }
 
 void TestLayer::notifyCameraChange()
@@ -181,6 +197,11 @@ void TestLayer::onUpdate(float ts)
 {
     RAPTURE_PROFILE_FUNCTION();
     RAPTURE_PROFILE_GPU_SCOPE("TestLayer::onUpdate");
+    
+    // Get the active scene from SceneManager
+    auto activeScene = Rapture::SceneManager::getInstance().getActiveScene();
+    if (!activeScene) return;
+    
     // Ensure time is in seconds
     float timeInSeconds = ts;
     
@@ -203,7 +224,6 @@ void TestLayer::onUpdate(float ts)
         m_fpsTimer = 0.0f;
     }
 
-
 	// Update the camera controller
 	CameraController::update(ts);
     
@@ -211,7 +231,7 @@ void TestLayer::onUpdate(float ts)
     notifyCameraChange();
     
     // Update animations in the scene
-    Rapture::AnimationSystem::updateAnimations(*m_activeScene, timeInSeconds);
+    Rapture::AnimationSystem::updateAnimations(*activeScene, timeInSeconds);
 
     if (Rapture::Input::isMouseBtnPressed(0))
     {
@@ -272,7 +292,7 @@ void TestLayer::onUpdate(float ts)
                         viewportMouseX, 
                         viewportMouseY,
                         width, height,
-                        m_activeScene.get(),
+                        activeScene.get(),
                         cameraComponent.camera.getProjectionMatrix(),
                         viewMatrix,
                         [this, cameraPosition, rayDirection](const std::optional<Rapture::RaycastHit>& hit) {
@@ -313,10 +333,10 @@ void TestLayer::onUpdate(float ts)
 	
 
 	// Render the scene to the framebuffer
-	Rapture::Renderer::sumbitScene(m_activeScene);
-    Rapture::Renderer::drawSprites(m_activeScene);
+	Rapture::Renderer::sumbitScene(activeScene);
+    Rapture::Renderer::drawSprites(activeScene);
 
-    m_activeScene->onUpdate();
+    activeScene->onUpdate();
 
     // Draw the debug ray if active
     if (m_showDebugRay && m_debugRayLine) {
@@ -325,12 +345,18 @@ void TestLayer::onUpdate(float ts)
 
 	// Unbind the framebuffer to return to the default framebuffer
 	m_framebuffer->unBind();
+
+    m_materialViewerFramebuffer->bind();
+    Rapture::Renderer::drawSphere(m_materialViewerSphere);
+    m_materialViewerFramebuffer->unBind();
+
+
 }
 
 void TestLayer::onEvent(Rapture::Event& event)
 {
     // Handle mouse button pressed events
-    if (event.getEventType() == Rapture::EventType::MouseBtnPressed)
+    if (event.getEventType() == Rapture::EventType::MouseButtonPressed)
     {
         Rapture::MouseButtonPressedEvent& mouseEvent = static_cast<Rapture::MouseButtonPressedEvent&>(event);
         
@@ -358,4 +384,5 @@ void TestLayer::onEvent(Rapture::Event& event)
         }
     }
 }
+
 
