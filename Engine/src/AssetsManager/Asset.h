@@ -12,10 +12,11 @@ namespace Rapture {
 
     // Forward declarations to break circular dependency
     class Material;
+    class Shader; // Forward declare Shader
 
     using AssetHandle = UUID;
     // NOTE: i dont like this but dont know variants well enough and dont want to change the entire codebase
-    using AssetVariant = std::variant<std::monostate, std::shared_ptr<Mesh>, std::shared_ptr<Texture2D>, std::shared_ptr<Material>>;
+    using AssetVariant = std::variant<std::monostate, std::shared_ptr<Mesh>, std::shared_ptr<Texture2D>, std::shared_ptr<Material>, std::shared_ptr<Shader>>;
 
     enum class AssetType {
         None = 0,

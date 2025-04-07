@@ -1,6 +1,8 @@
 #pragma once
 
 #include "../Shaders/Shader.h"
+#include "../AssetsManager/Asset.h"
+#include "../AssetsManager/AssetManager.h"
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -14,7 +16,7 @@
 
 namespace Rapture {
 
-enum class MaterialType {
+enum class MaterialType : uint8_t {
 	PBR,
 	PHONG,
 	SOLID,
@@ -25,12 +27,29 @@ enum class MaterialType {
 
 
 
+inline std::string MaterialTypeToString(MaterialType type){
+    switch (type) {
+        case MaterialType::PBR: return "PBR";
+        case MaterialType::PHONG: return "Phong";
+        case MaterialType::SOLID: return "Solid";
+        case MaterialType::KHR_SPECULAR_GLOSSINESS: return "Specular Glossiness";
+        case MaterialType::CUBE_MAP: return "Cube Map";
+        case MaterialType::CUSTOM: return "Custom";
+        default: return "Unknown";
+    }
+}
 
 
 enum class MaterialFlagBitLocations {
 	TRANSPARENT_=0,
 	OCCLUSION=1
 	// add more on the go
+};
+
+enum class ShaderRenderPassType {
+    DEFAULT,
+    GEOMETRY,
+    LIGHTING
 };
 
 // Forward declarations
@@ -50,8 +69,19 @@ class Material : public std::enable_shared_from_this<Material> {
         void setName(const std::string& name) { m_name = name; }
         
         // Shader management
-        void setShader(Shader* shader);
-        Shader* getShader() const { return m_shader; }
+        std::shared_ptr<Shader> getShader() { 
+            if (auto shader = m_weakShader.lock()) {
+                return shader;
+            }
+            m_weakShader = AssetManager::getAsset<Shader>(m_shaderHandle);
+            return m_weakShader.lock();
+        }
+
+        void setShader(AssetHandle handle);
+
+        AssetHandle getShaderHandle() const { return m_shaderHandle; }
+        std::shared_ptr<Shader> getGeometryPassShader() const { return s_geometryPassShader; }
+        std::shared_ptr<Shader> getLightingPassShader() const { return s_lightingPassShader; }
         
         // Uniform buffer management
         void setUniformBuffer(std::shared_ptr<UniformBuffer> uniformBuffer);
@@ -89,9 +119,9 @@ class Material : public std::enable_shared_from_this<Material> {
         void setParameter(const std::string& name, const MaterialParameter& parameter);
         bool hasParameter(const std::string& name) const;
         const MaterialParameter& getParameter(const std::string& name) const;
-        
+
         // Binding and drawing
-        virtual void bind();
+        virtual void bind(ShaderRenderPassType type = ShaderRenderPassType::DEFAULT);
         virtual void unbind();
         
         // Derived classes need to implement this to upload specific uniform data
@@ -104,13 +134,21 @@ class Material : public std::enable_shared_from_this<Material> {
     protected:
         std::string m_name;
         MaterialType m_type;
-        Shader* m_shader = nullptr;
+        AssetHandle m_shaderHandle;
+        std::weak_ptr<Shader> m_weakShader;
         std::shared_ptr<UniformBuffer> m_uniformBuffer = nullptr;
         char m_renderFlags = 0;
         MaterialParameterMap m_parameters;
         bool m_isDirty = true;
+
+        static std::shared_ptr<Shader> s_geometryPassShader;
+        static std::shared_ptr<Shader> s_lightingPassShader;
+
+        ShaderRenderPassType m_lastShaderType = ShaderRenderPassType::DEFAULT;
         
         void markDirty() { m_isDirty = true; }
+
+    friend class MaterialLibrary;
 
 };
 
@@ -124,7 +162,7 @@ class PBRMaterial : public Material {
         virtual void bindData() override;
 
         // Make static members public so they can be initialized by MaterialLibrary
-        static Shader* s_shader;
+        static AssetHandle s_defaultShaderHandle;
 
     protected:
         PBRUniform m_uniformData;
@@ -138,7 +176,7 @@ class PhongMaterial : public Material {
         virtual void bindData() override;
 
         // Make static members public so they can be initialized by MaterialLibrary
-        static Shader* s_shader;
+        static AssetHandle s_defaultShaderHandle;
 
     protected:
         PhongUniform m_uniformData;
@@ -152,7 +190,7 @@ class SolidMaterial : public Material {
         virtual void bindData() override;
 
         // Make static members public so they can be initialized by MaterialLibrary
-        static Shader* s_shader;
+        static AssetHandle s_defaultShaderHandle;
 
     protected:
         SolidColorUniform m_uniformData;
@@ -166,7 +204,7 @@ class CubeMapMaterial : public Material {
         virtual void bindData() override;
 
         // Make static members public so they can be initialized by MaterialLibrary
-        static Shader* s_shader;
+        static AssetHandle s_defaultShaderHandle;
 
 };
 
@@ -180,7 +218,7 @@ class SpecularGlossinessMaterial : public Material {
         virtual void bindData() override;
 
         // Make static members public so they can be initialized by MaterialLibrary
-        static Shader* s_shader;
+        static AssetHandle s_defaultShaderHandle;
 
     protected:
         SpecularGlossinessUniform m_uniformData;

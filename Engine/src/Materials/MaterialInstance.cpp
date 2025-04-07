@@ -185,7 +185,7 @@ void MaterialInstance::bind()
     GE_CORE_INFO("Binding MaterialInstance '{0}'", m_name);
     
     // First bind the shader from base material
-    Shader* shader = m_baseMaterial->getShader();
+    std::shared_ptr<Shader> shader = m_baseMaterial->getShader();
     if (shader) {
         shader->bind();
         GE_CORE_INFO("  Bound shader from base material");

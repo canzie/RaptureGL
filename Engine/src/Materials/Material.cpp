@@ -12,16 +12,19 @@ namespace Rapture
 {
 
 	// Initialize static shader and UBO pointers for derived classes
-	Shader* PBRMaterial::s_shader = nullptr;
+	AssetHandle PBRMaterial::s_defaultShaderHandle = AssetHandle();
 
-	Shader* PhongMaterial::s_shader = nullptr;
+	AssetHandle PhongMaterial::s_defaultShaderHandle = AssetHandle();
 
-	Shader* SolidMaterial::s_shader = nullptr;
+	AssetHandle SolidMaterial::s_defaultShaderHandle = AssetHandle();
     
     // Initialize static shader for SpecularGlossiness material
-    Shader* SpecularGlossinessMaterial::s_shader = nullptr;
+    AssetHandle SpecularGlossinessMaterial::s_defaultShaderHandle = AssetHandle();
 
-	Shader* CubeMapMaterial::s_shader = nullptr;
+	AssetHandle CubeMapMaterial::s_defaultShaderHandle = AssetHandle();
+
+    std::shared_ptr<Shader> Material::s_geometryPassShader = nullptr;
+    std::shared_ptr<Shader> Material::s_lightingPassShader = nullptr;
 
 
 	//OpenGLShader* Material::s_shader = nullptr;
@@ -53,9 +56,15 @@ namespace Rapture
 		return std::make_shared<MaterialInstance>(shared_from_this(), instanceName);
 	}
 
-	void Material::setShader(Shader* shader)
+	void Material::setShader(AssetHandle handle)
 	{
-		m_shader = shader;
+        // check if shader is valid, and the handle points to a shaer, it will return nullptr neither are true
+        if (auto shader = AssetManager::getAsset<Shader>(handle)) {
+            m_weakShader = shader;
+            m_shaderHandle = handle;
+        } else {
+            GE_CORE_ERROR("Material::setShader - Invalid shader handle: {0}", handle);
+        }
 	}
 
 	void Material::setUniformBuffer(std::shared_ptr<UniformBuffer> uniformBuffer)
@@ -218,25 +227,70 @@ namespace Rapture
 		return getParameter(StringToParameterID(name));
 	}
 
-	void Material::bind()
-	{
+
+
+    void Material::bind(ShaderRenderPassType type)
+    {
 		RAPTURE_PROFILE_SCOPE("Material Bind");
-		if (m_shader)
+		switch (type)
 		{
-            m_shader->bind();
-			bindData();
-		}
-		else
-		{
-			GE_CORE_ERROR("Attempted to bind material '{0}' with no shader!", m_name);
-		}
+			case ShaderRenderPassType::GEOMETRY: { 
+                if (!s_geometryPassShader) throw std::runtime_error("Geometry pass shader not set for material '" + m_name + "'");
+				s_geometryPassShader->bind();
+                bindData();
+				break;
+            }
+			case ShaderRenderPassType::LIGHTING: {
+                if (!s_lightingPassShader) throw std::runtime_error("Lighting pass shader not set for material '" + m_name + "'");
+				s_lightingPassShader->bind();
+                bindData();
+				break;
+            }
+            case ShaderRenderPassType::DEFAULT: {
+                auto lockedShader = m_weakShader.lock(); // Lock it once
+                if (!lockedShader) {
+                    GE_CORE_CRITICAL("Material '{}': Attempting to bind with an expired/invalid shader! Handle: {}", m_name, m_shaderHandle);
+                    throw std::runtime_error("Default shader is invalid for material '" + m_name + "'");
+                }
+                // Add log before the actual bind call
+				lockedShader->bind(); // Use the locked pointer
+                bindData();
+				break;
+            }
+            default: {
+				GE_CORE_ERROR("Invalid shader type for material '{0}'", m_name);
+				return;
+            }
+        }
+        m_lastShaderType = type;
+
 	}
 
 	void Material::unbind()
 	{
 		RAPTURE_PROFILE_SCOPE("Material Unbind");
-		if (m_shader)
-			m_shader->unBind();
+        switch (m_lastShaderType)
+        {
+            case ShaderRenderPassType::GEOMETRY: {
+                if (!s_geometryPassShader) throw std::runtime_error("Geometry pass shader not set for material '" + m_name + "'");
+                s_geometryPassShader->unBind();
+                break;
+            }
+            case ShaderRenderPassType::LIGHTING: {
+                if (!s_lightingPassShader) throw std::runtime_error("Lighting pass shader not set for material '" + m_name + "'");
+                s_lightingPassShader->unBind();
+                break;
+            }
+            case ShaderRenderPassType::DEFAULT: {
+                if (!m_weakShader.lock()) throw std::runtime_error("Default shader not set for material '" + m_name + "'");
+                m_weakShader.lock()->unBind();
+                break;
+            }
+            default: {
+                GE_CORE_ERROR("Invalid shader renderpass type for material '{0}'", m_name);
+                return;
+            }
+        }
 
 		// Unbind all textures in the material parameters
 		for (const auto& [name, param] : m_parameters) {
@@ -258,13 +312,13 @@ namespace Rapture
 		GE_CORE_INFO("Creating PBR Material: {0} (Color: {1},{2},{3})", 
 			m_name, base_color.x, base_color.y, base_color.z);
 		
-		if (!s_shader) {
+		if (!s_defaultShaderHandle) {
 			GE_CORE_ERROR("Metal shader not initialized! Use MaterialLibrary::init() first.");
 			return;
 		}
 		
 
-		setShader(s_shader);
+		setShader(s_defaultShaderHandle);
 
 
 		m_uniformBuffer = std::make_shared<UniformBuffer>(
@@ -411,12 +465,12 @@ namespace Rapture
 	{
 		GE_CORE_INFO("Creating Phong Material: {0}", m_name);
 		
-		if (!s_shader) {
+		if (!s_defaultShaderHandle) {
 			GE_CORE_ERROR("Phong shader not initialized! Use MaterialLibrary::init() first.");
 			return;
 		}
 		
-		setShader(s_shader);
+		setShader(s_defaultShaderHandle);
 		
 		// Create our uniform buffer
 		m_uniformBuffer = std::make_shared<UniformBuffer>(
@@ -489,12 +543,12 @@ namespace Rapture
 		GE_CORE_INFO("Creating Solid Material: {0} (Color: {1},{2},{3})", 
 			m_name, base_color.x, base_color.y, base_color.z);
 		
-		if (!s_shader) {
+		if (!s_defaultShaderHandle) {
 			GE_CORE_ERROR("Solid shader not initialized! Use MaterialLibrary::init() first.");
 			return;
 		}
 		
-		setShader(s_shader);
+		setShader(s_defaultShaderHandle);
 		
 		// Create our uniform buffer
 		m_uniformBuffer = std::make_shared<UniformBuffer>(
@@ -531,14 +585,14 @@ namespace Rapture
 		if (hasParameter(ParameterID::TEXTURE_ALBEDO)) {
 			
 			std::shared_ptr<Texture2D> texture = getParameter(ParameterID::TEXTURE_ALBEDO).asTexture().lock();
-			if (texture) {
+			if (texture && m_weakShader.lock()) {
 				texture->bind(static_cast<uint32_t>(TextureActiveSlot::ALBEDO));
-				m_shader->setBool("u_HasAlbedoMap", true);
+				m_weakShader.lock()->setBool("u_HasAlbedoMap", true);
 			} else {
-				m_shader->setBool("u_HasAlbedoMap", false);
+				m_weakShader.lock()->setBool("u_HasAlbedoMap", false);
 			}
 		} else {
-			m_shader->setBool("u_HasAlbedoMap", false);
+			m_weakShader.lock()->setBool("u_HasAlbedoMap", false);
 		}
 
 
@@ -575,12 +629,12 @@ namespace Rapture
             m_name, diffuseColor.x, diffuseColor.y, diffuseColor.z, 
             specularColor.x, specularColor.y, specularColor.z, glossiness);
         
-        if (!s_shader) {
+        if (!s_defaultShaderHandle) {
             GE_CORE_ERROR("Specular-Glossiness shader not initialized! Use MaterialLibrary::init() first.");
             return;
         }
         
-        setShader(s_shader);
+        setShader(s_defaultShaderHandle);
         
         // Create our uniform buffer
         m_uniformBuffer = std::make_shared<UniformBuffer>(
@@ -692,13 +746,13 @@ namespace Rapture
     CubeMapMaterial::CubeMapMaterial()
     : Material(MaterialType::CUBE_MAP, "CubeMap_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
     {
-        setShader(s_shader);
+        setShader(s_defaultShaderHandle);
     }
 
     CubeMapMaterial::CubeMapMaterial(std::shared_ptr<Texture2D> skybox, AssetHandle handle)
     : Material(MaterialType::CUBE_MAP, "CubeMap_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
     {
-        setShader(s_shader);
+        setShader(s_defaultShaderHandle);
 
         setTexture(ParameterID::TEXTURE_CUBEMAP, skybox, handle);
 

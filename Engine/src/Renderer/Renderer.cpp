@@ -357,7 +357,7 @@ namespace Rapture
         material->bind();
         
         // Get shader pointer once and use it for all operations
-        Shader* const shdr = material->getShader();
+        std::shared_ptr<Shader> const shdr = material->getShader();
         
         // Set uniform values directly with minimal function calls
         // Camera position is constant (0,0,0) in this implementation
@@ -829,6 +829,12 @@ namespace Rapture
         if (mesh) {
             auto vao = mesh->getMeshData().vao;
             if (vao) {
+
+                glm::mat4 modelMatrix = glm::mat4(1.0f);
+                        
+                // Set the model matrix
+                material->getShader()->setMat4("u_model", modelMatrix);
+
                 vao->bind();
                 glDrawElementsBaseVertex(GL_TRIANGLES, mesh->getMeshData().indexCount, GL_UNSIGNED_INT, (void*)mesh->getMeshData().indexAllocation->offsetBytes, mesh->getMeshData().vertexOffsetInVertices);
                 vao->unbind();

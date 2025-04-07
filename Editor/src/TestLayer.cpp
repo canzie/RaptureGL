@@ -18,6 +18,7 @@
 #include "Textures/Texture.h"
 #include "Debug/Profiler.h"
 
+
 // Vendor includes
 #include <imgui.h>
 #include <glm/gtc/type_ptr.hpp>
@@ -54,6 +55,7 @@ void TestLayer::setSelectedEntity(std::shared_ptr<Rapture::Entity> entity)
     if (m_entitySelectedCallback) {
         m_entitySelectedCallback(entity);
     }
+
 }
 
 void TestLayer::onAttach()
@@ -77,7 +79,7 @@ void TestLayer::onAttach()
 
     Rapture::ModelLoadersCache::init();
 
-    m_materialViewerSphere = std::make_shared<Rapture::Sphere>(1.0f);
+    m_materialViewerSphere = std::make_shared<Rapture::Sphere>(3.0f);
 
     // Register for scene activation events - store the ID for cleanup
     m_sceneActivatedListenerId = Rapture::GameEvents::onSceneActivated().addListener(
@@ -174,6 +176,7 @@ void TestLayer::onDetach()
 {
     Rapture::ModelLoadersCache::clear();
     Rapture::GameEvents::onSceneActivated().removeListener(m_sceneActivatedListenerId);
+
 }
 
 void TestLayer::notifyCameraChange()
@@ -328,15 +331,21 @@ void TestLayer::onUpdate(float ts)
     }
     
 
+
+    Rapture::DeferredRenderer::sumbitScene(activeScene);
+
+
 	// Bind the framebuffer to render the scene to a texture
-	m_framebuffer->bind();
-	
+	//m_framebuffer->bind();
+    getFramebuffer()->bind(false);
+
+	activeScene->onUpdate();
 
 	// Render the scene to the framebuffer
-	Rapture::Renderer::sumbitScene(activeScene);
+	//Rapture::Renderer::sumbitScene(activeScene);
     Rapture::Renderer::drawSprites(activeScene);
 
-    activeScene->onUpdate();
+
 
     // Draw the debug ray if active
     if (m_showDebugRay && m_debugRayLine) {
@@ -344,11 +353,13 @@ void TestLayer::onUpdate(float ts)
     }
 
 	// Unbind the framebuffer to return to the default framebuffer
-	m_framebuffer->unBind();
+	//m_framebuffer->unBind();
+    getFramebuffer()->unBind();
 
-    m_materialViewerFramebuffer->bind();
-    Rapture::Renderer::drawSphere(m_materialViewerSphere);
-    m_materialViewerFramebuffer->unBind();
+    //m_materialViewerFramebuffer->bind();
+    //Rapture::Renderer::drawSphere(m_materialViewerSphere);
+    //m_materialViewerFramebuffer->unBind();
+
 
 
 }

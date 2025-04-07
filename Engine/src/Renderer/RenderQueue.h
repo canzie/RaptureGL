@@ -16,13 +16,15 @@
 namespace Rapture {
 
     enum class RenderQueueType {
-        GEOMETRY,
+        NONE,
+        DEFERRED,
+        FORWARD,
         POSTPROCESS,
         SHADOWMAP
     };
 
     //using CommandVariant = std::variant<RenderCommand, PostProcessCommand>;
-    using CommandVariant = std::variant<std::monostate, RenderCommand, PostProcessCommand, AnimationSetupCommand, GeometryPassCommand, LightingPassCommand>;
+    using CommandVariant = std::variant<std::monostate, RenderCommand, PostProcessCommand, AnimationSetupCommand, GeometryPassCommand, LightingPassCommand, SSRCommand>;
 
     class RenderQueue {
     public:
@@ -179,8 +181,9 @@ namespace Rapture {
         static RenderQueue buildGeometryCommandQueue(const std::shared_ptr<Scene>& scene);
         static RenderQueue buildPostProcessCommandQueue(const std::shared_ptr<Scene>& scene);
         
+
         // Asynchronous queue building
-        static std::shared_ptr<RenderQueue> buildGeometryCommandQueueAsync(const std::shared_ptr<Scene>& scene);
+        static std::shared_ptr<RenderQueue> buildGeometryCommandQueueAsync(const std::shared_ptr<Scene>& scene, RenderQueueType type=RenderQueueType::FORWARD);
         
         // Process any completed queues (called from main thread)
         static void processCompletedQueues();
@@ -200,6 +203,9 @@ namespace Rapture {
         static void queueBuilderThread();
         
         // Build implementation used by both sync and async paths
-        static void buildGeometryQueue(const QueueBuildRequest& request);
+        static void buildGeometryQueue(const QueueBuildRequest& request, bool isFinal=true);
+        static void buildDeferredQueue(const QueueBuildRequest& request);
+
     };
+
 }

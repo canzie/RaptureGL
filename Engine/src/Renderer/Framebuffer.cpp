@@ -93,6 +93,8 @@ namespace Rapture
 		gBufferSpec.attachments.push_back(
 			useHighPrecision ? FramebufferTextureFormat::RGBA16F : FramebufferTextureFormat::RGBA8
 		);
+        
+        gBufferSpec.attachments.push_back(FramebufferTextureFormat::Depth);
 		
 		// Depth buffer is added automatically in the Framebuffer::invalidate() method
 		
@@ -281,7 +283,7 @@ namespace Rapture
 		GE_CORE_INFO("Framebuffer resized to ({0}, {1})", width, height);
 	}
 
-	void Framebuffer::bind()
+	void Framebuffer::bind(bool clear)
 	{
 		glBindFramebuffer(GL_FRAMEBUFFER, m_framebufferID);
 		glViewport(0, 0, m_specification.width, m_specification.height);
@@ -292,7 +294,10 @@ namespace Rapture
 		glDepthMask(GL_TRUE); // Ensure depth writing is enabled
 		
 		// Clear both color and depth buffers to ensure a clean start
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		if(clear)
+		{
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		}
 		
 		// Make sure blending is disabled for the framebuffer to prevent transparency issues
 		glDisable(GL_BLEND);
@@ -310,8 +315,15 @@ namespace Rapture
 		// glEnable(GL_BLEND);
 		// glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	}
-	
-	uint32_t Framebuffer::getColorAttachmentRendererID(uint32_t index) const
+
+    void Framebuffer::disableDepthTesting()
+    {
+        // Disable depth testing and ensure proper depth buffer behavior
+		glDisable(GL_DEPTH_TEST);
+		glDepthMask(GL_FALSE); // Ensure depth writing is disabled
+    }
+
+    uint32_t Framebuffer::getColorAttachmentRendererID(uint32_t index) const
 	{
 		if (index >= m_colorAttachments.size())
 		{

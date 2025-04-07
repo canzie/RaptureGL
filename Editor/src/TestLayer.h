@@ -8,6 +8,7 @@
 #include "Renderer/Framebuffer.h"
 #include "Mesh/Mesh.h"
 #include "Renderer/PrimitiveShapes.h"
+#include "Renderer/Deferred Shading/DeferredRenderer.h"
 
 // Forward declarations
 class ViewportPanel;
@@ -37,8 +38,13 @@ public:
     void onNewActiveScene(std::shared_ptr<Rapture::Scene> scene);
     
     // Getter for the framebuffer to use in ImGui viewport
-    std::shared_ptr<Rapture::Framebuffer> getFramebuffer() const { return m_framebuffer; }
+    std::shared_ptr<Rapture::Framebuffer> getFramebuffer() const { 
+        return Rapture::DeferredRenderer::getLightingBuffer();
+    }
     std::shared_ptr<Rapture::Framebuffer> getMaterialFramebuffer() const { return m_materialViewerFramebuffer; }
+    
+    // Get material viewer sphere
+    std::shared_ptr<Rapture::Sphere> getMaterialViewerSphere() const { return m_materialViewerSphere; }
     
     // Use SceneManager to get the active scene
     std::shared_ptr<Rapture::Scene> getActiveScene() const;

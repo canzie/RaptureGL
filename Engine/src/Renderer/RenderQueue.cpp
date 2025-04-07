@@ -183,7 +183,12 @@ namespace Rapture {
                 
                 try {
                     // Build geometry queue
-                    buildGeometryQueue(request);
+                    if (request.resultQueue->m_type == RenderQueueType::FORWARD) {
+                        buildGeometryQueue(request);
+                    } else if (request.resultQueue->m_type == RenderQueueType::DEFERRED) {
+                        buildDeferredQueue(request);
+                    }
+                    
                 }
                 catch (const std::exception& e) {
                     GE_RENDER_ERROR("Exception in queue builder thread: {}", e.what());
@@ -199,7 +204,7 @@ namespace Rapture {
         GE_RENDER_INFO("CommandQueueBuilder: Worker thread stopped");
     }
 
-    void CommandQueueBuilder::buildGeometryQueue(const QueueBuildRequest& request)
+    void CommandQueueBuilder::buildGeometryQueue(const QueueBuildRequest& request, bool isFinal)
     {
         RAPTURE_PROFILE_FUNCTION();
         
@@ -422,14 +427,37 @@ namespace Rapture {
         
         
         // Mark the queue as done when finished
-        queue->markAsDone();
+        if (isFinal) { // this allows the queue to be used as a start for a different queue, instead of always being a complete queue
+            queue->markAsDone();
+        }
+    }
+
+    void CommandQueueBuilder::buildDeferredQueue(const QueueBuildRequest &request)
+    {
+        RAPTURE_PROFILE_FUNCTION();
+
+        buildGeometryQueue(request, false);
+
+        LightingPassCommand lightingPassCmd;
+        // Placeholder: Eventually get the actual lighting shader if needed here
+        // lightingPassCmd.lightPassShader = ...; 
+        request.resultQueue->add(lightingPassCmd);
+
+        // Add the SSR command after lighting
+        SSRCommand ssrCmd;
+        // Placeholder: Get/assign the actual SSR shader
+        // For now, we assume it will be set later or handled by the renderer
+        // ssrCmd.ssrShader = AssetManager::getAsset<Shader>(/* SSR Shader Handle */);
+        request.resultQueue->add(ssrCmd); 
+
+        request.resultQueue->markAsDone();
     }
 
     RenderQueue CommandQueueBuilder::buildGeometryCommandQueue(const std::shared_ptr<Scene> &scene)
     {
         RAPTURE_PROFILE_FUNCTION();
 
-        RenderQueue queue("GeometryQueue", RenderQueueType::GEOMETRY);
+        RenderQueue queue("GeometryQueue", RenderQueueType::FORWARD);
         auto& reg = scene->getRegistry();
         auto& sceneConfig = scene->getSettings();
         
@@ -610,7 +638,7 @@ namespace Rapture {
         return std::move(queue);
     }
 
-    std::shared_ptr<RenderQueue> CommandQueueBuilder::buildGeometryCommandQueueAsync(const std::shared_ptr<Scene>& scene) 
+    std::shared_ptr<RenderQueue> CommandQueueBuilder::buildGeometryCommandQueueAsync(const std::shared_ptr<Scene>& scene, RenderQueueType type) 
     {
         RAPTURE_PROFILE_FUNCTION();
         
@@ -626,7 +654,7 @@ namespace Rapture {
         }
         
         // Create the result queue
-        auto resultQueue = std::make_shared<RenderQueue>("AsyncGeometryQueue", RenderQueueType::GEOMETRY);
+        auto resultQueue = std::make_shared<RenderQueue>("AsyncGeometryQueue", type);
         
         // Create a request
         QueueBuildRequest request;

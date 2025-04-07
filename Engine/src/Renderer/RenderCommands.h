@@ -52,10 +52,14 @@ namespace Rapture {
         bool isSkeletal = false;
     };
     
+    // NOTE: should probably change to be the shader aset handle, becasue if the shader becomes invalid before it is bound, this will cause issues
     struct LightingPassCommand : Command {
-        std::shared_ptr<Entity> lightEntity = nullptr;
-        glm::mat4 transform;
-        // Light properties will be extracted from the entity's components
+        std::shared_ptr<Shader> lightPassShader = nullptr;
+    };
+
+    struct SSRCommand : Command {
+        std::shared_ptr<Shader> ssrShader = nullptr; 
+        // Add any SSR-specific parameters here later if needed
     };
 
 

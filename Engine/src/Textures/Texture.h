@@ -12,14 +12,18 @@ namespace Rapture {
 
 enum class TextureActiveSlot : uint32_t {
     ALBEDO=0,
-    CUBEMAP=0,
-    NORMAL=1,
+    CUBEMAP=0, // Cubemaps dont use other slots
+    NORMAL=1, 
     METALLIC=2,
+    MATERIAL=2, // used for gbuffer
+    POSTITION=3, // used for gbuffer
     ROUGHNESS=3,
     AO=4,
+    DEPTH=4,
     EMISSION=5,
     HEIGHT=6,
-    SPECULAR=7,
+    SPECULAR=7
+    
 };
 
 // Texture filtering modes

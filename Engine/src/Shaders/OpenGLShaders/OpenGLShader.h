@@ -2,6 +2,7 @@
 
 #include "../Shader.h"
 #include <unordered_map>
+#include <filesystem>
 
 namespace Rapture {
 
@@ -10,7 +11,7 @@ namespace Rapture {
 	class OpenGLShader : public Shader{
 
 	public:
-		OpenGLShader(std::string vertex_source, std::string fragment_source);
+		OpenGLShader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath);
 		virtual ~OpenGLShader() override;
 
 		virtual void bind() override;
@@ -57,7 +58,6 @@ namespace Rapture {
 		std::vector<UniformInfo> m_uniforms;
 		std::vector<UniformInfo> m_samplers;
 		std::vector<ShaderVariant> m_variants;
-		ShaderStatus m_status = ShaderStatus::UNCOMPILED;
 		
         bool compileShader(ShaderType type, const std::string& processed_source);
         bool linkProgram();

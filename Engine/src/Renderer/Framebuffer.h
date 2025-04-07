@@ -69,13 +69,17 @@ namespace Rapture
 
 		void invalidate();
 		
-		void bind();
+		void bind(bool clear = true);
 		void unbind();
+
+        void disableDepthTesting();
 		
 		void resize(uint32_t width, uint32_t height);
 		
 		uint32_t getColorAttachmentRendererID(uint32_t index = 0) const;
 		uint32_t getDepthAttachmentRendererID() const { return m_depthAttachmentID; }
+
+        const uint32_t& getFramebufferID() const { return m_framebufferID; }
 
         void clearAttachments();
 		
@@ -91,6 +95,7 @@ namespace Rapture
 		// G-buffer creation helper
 		static std::shared_ptr<Framebuffer> createGBuffer(uint32_t width, uint32_t height, bool useHighPrecision = true);
 		
+
 	private:
 		FramebufferSpecification m_specification;
 		

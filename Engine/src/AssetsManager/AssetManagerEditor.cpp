@@ -182,6 +182,8 @@ namespace Rapture {
         }
         else if (extension == ".rmat") {
             return AssetType::Material;
+        } else if (extension == ".glsl" ||extension == ".vert" || extension == ".vs" || extension == ".fs" || extension == ".frag") {
+            return AssetType::Shader;
         }
         // Add more asset types as needed
         

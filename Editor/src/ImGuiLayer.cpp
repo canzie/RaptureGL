@@ -259,6 +259,9 @@ void ImGuiLayer::onUpdate(float ts)
             if (ImGui::MenuItem("Scene Viewport", nullptr, true)) { /* Toggle Scene Viewport */ }
             if (ImGui::MenuItem("Properties", nullptr, true)) { /* Toggle Properties Panel */ }
             if (ImGui::MenuItem("Settings", nullptr, true)) { /* Toggle Settings Panel */ }
+            if (ImGui::MenuItem("GBuffer Debug View", nullptr, &m_showGBufferDebug)) {
+                m_DebugViewPanel.setEnabled(m_showGBufferDebug);
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -268,7 +271,7 @@ void ImGuiLayer::onUpdate(float ts)
     if (testLayer) {
         m_ViewportPanel.renderSceneViewport(testLayer);
         m_ViewportPanel.renderDepthBufferViewport(testLayer);
-        m_MaterialViewerPanel.render(testLayer->getMaterialFramebuffer());
+        //m_MaterialViewerPanel.render(testLayer->getMaterialFramebuffer(), testLayer->getMaterialViewerSphere());
     }
     
     //m_StatsPanel.render(ts);
@@ -291,6 +294,11 @@ void ImGuiLayer::onUpdate(float ts)
     
     m_LogPanel.render();
     m_AssetsPanel.render(testLayer);
+    
+    // Render the GBuffer debug panel if enabled
+    if (m_showGBufferDebug) {
+        m_DebugViewPanel.render();
+    }
     
     // Render the settings panel
     if (m_SettingsPanel) {

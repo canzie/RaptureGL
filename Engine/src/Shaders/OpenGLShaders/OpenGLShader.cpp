@@ -1,6 +1,7 @@
 ﻿#include "OpenGLShader.h"
 #include "glad/glad.h"
 #include <vector>
+#include <filesystem>
 #include "../../Logger/Log.h"
 #include "../OpenGLUniforms/UniformBindingPointIndices.h"
 
@@ -19,122 +20,146 @@
 
 namespace Rapture {
 
-// Shader directory path - externally accessible
-std::string s_ShaderDirectory = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL/";
-
-
 // Forward declarations for conversion functions
 GLenum ShaderTypeToGL(ShaderType type);
 GLenum UniformTypeToGL(UniformType type);
 UniformType GLToUniformType(GLenum type);
 
-std::string parseShader(std::string filepath)
+// Helper function to read shader source from a file path
+std::string readShaderSource(const std::filesystem::path& filepath) {
+    std::ifstream stream(filepath);
+    if (!stream) {
+        GE_CORE_ERROR("OpenGLShader: Failed to open shader file: {}", filepath.string());
+        return "";
+    }
+    
+    std::stringstream ss;
+    ss << stream.rdbuf();
+    stream.close();
+    
+    std::string source = ss.str();
+    if (source.empty()) {
+         GE_CORE_WARN("OpenGLShader: Shader file is empty: {}", filepath.string());
+    }
+    return source;
+}
+
+OpenGLShader::OpenGLShader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath) 
+    : Shader(vertexPath.stem().string())
 {
+    GE_CORE_TRACE("OpenGLShader: Creating shader from {} and {}", vertexPath.string(), fragmentPath.string());
 
-	std::string fullPath = s_ShaderDirectory + filepath;
-	std::ifstream stream(fullPath);
-	std::string ShaderString;
-
-		if (!stream)
-		{
-			GE_CORE_ERROR("ShaderParser: Shader file parse error: {0}", fullPath);
-		}
-
-		char c = stream.get();
-		while (stream.good())
-		{
-			ShaderString.push_back(c);
-			c = stream.get();
-		};
-		stream.close();
-
-		return ShaderString;
-	}
-
-OpenGLShader::OpenGLShader(std::string vertex_source, std::string fragment_source) 
-    : Shader(vertex_source + "_" + fragment_source), m_status(ShaderStatus::UNCOMPILED)
-{
-    std::string vertexShaderSource = parseShader(vertex_source);
+    std::string vertexShaderSource = readShaderSource(vertexPath);
     if (vertexShaderSource.empty()) {
-        GE_CORE_CRITICAL("OpenGLShader: Vertex shader source is empty after parsing: {0}", vertex_source);
+        GE_CORE_CRITICAL("OpenGLShader: Vertex shader source is empty or failed to read: {}", vertexPath.string());
         m_status = ShaderStatus::SHADER_ERROR;
         return;
     }
     m_sources[ShaderType::VERTEX] = vertexShaderSource;
 
-        std::string fragmentShaderSource = parseShader(fragment_source);
-        if (fragmentShaderSource.empty()) {
-            m_status = ShaderStatus::SHADER_ERROR;
-            GE_CORE_CRITICAL("OpenGLShader: Fragment shader source is empty after parsing: {0}", fragment_source);
-            return;
+    std::string fragmentShaderSource = readShaderSource(fragmentPath);
+    if (fragmentShaderSource.empty()) {
+        m_status = ShaderStatus::SHADER_ERROR;
+        GE_CORE_CRITICAL("OpenGLShader: Fragment shader source is empty or failed to read: {}", fragmentPath.string());
+        return;
+    }
+    m_sources[ShaderType::FRAGMENT] = fragmentShaderSource;
+
+     if (!compile()) {
+        GE_CORE_ERROR("OpenGLShader: Failed to compile/link shader program derived from {} and {}", vertexPath.string(), fragmentPath.string());
+        return;
+     }
+
+
+    if (m_status == ShaderStatus::SHADER_ERROR) {
+        GE_CORE_ERROR("OpenGLShader: Failed to compile/link shader program derived from {} and {}", vertexPath.string(), fragmentPath.string());
+        // Cleanup potentially created program ID if linking failed after compilation succeeded partially
+        if (m_programID != 0) {
+            glDeleteProgram(m_programID);
+            m_programID = 0;
         }
-        m_sources[ShaderType::FRAGMENT] = fragmentShaderSource;
+        return; // Don't proceed to uniform block binding if compilation/linking failed
+    }
 
-	compile();
+    // Rest of the constructor (uniform block binding)
+    GLint i;
+    GLint count;
 
-		GLint i;
-		GLint count;
+    const GLsizei bufSize = 32; // maximum name length
+    GLchar name[bufSize]; // variable name in GLSL
+    GLsizei length; // name length
 
-		const GLsizei bufSize = 32; // maximum name length
-		GLchar name[bufSize]; // variable name in GLSL
-		GLsizei length; // name length
+    glGetProgramiv(m_programID, GL_ACTIVE_UNIFORM_BLOCKS, &count);
+    GE_CORE_TRACE("OpenGLShader: Found {} active uniform blocks.", count);
 
-	glGetProgramiv(m_programID, GL_ACTIVE_UNIFORM_BLOCKS, &count);
-	
-	for (i = 0; i < count; i++)
-	{
-		GLint blockSize = 0;
-		glGetActiveUniformBlockiv(m_programID, (GLuint)i, GL_UNIFORM_BLOCK_DATA_SIZE, &blockSize);
-		glGetActiveUniformBlockiv(m_programID, (GLuint)i, GL_UNIFORM_BLOCK_NAME_LENGTH, &length);
-		glGetActiveUniformBlockName(m_programID, (GLuint)i, length, NULL, name);
+    for (i = 0; i < count; i++)
+    {
+        GLint blockSize = 0;
+        glGetActiveUniformBlockiv(m_programID, (GLuint)i, GL_UNIFORM_BLOCK_DATA_SIZE, &blockSize);
+        glGetActiveUniformBlockiv(m_programID, (GLuint)i, GL_UNIFORM_BLOCK_NAME_LENGTH, &length);
+        glGetActiveUniformBlockName(m_programID, (GLuint)i, bufSize, &length, name);
 
-		std::string blockName(name);
-		GLuint bindingPoint = 0;
-		
-		// Map block names to binding points
-		if (blockName == "BaseTransformMats") {
-			bindingPoint = BASE_BINDING_POINT_IDX;
-		}
-		else if (blockName == "PBR") {
-			bindingPoint = PBR_BINDING_POINT_IDX;
-		}
-		else if (blockName == "Phong") {
-			bindingPoint = PHONG_BINDING_POINT_IDX;
-		}
-		else if (blockName == "SOLID") {
-			bindingPoint = SOLID_BINDING_POINT_IDX;
-		}
-		else if (blockName == "SpecularGlossiness") {
-			bindingPoint = SPECULAR_GLOSSINESS_BINDING_POINT_IDX;
-		}
-		else {
-			GE_CORE_WARN("OpenGLShader: Unknown uniform block '{0}'", blockName);
+        std::string blockName(name);
+        GLuint bindingPoint = 0;
+        
+        // Map block names to binding points
+        if (blockName == "BaseTransformMats") {
+            bindingPoint = BASE_BINDING_POINT_IDX;
+        }
+        else if (blockName == "PBR") {
+            bindingPoint = PBR_BINDING_POINT_IDX;
+        }
+        else if (blockName == "Phong") {
+            bindingPoint = PHONG_BINDING_POINT_IDX;
+        }
+        else if (blockName == "SOLID") {
+            bindingPoint = SOLID_BINDING_POINT_IDX;
+        }
+        else if (blockName == "SpecularGlossiness") {
+            bindingPoint = SPECULAR_GLOSSINESS_BINDING_POINT_IDX;
+        }
+        else if (blockName == "Lights") {
+            bindingPoint = LIGHTS_BINDING_POINT_IDX;
+        }
+        else if (blockName == "BoneMatrices") {
+            bindingPoint = BONE_MATRICES_BINDING_POINT_IDX;
+        }
+        else if (blockName == "Camera") {
+            bindingPoint = CAMERA_BINDING_POINT_IDX;
+        }
+        else {
+            GE_CORE_WARN("OpenGLShader: Unknown uniform block '{}' found in shader '{}'", blockName, m_name);
             continue;
-		}
-		
-		// Get the block index and current binding
-		GLuint blockIndex = glGetUniformBlockIndex(m_programID, name);
-		GLint currentBinding = 0;
-		glGetActiveUniformBlockiv(m_programID, blockIndex, GL_UNIFORM_BLOCK_BINDING, &currentBinding);
-		
-		// Set the binding point if it's different from current
-		if (currentBinding != bindingPoint) {
-			glUniformBlockBinding(m_programID, blockIndex, bindingPoint);
+        }
+        
+        // Get the block index and current binding
+        GLuint blockIndex = glGetUniformBlockIndex(m_programID, name);
+        if (blockIndex == GL_INVALID_INDEX) {
+            GE_CORE_WARN("OpenGLShader: Could not get index for uniform block '{}' in shader '{}'", blockName, m_name);
+            continue;
+        }
 
-		}
+        GLint currentBinding = 0;
+        glGetActiveUniformBlockiv(m_programID, blockIndex, GL_UNIFORM_BLOCK_BINDING, &currentBinding);
+        
+        // Set the binding point if it's different from current
+        if (currentBinding != bindingPoint) {
+            glUniformBlockBinding(m_programID, blockIndex, bindingPoint);
+            GE_CORE_TRACE("OpenGLShader: Binding uniform block '{}' to point {}", blockName, bindingPoint);
 
-		
-		// Validate that binding worked
-		glGetActiveUniformBlockiv(m_programID, blockIndex, GL_UNIFORM_BLOCK_BINDING, &currentBinding);
-		if (currentBinding != bindingPoint) {
-			GE_CORE_ERROR("OpenGLShader: FAILED to bind block '{0}' to point {1}, still at {2}", 
-				blockName, bindingPoint, currentBinding);
-		}
-	}
+            // Validate that binding worked
+            glGetActiveUniformBlockiv(m_programID, blockIndex, GL_UNIFORM_BLOCK_BINDING, &currentBinding);
+            if (currentBinding != bindingPoint) {
+                GE_CORE_ERROR("OpenGLShader: FAILED to bind block '{}' to point {}, still at {}", 
+                    blockName, bindingPoint, currentBinding);
+            }
+        } else {
+             GE_CORE_TRACE("OpenGLShader: Uniform block '{}' already bound to point {}", blockName, bindingPoint);
+        }
+    }
 
-	GE_CORE_INFO("OpenGLShader: Created Shader: {0}", m_programID);
-
-	}
+    GE_CORE_INFO("OpenGLShader: Successfully created Shader: {} (Program ID: {})", m_name, m_programID);
+}
 
 OpenGLShader::~OpenGLShader()
 	{
@@ -177,6 +202,7 @@ bool OpenGLShader::compile(const std::string& variantName) {
                 GE_CORE_CRITICAL("OpenGLShader::compile: Shader compilation failed");
                 return false;
             }
+            
         }
 
         if (!linkProgram()) {
@@ -566,14 +592,14 @@ UniformType GLToUniformType(GLenum type)
 	}
 }
 
-std::shared_ptr<Shader> Shader::create(const std::string& vertex_source, const std::string& fragment_source)
+std::shared_ptr<Shader> Shader::create(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath)
 {
-    return std::make_shared<OpenGLShader>(vertex_source, fragment_source);
+    return std::make_shared<OpenGLShader>(vertexPath, fragmentPath);
 }
 
-Shader* Shader::createRaw(const std::string& vertex_source, const std::string& fragment_source)
+Shader* Shader::createRaw(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath)
 {
-    return new OpenGLShader(vertex_source, fragment_source);
+    return new OpenGLShader(vertexPath, fragmentPath);
 }
 
 }

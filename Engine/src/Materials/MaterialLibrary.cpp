@@ -5,6 +5,8 @@
 
 namespace Rapture {
 
+static std::filesystem::path s_shaderPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL";
+
 // Static member initialization
 std::unordered_map<std::string, std::shared_ptr<Material>> MaterialLibrary::s_materials;
 std::unordered_map<std::string, std::shared_ptr<MaterialInstance>> MaterialLibrary::s_materialInstances;
@@ -25,32 +27,48 @@ void MaterialLibrary::init()
     GE_CORE_INFO("MaterialLibrary: Initializing...");
     // Initialize static shaders for material types
     // PBR material shader
-    if (!PBRMaterial::s_shader) {
-        PBRMaterial::s_shader = Shader::createRaw("PBR_vs.glsl", "PBR_fs.glsl");
+    if (!PBRMaterial::s_defaultShaderHandle) {
+        auto [shader, handle] = AssetManager::importAsset<Shader>(s_shaderPath / "PBR.vs.glsl");
+        PBRMaterial::s_defaultShaderHandle = handle;
         GE_CORE_INFO("MaterialLibrary: Initialized PBR shader");
     }
     
     // Phong material shader
-    if (!PhongMaterial::s_shader) {
-        PhongMaterial::s_shader = Shader::createRaw("blinn_phong_vs.glsl", "blinn_phong_fs.glsl");
+    if (!PhongMaterial::s_defaultShaderHandle) {
+        auto [shader, handle] = AssetManager::importAsset<Shader>(s_shaderPath / "blinn_phong.vs.glsl");
+        PhongMaterial::s_defaultShaderHandle = handle;
         GE_CORE_INFO("MaterialLibrary: Initialized Phong shader");
     }
     
     // Solid material shader
-    if (!SolidMaterial::s_shader) {
-        SolidMaterial::s_shader = Shader::createRaw("default_vs.glsl", "default_fs.glsl");
+    if (!SolidMaterial::s_defaultShaderHandle) {
+        auto [shader, handle] = AssetManager::importAsset<Shader>(s_shaderPath / "default.vs.glsl");
+        SolidMaterial::s_defaultShaderHandle = handle;
         GE_CORE_INFO("MaterialLibrary: Initialized Solid shader");
     }
     
     // Specular-Glossiness material shader
-    if (!SpecularGlossinessMaterial::s_shader) {
-        SpecularGlossinessMaterial::s_shader = Shader::createRaw("SpecularGlossiness_vs.glsl", "SpecularGlossiness_fs.glsl");
+    if (!SpecularGlossinessMaterial::s_defaultShaderHandle) {
+        auto [shader, handle] = AssetManager::importAsset<Shader>(s_shaderPath / "SpecularGlossiness.vs.glsl");
+        SpecularGlossinessMaterial::s_defaultShaderHandle = handle;
         GE_CORE_INFO("MaterialLibrary: Initialized Specular-Glossiness shader");
     }
 
-    if (!CubeMapMaterial::s_shader) {
-        CubeMapMaterial::s_shader = Shader::createRaw("cubemap_vs.glsl", "cubemap_fs.glsl");
+    if (!CubeMapMaterial::s_defaultShaderHandle) {
+        auto [shader, handle] = AssetManager::importAsset<Shader>(s_shaderPath / "cubemap.vs.glsl");
+        CubeMapMaterial::s_defaultShaderHandle = handle;
         GE_CORE_INFO("MaterialLibrary: Initialized CubeMap shader");
+    }
+
+    if (!Material::s_geometryPassShader) {
+        auto [shader, handle] = AssetManager::importAsset<Shader>(s_shaderPath / "GBuffer.vert.glsl");
+        Material::s_geometryPassShader = shader;
+        GE_CORE_INFO("MaterialLibrary: Initialized GBuffer geometry pass shader");
+    }
+
+    if (!Material::s_lightingPassShader) {
+        //s_lightingPassShader = Shader::createRaw("Lighting.vert", "Lighting.frag");
+        GE_CORE_INFO("MaterialLibrary: Initialized Lighting pass shader");
     }
     
     // Create a default material
@@ -77,6 +95,14 @@ void MaterialLibrary::shutdown()
     s_materials.clear();
     s_materialInstances.clear();
     s_defaultMaterial = nullptr;
+
+    PBRMaterial::s_defaultShaderHandle = AssetHandle();
+    PhongMaterial::s_defaultShaderHandle = AssetHandle();
+    SolidMaterial::s_defaultShaderHandle = AssetHandle();
+    SpecularGlossinessMaterial::s_defaultShaderHandle = AssetHandle();
+    CubeMapMaterial::s_defaultShaderHandle = AssetHandle();
+    Material::s_geometryPassShader = nullptr;
+    Material::s_lightingPassShader = nullptr;
     
     s_initialized = false;
     GE_CORE_INFO("MaterialLibrary: Shut down successfully");

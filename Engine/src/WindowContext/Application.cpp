@@ -14,7 +14,7 @@
 
 #include "../AssetsManager/AssetManager.h"
 #include "../Scenes/SceneManager.h"
-
+#include "../Renderer/Deferred Shading/DeferredRenderer.h"
 namespace Rapture {
 
 	Application* Application::s_instance = nullptr;
@@ -35,11 +35,14 @@ namespace Rapture {
 		// Initialize systems
 		{
 			RAPTURE_PROFILE_SCOPE("Systems Initialization");
+            AssetManager::init();
+
 			TextureLibrary::init(4);
 			Rapture::MaterialLibrary::init();
 			BufferPoolManager::init();
-			AssetManager::init();
 			Renderer::init();
+            DeferredRenderer::init();
+
 			
 			// Initialize project - this will setup default world and scene
 			m_project = std::make_shared<Project>();
@@ -54,7 +57,8 @@ namespace Rapture {
         MaterialLibrary::shutdown();
 		BufferPoolManager::shutdown();
         Renderer::shutdown();
-
+        DeferredRenderer::shutdown();
+        
 		// closes twice...
 		//onWindowContextClose();
 	}

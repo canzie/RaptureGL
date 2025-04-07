@@ -8,11 +8,16 @@ layout(location = 4) in vec4 a_Joints;   // Indices of influencing bones (up to 
 layout(location = 5) in vec4 a_Weights;   // Weights of each bone's influence
 layout(location = 6) in vec3 a_Tangent;
 
+precision highp float;
+
+
 layout(std140, binding = 0) uniform BaseTransformMats {
-    mat4 u_ViewProjection;
-    mat4 u_View;
-    mat4 u_Projection;
-    vec3 u_CameraPosition;
+	mat4 u_proj;
+	mat4 u_view;
+};
+
+layout(std140, binding = 6) uniform BoneMatrices {
+    mat4 u_BoneTransforms[100]; // Array of bone transforms
 };
 
 uniform mat4 u_model;

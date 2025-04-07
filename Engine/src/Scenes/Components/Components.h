@@ -454,7 +454,7 @@ namespace Rapture {
             texture = tex;
             //texture = TextureLibrary::loadAsync(texturePath);
             quad = Quad();
-            quad.getMaterial()->setTexture("albedoMap", texture, handle);
+            quad.getMaterial()->setTexture(ParameterID::TEXTURE_ALBEDO, texture, handle);
         };
 
         void setTexture(std::string texturePath)
@@ -463,7 +463,7 @@ namespace Rapture {
             auto [tex, handle] = AssetManager::importAsset<Texture2D>(std::filesystem::path(texturePath));
             texture = tex;
             //texture = TextureLibrary::loadAsync(texturePath);
-            quad.getMaterial()->setTexture("albedoMap", texture, handle);
+            quad.getMaterial()->setTexture(ParameterID::TEXTURE_ALBEDO, texture, handle);
         }
         
 

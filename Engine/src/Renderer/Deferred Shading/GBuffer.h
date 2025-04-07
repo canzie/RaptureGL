@@ -20,6 +20,13 @@ namespace Rapture {
         uint32_t getAlbedoTextureID() const;
         uint32_t getMaterialTextureID() const;
         uint32_t getDepthTextureID() const;
+
+        const FramebufferSpecification& getSpecification() const { return m_framebuffer->getSpecification(); }
+        const uint32_t& getFramebufferID() const { return m_framebuffer->getFramebufferID(); }
+
+        // Bind the textures to the correct texture unit
+        void bindTextures();
+        void unbindTextures();
         
         // Set which buffers to clear on bind
         void setClearMode(bool clearColor, bool clearDepth);

@@ -5,6 +5,9 @@ layout(location = 1) out vec3 gNormal;
 layout(location = 2) out vec4 gAlbedoSpec;
 layout(location = 3) out vec4 gMaterial;
 
+precision highp float;
+
+
 in VS_OUT {
     vec3 FragPos;
     vec3 Normal;
@@ -42,12 +45,12 @@ vec3 getNormalFromMap()
 {
     vec3 tangentNormal = texture(u_NormalMap,  fs_in.TexCoord).xyz * 2.0 - 1.0;
 
-    vec3 Q1  = dFdx(vertPos);
-    vec3 Q2  = dFdy(vertPos);
-    vec2 st1 = dFdx(texCoord);
-    vec2 st2 = dFdy(texCoord);
+    vec3 Q1  = dFdx(fs_in.FragPos);
+    vec3 Q2  = dFdy(fs_in.FragPos);
+    vec2 st1 = dFdx(fs_in.TexCoord);
+    vec2 st2 = dFdy(fs_in.TexCoord);
 
-    vec3 N   = normalize(normalInterp);
+    vec3 N   = normalize(fs_in.Normal);
     vec3 T  = normalize(Q1*st2.t - Q2*st1.t);
     vec3 B  = -normalize(cross(N, T));
     mat3 TBN = mat3(T, B, N);
@@ -59,23 +62,23 @@ void main() {
 
     // Get material properties from textures or fallback to uniforms
     vec3 albedo = ((flags & ALBEDO_MAP_FLAG) != 0) ? 
-                   texture(u_AlbedoMap, texCoord).rgb : 
+                   texture(u_AlbedoMap, fs_in.TexCoord).rgb : 
                    baseColorFactor.rgb;
                    
     float material_roughness = ((flags & ROUGHNESS_MAP_FLAG) != 0) ? 
-                               texture(u_RoughnessMap, texCoord).r : 
+                               texture(u_RoughnessMap, fs_in.TexCoord).r : 
                                roughnessFactor;
                                
     float material_metallic = ((flags & METALLIC_MAP_FLAG) != 0) ? 
-                              texture(u_MetallicMap, texCoord).r : 
+                              texture(u_MetallicMap, fs_in.TexCoord).r : 
                               metallicFactor;
                               
     float ao = ((flags & AO_MAP_FLAG) != 0) ? 
-               texture(u_AOMap, texCoord).r : 
+               texture(u_AOMap, fs_in.TexCoord).r : 
                1.0;
                
     vec3 emission = ((flags & EMISSIVE_MAP_FLAG) != 0) ? 
-                    texture(u_EmissiveMap, texCoord).rgb : 
+                    texture(u_EmissiveMap, fs_in.TexCoord).rgb : 
                     vec3(0.0);
 
     // Position (view space)
@@ -91,12 +94,12 @@ void main() {
     gNormal = normal;
     
     // Albedo and specular
-    gAlbedoSpec = albedo;
+    gAlbedoSpec = vec4(albedo, 1.0);
     
     // Material properties
     float metallic = material_metallic;
     float roughness = material_roughness;
-    float ao = ao;
+    //float ao = ao;
     
     gMaterial = vec4(metallic, roughness, ao, 1.0);
 

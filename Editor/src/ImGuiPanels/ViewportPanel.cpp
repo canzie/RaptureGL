@@ -226,6 +226,11 @@ void ViewportPanel::renderSceneViewport(TestLayer* testLayer) {
                 testLayer->getFramebuffer()->resize(
                     static_cast<unsigned int>(viewportPanelSize.x), 
                     static_cast<unsigned int>(viewportPanelSize.y));
+
+                // Update the GBuffer size
+                Rapture::DeferredRenderer::getGBuffer()->resize(
+                    static_cast<unsigned int>(viewportPanelSize.x), 
+                    static_cast<unsigned int>(viewportPanelSize.y));
             }
             lastSize = viewportPanelSize;
             firstTime = false;
@@ -327,29 +332,7 @@ void ViewportPanel::renderEntityGizmo(TestLayer* testLayer) {
 }
 
 void ViewportPanel::renderDepthBufferViewport(TestLayer* testLayer) {
-    ImGui::Begin("Depth Buffer Viewport");
-    
-    ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
-    
-    if (testLayer) {
-        // Get the depth texture directly from the framebuffer
-        unsigned int depthTexID = testLayer->getFramebuffer()->getDepthAttachmentRendererID();
-        
-        if (depthTexID) {
-            // Display the depth texture (inverted Y coordinates to match OpenGL)
-            ImTextureID texID = (ImTextureID)(intptr_t)depthTexID;
-            ImGui::Image(texID, viewportPanelSize, ImVec2(0, 1), ImVec2(1, 0));
-            
-            ImGui::Text("Raw depth buffer - may appear mostly black");
-            ImGui::Text("The z-buffer stores non-linear depth values");
-        } else {
-            ImGui::Text("No depth attachment available");
-        }
-    } else {
-        ImGui::Text("Depth buffer view not available");
-    }
-    
-    ImGui::End();
+
 }
 
 bool ViewportPanel::windowToViewportCoordinates(float& viewportX, float& viewportY) const {
