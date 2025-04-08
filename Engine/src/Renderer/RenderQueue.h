@@ -24,7 +24,9 @@ namespace Rapture {
     };
 
     //using CommandVariant = std::variant<RenderCommand, PostProcessCommand>;
-    using CommandVariant = std::variant<std::monostate, RenderCommand, PostProcessCommand, AnimationSetupCommand, GeometryPassCommand, LightingPassCommand, SSRCommand>;
+    using CommandVariant = std::variant<std::monostate, RenderCommand, PostProcessCommand, 
+                                            AnimationSetupCommand, GeometryPassCommand, LightingPassCommand, 
+                                            SSRCommand, ShadowPassCommand>;
 
     class RenderQueue {
     public:

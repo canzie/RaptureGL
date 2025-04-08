@@ -54,12 +54,19 @@ namespace Rapture {
     
     // NOTE: should probably change to be the shader aset handle, becasue if the shader becomes invalid before it is bound, this will cause issues
     struct LightingPassCommand : Command {
-        std::shared_ptr<Shader> lightPassShader = nullptr;
+        //std::shared_ptr<Shader> lightPassShader = nullptr;
+        bool dummy = true;
+
     };
 
     struct SSRCommand : Command {
         std::shared_ptr<Shader> ssrShader = nullptr; 
         // Add any SSR-specific parameters here later if needed
+    };
+
+    struct ShadowPassCommand : Command {
+        //std::shared_ptr<ShadowMap> shadowMap = nullptr;
+        bool dummy = true;
     };
 
 

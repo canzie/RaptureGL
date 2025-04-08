@@ -34,6 +34,21 @@ namespace Rapture
 	};
 
 
+    struct PBRUniformBindless
+	{
+		alignas(16) glm::vec4 baseColorFactor;
+		alignas(4) float metallicFactor;
+		alignas(4) float roughnessFactor;
+		alignas(4) float specularFactor;
+        alignas(4) uint32_t flags = 0;
+        alignas(8) uint64_t albedoMap = 0;
+        alignas(8) uint64_t normalMap = 0;
+        alignas(8) uint64_t metallicMap = 0;
+        alignas(8) uint64_t roughnessMap = 0;
+        alignas(8) uint64_t aoMap = 0;
+        alignas(8) uint64_t emissiveMap = 0;
+	};
+
 
 	// This structure should match the Phong uniform block in blinn_phong_fs.glsl
 	struct PhongUniform

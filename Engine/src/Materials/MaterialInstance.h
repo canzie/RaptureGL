@@ -35,6 +35,7 @@ public:
     void setMat3(ParameterID id, const glm::mat3& value);
     void setMat4(ParameterID id, const glm::mat4& value);
     void setTexture(ParameterID id, std::shared_ptr<Texture2D> texture, AssetHandle handle);
+    void setTextureBindless(ParameterID id, std::shared_ptr<Texture2D> texture, AssetHandle handle);
     void setParameter(ParameterID id, const MaterialParameter& parameter);
     bool hasParameterOverride(ParameterID id) const;
     const MaterialParameter& getParameterOverride(ParameterID id) const;

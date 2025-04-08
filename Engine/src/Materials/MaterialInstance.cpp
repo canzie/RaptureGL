@@ -80,6 +80,12 @@ void MaterialInstance::setTexture(ParameterID id, std::shared_ptr<Texture2D> tex
     if (m_baseMaterial) m_baseMaterial->markAsDirty();
 }
 
+void MaterialInstance::setTextureBindless(ParameterID id, std::shared_ptr<Texture2D> texture, AssetHandle handle)
+{
+    m_parameterOverrides[id] = MaterialParameter::createTextureBindless(texture, handle);
+    if (m_baseMaterial) m_baseMaterial->markAsDirty();
+}
+
 void MaterialInstance::setParameter(ParameterID id, const MaterialParameter& parameter)
 {
     m_parameterOverrides[id] = parameter;
@@ -154,6 +160,7 @@ void MaterialInstance::setTexture(const std::string& name, std::shared_ptr<Textu
 {
     setTexture(StringToParameterID(name), texture, handle);
 }
+
 
 void MaterialInstance::setParameter(const std::string& name, const MaterialParameter& parameter)
 {
@@ -242,6 +249,9 @@ void MaterialInstance::bind()
                     break;
                 case MaterialParameterType::TEXTURE2D:
                     shader->setTexture(ParameterIDToString(name), parameter.asTexture().lock());
+                    break;
+                case MaterialParameterType::TEXTURE2D_BINDLESS:
+                    shader->setUint64(ParameterIDToString(name), parameter.asTextureBindless());
                     break;
                 default:
                     break;

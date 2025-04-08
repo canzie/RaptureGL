@@ -94,7 +94,7 @@ namespace Rapture {
         virtual void setMat3(const std::string& name, const glm::mat3& value) = 0;
         virtual void setMat4(const std::string& name, const glm::mat4& value) = 0;
         virtual void setTexture(const std::string& name, std::shared_ptr<Texture2D> texture, uint32_t slot = 0) = 0;
-
+        virtual void setUint64(const std::string& name, uint64_t value) = 0;
         // Legacy setters (kept for compatibility)
 		virtual void setUniformMat4f(const std::string& name, glm::mat4& matrix) = 0;
 		virtual void setUniformVec3f(const std::string& name, glm::vec3& vector) = 0;

@@ -2,6 +2,13 @@
 #include <functional>
 #include "../Logger/Log.h"
 
+// Include Windows headers for memory tracking
+#ifdef _WIN32
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+    #include <psapi.h>
+#endif
+
 #include "../Timestep/Timestep.h"
 #include "../Renderer/Renderer.h"
 #include "../Debug/TracyProfiler.h"
@@ -15,6 +22,7 @@
 #include "../AssetsManager/AssetManager.h"
 #include "../Scenes/SceneManager.h"
 #include "../Renderer/Deferred Shading/DeferredRenderer.h"
+
 namespace Rapture {
 
 	Application* Application::s_instance = nullptr;
@@ -35,6 +43,7 @@ namespace Rapture {
 		// Initialize systems
 		{
 			RAPTURE_PROFILE_SCOPE("Systems Initialization");
+            
             AssetManager::init();
 
 			TextureLibrary::init(4);
@@ -123,6 +132,15 @@ namespace Rapture {
             {
                 RAPTURE_PROFILE_SCOPE("Frame End");
                 RAPTURE_PROFILE_GPU_SCOPE("Frame End");
+                
+                // Plot memory usage
+                #ifdef _WIN32
+                    PROCESS_MEMORY_COUNTERS pmc;
+                    if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+                        // Plot working set size in KB
+                        RAPTURE_PROFILE_PLOT("WorkingSet (KB)", (int64_t)(pmc.WorkingSetSize / 1024));
+                    }
+                #endif
                 
                 // Very important - collect GPU data
                 TracyProfiler::collectGPUData();

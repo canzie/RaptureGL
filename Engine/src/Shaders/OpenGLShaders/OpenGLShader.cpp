@@ -520,6 +520,11 @@ void OpenGLShader::setTexture(const std::string& name, std::shared_ptr<Texture2D
     m_textureSlots[slot] = texture->getRendererID();
 }
 
+void OpenGLShader::setUint64(const std::string& name, uint64_t handle)
+{
+    glUniformHandleui64ARB(getUniformLocation(name), handle);
+}
+
 int OpenGLShader::getUniformLocation(const std::string& name)
 {
     // Check if the uniform location is already cached

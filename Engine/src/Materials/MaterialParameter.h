@@ -23,7 +23,8 @@ enum class MaterialParameterType {
     FLOAT, INT, BOOL,
     VEC2, VEC3, VEC4,
     MAT3, MAT4,
-    TEXTURE2D, TEXTURECUBE
+    TEXTURE2D, TEXTURECUBE,
+    TEXTURE2D_BINDLESS
 };
 
 
@@ -53,7 +54,16 @@ enum class ParameterID : uint16_t {
     TEXTURE_EMISSION,
     TEXTURE_DIFFUSE,
     TEXTURE_SPECULAR,
-    TEXTURE_CUBEMAP
+    TEXTURE_CUBEMAP,
+    TEXTURE_ALBEDO_BINDLESS,
+    TEXTURE_METALLIC_BINDLESS,
+    TEXTURE_ROUGHNESS_BINDLESS,
+    TEXTURE_NORMAL_BINDLESS,
+    TEXTURE_HEIGHT_BINDLESS,
+    TEXTURE_AO_BINDLESS,
+    TEXTURE_EMISSIVE_BINDLESS,
+    TEXTURE_DISPLACEMENT_BINDLESS,
+    TEXTURE_SHININESS_BINDLESS,
     
 };
 
@@ -224,6 +234,13 @@ public:
         return param;
     }
 
+    static MaterialParameter createTextureBindless(std::shared_ptr<Texture2D> texture, AssetHandle handle) {
+        MaterialParameter param;
+        param.m_type = MaterialParameterType::TEXTURE2D_BINDLESS;
+        param.m_value = texture->getTextureHandle();
+        return param;
+    }
+
     // Getters
     MaterialParameterType getType() const { return m_type; }
     
@@ -243,6 +260,8 @@ public:
         
         return std::weak_ptr<Texture2D>();
     }
+
+    const uint64_t asTextureBindless() const { return std::get<uint64_t>(m_value); }
     
     // Utility to get raw data pointer for uniform setting
     const void* getData() const {
@@ -250,6 +269,7 @@ public:
             case MaterialParameterType::FLOAT: return &std::get<float>(m_value);
             case MaterialParameterType::INT: return &std::get<int>(m_value);
             case MaterialParameterType::BOOL: return &std::get<bool>(m_value);
+            case MaterialParameterType::TEXTURE2D_BINDLESS: return &std::get<uint64_t>(m_value);
             case MaterialParameterType::VEC2: return &std::get<glm::vec2>(m_value);
             case MaterialParameterType::VEC3: return &std::get<glm::vec3>(m_value);
             case MaterialParameterType::VEC4: return &std::get<glm::vec4>(m_value);
@@ -266,7 +286,8 @@ private:
         float, int, bool,
         glm::vec2, glm::vec3, glm::vec4,
         glm::mat3, glm::mat4,
-        Texture2DReference
+        Texture2DReference,
+        uint64_t
     > m_value;
 };
 

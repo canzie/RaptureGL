@@ -203,7 +203,7 @@ namespace Rapture
 		 * @param textureIndex The index of the texture in the glTF file
 		 * @return true if the texture was loaded and set successfully
 		 */
-		bool loadAndSetTexture(std::shared_ptr<Material> material, const std::string& textureName, int textureIndex);
+		//bool loadAndSetTexture(std::shared_ptr<Material> material, const std::string& textureName, int textureIndex);
 		bool loadAndSetTexture(std::shared_ptr<Material> material, ParameterID paramID, int textureIndex);
 
         /**

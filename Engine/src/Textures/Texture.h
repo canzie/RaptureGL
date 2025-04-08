@@ -8,6 +8,8 @@
 #include <functional>
 #include <filesystem>
 
+#include "../Utils/GLCapabilities.h"
+
 namespace Rapture {
 
 enum class TextureActiveSlot : uint32_t {
@@ -22,8 +24,22 @@ enum class TextureActiveSlot : uint32_t {
     DEPTH=4,
     EMISSION=5,
     HEIGHT=6,
-    SPECULAR=7
+    SPECULAR=7,
+    SHADOW=8
     
+};
+
+// SSBO binding points for various buffer types
+enum class SSBOBindingPoint : uint32_t {
+    MATERIAL_DATA = 0,
+    TRANSFORM_DATA = 1,
+    LIGHT_DATA = 2,
+    PARTICLE_DATA = 3,
+    INSTANCE_DATA = 4,
+    MESH_DATA = 5,
+    DRAW_COMMANDS = 6,
+    TEXTURE_HANDLES = 7,
+    // Add more as needed
 };
 
 // Texture filtering modes
@@ -60,6 +76,12 @@ public:
     virtual void setMagFilter(TextureFilter filter) = 0;
     virtual void setWrapS(TextureWrap wrap) = 0;
     virtual void setWrapT(TextureWrap wrap) = 0;
+
+    // Bindless texture methods
+    virtual bool makeResident() = 0;
+    virtual void makeNonResident() = 0;
+    virtual bool isResident() const = 0;
+    virtual uint64_t getTextureHandle() const = 0;
 };
 
 class Texture2D : public Texture {
@@ -117,6 +139,10 @@ public:
 
     static void processLoadingQueue();
 
+    // Bindless texture support - get handles for all textures
+    static std::vector<uint64_t> getAllTextureHandles();
+    static void makeAllTexturesResident();
+    static void makeAllTexturesNonResident();
     
 
 private:

@@ -101,6 +101,7 @@ class Material : public std::enable_shared_from_this<Material> {
         void setMat3(ParameterID id, const glm::mat3& value);
         void setMat4(ParameterID id, const glm::mat4& value);
         void setTexture(ParameterID id, std::shared_ptr<Texture2D> texture, AssetHandle handle);
+        void setTextureBindless(ParameterID id, std::shared_ptr<Texture2D> texture, AssetHandle handle);
         void setParameter(ParameterID id, const MaterialParameter& parameter);
         bool hasParameter(ParameterID id) const;
         const MaterialParameter& getParameter(ParameterID id) const;
@@ -165,7 +166,7 @@ class PBRMaterial : public Material {
         static AssetHandle s_defaultShaderHandle;
 
     protected:
-        PBRUniform m_uniformData;
+        PBRUniformBindless m_uniformData;
 };
 
 class PhongMaterial : public Material {

@@ -48,6 +48,8 @@ namespace Rapture {
 
 		std::string getDebugName() { return m_debugName; }
 
+		std::shared_ptr<Project> getCurrentProject() const { return m_project; }
+
 	protected:
 		std::string m_debugName;
 		std::shared_ptr<Project> m_project;

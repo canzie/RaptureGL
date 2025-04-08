@@ -8,6 +8,9 @@
 #include "../DataTypes.h"
 #include "../RendererAPI.h"
 
+#include "../Utils/GLCapabilities.h"
+
+
 namespace Rapture {
  
 
@@ -24,19 +27,7 @@ namespace Rapture {
 		ShaderStorage
 	};
 
-	// Wrapper for checking OpenGL capabilities
-	class GLCapabilities {
-	public:
-		static bool hasDSA();
-		static bool hasBufferStorage();
-		static bool hasDebugMarkers();
-	private:
-		static bool s_initialized;
-		static bool s_hasDSA;
-		static bool s_hasBufferStorage;
-		static bool s_hasDebugMarkers;
-		static void initialize();
-	};
+
 
 	// Buffer base class
 	class Buffer {

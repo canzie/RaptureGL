@@ -27,10 +27,19 @@ public:
     virtual void setWrapS(TextureWrap wrap) override;
     virtual void setWrapT(TextureWrap wrap) override;
 
+    // Bindless texture implementation
+    virtual bool makeResident() override;
+    virtual void makeNonResident() override;
+    virtual bool isResident() const override { return m_isResident; }
+    virtual uint64_t getTextureHandle() const override { return m_textureHandle; }
+
 private:
     // Helper to convert enum to GL constant
     GLenum convertFilterToGL(TextureFilter filter);
     GLenum convertWrapToGL(TextureWrap wrap);
+    
+    // Helper to generate texture handle
+    void generateTextureHandle();
 
 private:
     std::string m_path;
@@ -39,6 +48,10 @@ private:
     uint32_t m_rendererID = 0;
     GLenum m_internalFormat = GL_RGBA8;
     GLenum m_dataFormat = GL_RGBA;
+    
+    // Bindless texture data
+    uint64_t m_textureHandle = 0;
+    bool m_isResident = false;
 };
 
 } // namespace Rapture

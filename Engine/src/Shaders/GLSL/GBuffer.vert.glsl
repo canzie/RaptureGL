@@ -1,4 +1,7 @@
-#version 420 core
+#version 460 core
+
+#extension GL_ARB_bindless_texture : require
+#extension GL_ARB_gpu_shader_int64 : require // Needed for uint64_t
 
 layout(location = 0) in vec3 a_Position;
 layout(location = 1) in vec3 a_Normal;

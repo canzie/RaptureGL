@@ -3,6 +3,8 @@
 #include "../../Debug/TracyProfiler.h"
 #include <stb_image.h>
 
+#include "../../Utils/GLCapabilities.h"
+
 namespace Rapture {
 
 OpenGLTexture2D::OpenGLTexture2D(const std::string& path)
@@ -57,6 +59,11 @@ OpenGLTexture2D::OpenGLTexture2D(const std::string& path)
         glGenerateMipmap(GL_TEXTURE_2D);
         
         stbi_image_free(data);
+        
+        // Generate handle for bindless textures if supported
+        if (GLCapabilities::hasBindlessTextures()) {
+            generateTextureHandle();
+        }
     }
     else {
         GE_CORE_ERROR("OpenGLTexture2D::OpenGLTexture2D - Failed to load texture '{0}'", path);
@@ -91,11 +98,21 @@ OpenGLTexture2D::OpenGLTexture2D(uint32_t width, uint32_t height, uint32_t chann
     
     glTexImage2D(GL_TEXTURE_2D, 0, m_internalFormat, m_width, m_height, 0, m_dataFormat, GL_UNSIGNED_BYTE, nullptr);
     
+    // Generate handle for bindless textures if supported
+    if (GLCapabilities::hasBindlessTextures()) {
+        generateTextureHandle();
+    }
+    
     GE_CORE_INFO("Created blank texture ({0}x{1})", m_width, m_height);
 }
 
 OpenGLTexture2D::~OpenGLTexture2D()
 {
+    // Make the texture non-resident if it is resident
+    if (m_isResident) {
+        makeNonResident();
+    }
+    
     glDeleteTextures(1, &m_rendererID);
 }
 
@@ -124,9 +141,22 @@ void OpenGLTexture2D::setData(void* data, uint32_t size)
     glBindTexture(GL_TEXTURE_2D, m_rendererID);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_width, m_height, m_dataFormat, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
-
-
-
+    
+    // Re-generate the texture handle if bindless is supported
+    if (GLCapabilities::hasBindlessTextures() && m_textureHandle != 0) {
+        // Make non-resident first if needed
+        if (m_isResident) {
+            makeNonResident();
+        }
+        
+        // Generate a new handle
+        generateTextureHandle();
+        
+        // Make resident again if it was resident before
+        if (m_isResident) {
+            makeResident();
+        }
+    }
 }
 
 void OpenGLTexture2D::setMinFilter(TextureFilter filter)
@@ -134,6 +164,14 @@ void OpenGLTexture2D::setMinFilter(TextureFilter filter)
     glBindTexture(GL_TEXTURE_2D, m_rendererID);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, convertFilterToGL(filter));
     glBindTexture(GL_TEXTURE_2D, 0);
+    
+    // Re-generate handle if using bindless
+    if (GLCapabilities::hasBindlessTextures() && m_textureHandle != 0) {
+        bool wasResident = m_isResident;
+        if (wasResident) makeNonResident();
+        generateTextureHandle();
+        if (wasResident) makeResident();
+    }
 }
 
 void OpenGLTexture2D::setMagFilter(TextureFilter filter)
@@ -147,6 +185,14 @@ void OpenGLTexture2D::setMagFilter(TextureFilter filter)
     }
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
     glBindTexture(GL_TEXTURE_2D, 0);
+    
+    // Re-generate handle if using bindless
+    if (GLCapabilities::hasBindlessTextures() && m_textureHandle != 0) {
+        bool wasResident = m_isResident;
+        if (wasResident) makeNonResident();
+        generateTextureHandle();
+        if (wasResident) makeResident();
+    }
 }
 
 void OpenGLTexture2D::setWrapS(TextureWrap wrap)
@@ -154,6 +200,14 @@ void OpenGLTexture2D::setWrapS(TextureWrap wrap)
     glBindTexture(GL_TEXTURE_2D, m_rendererID);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, convertWrapToGL(wrap));
     glBindTexture(GL_TEXTURE_2D, 0);
+    
+    // Re-generate handle if using bindless
+    if (GLCapabilities::hasBindlessTextures() && m_textureHandle != 0) {
+        bool wasResident = m_isResident;
+        if (wasResident) makeNonResident();
+        generateTextureHandle();
+        if (wasResident) makeResident();
+    }
 }
 
 void OpenGLTexture2D::setWrapT(TextureWrap wrap)
@@ -161,6 +215,70 @@ void OpenGLTexture2D::setWrapT(TextureWrap wrap)
     glBindTexture(GL_TEXTURE_2D, m_rendererID);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, convertWrapToGL(wrap));
     glBindTexture(GL_TEXTURE_2D, 0);
+    
+    // Re-generate handle if using bindless
+    if (GLCapabilities::hasBindlessTextures() && m_textureHandle != 0) {
+        bool wasResident = m_isResident;
+        if (wasResident) makeNonResident();
+        generateTextureHandle();
+        if (wasResident) makeResident();
+    }
+}
+
+bool OpenGLTexture2D::makeResident()
+{
+    if (!GLCapabilities::hasBindlessTextures()) {
+        GE_CORE_WARN("OpenGLTexture2D::makeResident - Bindless textures not supported");
+        return false;
+    }
+    
+    if (m_textureHandle == 0) {
+        generateTextureHandle();
+    }
+    
+    if (m_textureHandle == 0) {
+        GE_CORE_ERROR("OpenGLTexture2D::makeResident - Failed to generate texture handle");
+        return false;
+    }
+    
+    if (!m_isResident) {
+        // Use regular GL command instead of ARB extension directly
+        glMakeTextureHandleResidentARB(m_textureHandle);
+        m_isResident = true;
+    }
+    
+    return true;
+}
+
+void OpenGLTexture2D::makeNonResident()
+{
+    if (!GLCapabilities::hasBindlessTextures() || m_textureHandle == 0 || !m_isResident) {
+        return;
+    }
+    
+    // Use regular GL command instead of ARB extension directly
+    glMakeTextureHandleNonResidentARB(m_textureHandle);
+    m_isResident = false;
+}
+
+void OpenGLTexture2D::generateTextureHandle()
+{
+    if (!GLCapabilities::hasBindlessTextures()) {
+        GE_CORE_WARN("OpenGLTexture2D::generateTextureHandle - Bindless textures not supported");
+        return;
+    }
+    
+    // Make sure the texture is bound to generate a handle
+    glBindTexture(GL_TEXTURE_2D, m_rendererID);
+    
+    // Use regular GL command instead of ARB extension directly
+    m_textureHandle = glGetTextureHandleARB(m_rendererID);
+    
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    if (m_textureHandle == 0) {
+        GE_CORE_ERROR("OpenGLTexture2D::generateTextureHandle - Failed to generate texture handle");
+    }
 }
 
 GLenum OpenGLTexture2D::convertFilterToGL(TextureFilter filter)
@@ -194,8 +312,6 @@ OpenGLTexture2D::OpenGLTexture2D(const std::vector<std::string>& filepaths)
 {
     RAPTURE_PROFILE_FUNCTION();
 
-    
-
     glGenTextures(1, &m_rendererID);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_rendererID);
 
@@ -227,13 +343,10 @@ OpenGLTexture2D::OpenGLTexture2D(const std::vector<std::string>& filepaths)
             return;
         }
 
-
-
         glTexImage2D(
             GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 
             0, internalFormat, width, height, 0, dataFormat, GL_UNSIGNED_BYTE, data
         );
-
     }
 
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -242,6 +355,13 @@ OpenGLTexture2D::OpenGLTexture2D(const std::vector<std::string>& filepaths)
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE); 
 
+    m_width = width;
+    m_height = height;
+    
+    // Generate handle for bindless textures if supported
+    if (GLCapabilities::hasBindlessTextures()) {
+        generateTextureHandle();
+    }
     
     stbi_image_free(data);
  

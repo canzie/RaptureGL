@@ -1,4 +1,6 @@
 #pragma once
+
+
 #include "../Scenes/Scene.h"
 #include "../Scenes/World.h"
 #include "../Scenes/SceneManager.h"
@@ -12,7 +14,9 @@ namespace Rapture
     struct ProjectConfig
     {
         std::string name;
-        std::string directory;
+        std::filesystem::path directory;
+        std::filesystem::path shaderPath;
+
         std::string initialWorldName;
     };
 
@@ -20,7 +24,7 @@ namespace Rapture
     {
     public:
         Project()
-            : m_config{"New Project", ".", "DefaultWorld"}
+            : m_config{"New Project", std::filesystem::current_path(), std::filesystem::path("E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL"), "DefaultWorld"}
         {
 
             GE_CORE_INFO("Creating Project: {0}", m_config.name);
@@ -109,14 +113,16 @@ namespace Rapture
         }
 
         // Project config access
-        std::string getProjectDirectory() const { return m_config.directory; }
+        std::filesystem::path getProjectDirectory() const { return m_config.directory; }
         std::string getProjectName() const { return m_config.name; }
         std::string getInitialWorldName() const { return m_config.initialWorldName; }
         
-        void setProjectDirectory(const std::string& dir) { m_config.directory = dir; }
+        void setProjectDirectory(const std::filesystem::path& dir) { m_config.directory = dir; }
         void setProjectName(const std::string& name) { m_config.name = name; }
         void setInitialWorldName(const std::string& name) { m_config.initialWorldName = name; }
 
+        const ProjectConfig& getConfig() const { return m_config; }
+        
     private:
         ProjectConfig m_config;
         std::unordered_map<std::string, std::shared_ptr<World>> m_worlds;

@@ -119,11 +119,6 @@ namespace Rapture
 			return;
 		}
 		
-		// If no attachments specified, add default color attachment
-		if (spec.attachments.empty())
-		{
-			m_specification.attachments.push_back(FramebufferTextureFormat::RGBA8);
-		}
 		
 		invalidate();
 	}
@@ -141,7 +136,7 @@ namespace Rapture
 		}
 	}
 
-	void Framebuffer::invalidate()
+	void Framebuffer::invalidate(bool isDepthBufferOnly)
 	{
 		// Cleanup existing framebuffer if it exists
 		if (m_framebufferID)
@@ -163,6 +158,7 @@ namespace Rapture
 
 		// Create color attachments
 		bool multisample = m_specification.samples > 1;
+        
 		
 		if (m_specification.attachments.size())
 		{
@@ -219,7 +215,7 @@ namespace Rapture
 			}
 		}
 
-			// Add default depth attachment
+		// Add default depth attachment
         FramebufferTextureFormat depthFormat = FramebufferTextureFormat::DEPTH24STENCIL8;
 
 		for (auto& attachment : m_specification.attachments)
@@ -233,30 +229,56 @@ namespace Rapture
 		
 
 			
-			// Create depth texture
-			glCreateTextures(multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, 1, &m_depthAttachmentID);
-			glBindTexture(multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, m_depthAttachmentID);
+		// Create depth texture
+		glCreateTextures(multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, 1, &m_depthAttachmentID);
+		glBindTexture(multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, m_depthAttachmentID);
 			
-			if (multisample)
-			{
-				glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, m_specification.samples, 
-					TextureFormatToGL(depthFormat), m_specification.width, m_specification.height, GL_FALSE);
-			}
-			else
-			{
-				glTexStorage2D(GL_TEXTURE_2D, 1, TextureFormatToGL(depthFormat), 
-					m_specification.width, m_specification.height);
-			}
+		if (multisample)
+		{
+			glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, m_specification.samples, 
+				TextureFormatToGL(depthFormat), m_specification.width, m_specification.height, GL_FALSE);
+		}
+		else
+		{
+			glTexStorage2D(GL_TEXTURE_2D, 1, TextureFormatToGL(depthFormat), 
+				m_specification.width, m_specification.height);
+            // Set texture parameters
+
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);	
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		}
 			
-			// Attach depth texture to framebuffer
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, 
-				multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, m_depthAttachmentID, 0);
+		// Attach depth texture to framebuffer
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, 
+			multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, m_depthAttachmentID, 0);
+
+        if (isDepthBufferOnly)
+        {
+            glDrawBuffer(GL_NONE);
+            glReadBuffer(GL_NONE);
+        }
 		
+
 		
 		// Verify framebuffer is complete
 		if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		{
 			GE_CORE_ERROR("Framebuffer is incomplete!");
+
+            // NOTE: dont know if this cleanup is legal, since if the framebuffer is incomplete, maybe the ids are not valid anymore and opengl might delete them itself,
+            glDeleteFramebuffers(1, &m_framebufferID);
+			
+			glDeleteTextures(m_colorAttachments.size(), m_colorAttachments.data());
+			
+			if (m_depthAttachmentID)
+				glDeleteTextures(1, &m_depthAttachmentID);
+
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            return;
+
 		}
 		else
 		{

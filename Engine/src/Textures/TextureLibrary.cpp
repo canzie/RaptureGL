@@ -59,6 +59,9 @@ void TextureLibrary::shutdown()
     // Log texture count before clearing
     GE_CORE_INFO("TextureLibrary: Cleaning up {} textures", s_textures.size());
     
+    // Make all textures non-resident before clearing
+    makeAllTexturesNonResident();
+    
     // Clear texture cache - this releases all shared_ptr references
     s_textures.clear();
     
@@ -279,6 +282,52 @@ void TextureLibrary::processLoadingQueue()
             request.callback(request.texture);
         }
     }
+}
+
+std::vector<uint64_t> TextureLibrary::getAllTextureHandles()
+{
+    RAPTURE_PROFILE_FUNCTION();
+    
+    std::vector<uint64_t> handles;
+    handles.reserve(s_textures.size());
+    
+    for (const auto& [name, texture] : s_textures) {
+        uint64_t handle = texture->getTextureHandle();
+        if (handle != 0) {
+            handles.push_back(handle);
+        }
+    }
+    
+    return handles;
+}
+
+void TextureLibrary::makeAllTexturesResident()
+{
+    RAPTURE_PROFILE_FUNCTION();
+    
+    size_t successCount = 0;
+    size_t failCount = 0;
+    
+    for (const auto& [name, texture] : s_textures) {
+        if (texture->makeResident()) {
+            successCount++;
+        } else {
+            failCount++;
+        }
+    }
+    
+    GE_CORE_INFO("TextureLibrary: Made {0} textures resident, {1} failed", successCount, failCount);
+}
+
+void TextureLibrary::makeAllTexturesNonResident()
+{
+    RAPTURE_PROFILE_FUNCTION();
+    
+    for (const auto& [name, texture] : s_textures) {
+        texture->makeNonResident();
+    }
+    
+    GE_CORE_INFO("TextureLibrary: Made all textures non-resident");
 }
 
 void TextureLibrary::textureLoadThread()

@@ -7,6 +7,7 @@
 #include "../Textures/Texture.h"
 #include "../Debug/TracyProfiler.h"
 #include <glad/glad.h>
+#include "../Utils/GLCapabilities.h"
 
 namespace Rapture
 {
@@ -137,6 +138,12 @@ namespace Rapture
 	void Material::setTexture(ParameterID id, std::shared_ptr<Texture2D> texture, AssetHandle handle)
 	{
 		m_parameters[id] = MaterialParameter::createTexture(texture, handle);
+		markDirty();
+	}
+
+	void Material::setTextureBindless(ParameterID id, std::shared_ptr<Texture2D> texture, AssetHandle handle)
+	{
+		m_parameters[id] = MaterialParameter::createTextureBindless(texture, handle);
 		markDirty();
 	}
 
@@ -336,7 +343,7 @@ namespace Rapture
 		m_uniformData.metallicFactor = metallic;
 		m_uniformData.roughnessFactor = roughness;
 		m_uniformData.specularFactor = specular;
-		m_uniformData.flags = 0;
+		//m_uniformData.flags = 0;
 		
 		// Store as parameters for serialization/deserialization
 		setVec4("baseColor", glm::vec4(base_color, 1.0f));
@@ -375,12 +382,14 @@ namespace Rapture
 			}
 		}
 		
-		{
-			RAPTURE_PROFILE_SCOPE("PBR Material Uniform Texture bindings");
-			RAPTURE_PROFILE_GPU_SCOPE("PBR Material Uniform Texture bindings");
+        // Reset texture flags
+	    uint32_t textureFlags = 0;
 
-			// Reset texture flags
-			uint32_t textureFlags = 0;
+		if (!GLCapabilities::hasBindlessTextures()) { // Non-bindless Textures
+
+			RAPTURE_PROFILE_SCOPE("PBR Material - Uniform Texture bindings");
+			RAPTURE_PROFILE_GPU_SCOPE("PBR Material - Uniform Texture bindings");
+
 
 			// Bind all PBR textures to their respective slots and update flags
 			if (hasParameter(ParameterID::TEXTURE_ALBEDO)) {
@@ -432,18 +441,69 @@ namespace Rapture
 				}
 			}
 
-			// Update texture flags in uniform data
-			if (m_uniformData.flags != textureFlags) {
-				m_uniformData.flags = textureFlags;
-				markDirty();
-			}
+        } else { // Bindless Textures
+
+			RAPTURE_PROFILE_SCOPE("PBR Material - Bindless Textures");
+			RAPTURE_PROFILE_GPU_SCOPE("PBR Material - Bindless Textures");
+
+            if (m_isDirty && hasParameter(ParameterID::TEXTURE_ALBEDO_BINDLESS)) {
+                uint64_t handle = getParameter(ParameterID::TEXTURE_ALBEDO_BINDLESS).asTextureBindless();
+                if (handle) {
+                    m_uniformData.albedoMap = handle;
+                }
+            }
+
+            if (m_isDirty && hasParameter(ParameterID::TEXTURE_METALLIC_BINDLESS)) {
+                uint64_t handle = getParameter(ParameterID::TEXTURE_METALLIC_BINDLESS).asTextureBindless();
+                if (handle) {
+                    m_uniformData.metallicMap = handle;
+                }
+            }
+
+            if (m_isDirty && hasParameter(ParameterID::TEXTURE_ROUGHNESS_BINDLESS)) {
+                uint64_t handle = getParameter(ParameterID::TEXTURE_ROUGHNESS_BINDLESS).asTextureBindless();
+                if (handle) {
+                    m_uniformData.roughnessMap = handle;
+                }
+            }
+
+            if (m_isDirty && hasParameter(ParameterID::TEXTURE_NORMAL_BINDLESS)) {
+                uint64_t handle = getParameter(ParameterID::TEXTURE_NORMAL_BINDLESS).asTextureBindless();
+                if (handle) {
+                    m_uniformData.normalMap = handle;
+                }
+            }
+
+            if (m_isDirty && hasParameter(ParameterID::TEXTURE_AO_BINDLESS)) {
+                uint64_t handle = getParameter(ParameterID::TEXTURE_AO_BINDLESS).asTextureBindless();
+                if (handle) {
+                    m_uniformData.aoMap = handle;
+                }
+            }
+
+            if (m_isDirty && hasParameter(ParameterID::TEXTURE_EMISSIVE_BINDLESS)) {
+                uint64_t handle = getParameter(ParameterID::TEXTURE_EMISSIVE_BINDLESS).asTextureBindless();
+                if (handle) {
+                    m_uniformData.emissiveMap = handle;
+                }
+            }
+
 		}
 		
+        
+			// Update texture flags in uniform data
+		if (m_uniformData.flags != textureFlags) {
+			m_uniformData.flags = textureFlags;
+			markDirty();
+		}
+
 		// Explicitly bind UBO to binding point before updating
 		m_uniformBuffer->bindBase(PBR_BINDING_POINT_IDX);
 		
 		// Only update the data if the material is dirty
 		if (m_isDirty) {
+
+
 			// Now update the data
 			m_uniformBuffer->setData(&m_uniformData, sizeof(m_uniformData));
 			// Force flush to ensure data is sent to GPU

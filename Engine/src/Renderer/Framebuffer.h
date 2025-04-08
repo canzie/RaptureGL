@@ -67,12 +67,14 @@ namespace Rapture
 		Framebuffer(const FramebufferSpecification& spec);
 		~Framebuffer();
 
-		void invalidate();
+		void invalidate(bool isDepthBufferOnly = false);
 		
 		void bind(bool clear = true);
 		void unbind();
 
         void disableDepthTesting();
+
+        bool isValid() const { return m_framebufferID != 0; }
 		
 		void resize(uint32_t width, uint32_t height);
 		

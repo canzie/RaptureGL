@@ -3,9 +3,10 @@
 #include "../Shaders/Shader.h"
 #include "../Logger/Log.h"
 
+#include "../WindowContext/Application.h"
+
 namespace Rapture {
 
-static std::filesystem::path s_shaderPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL";
 
 // Static member initialization
 std::unordered_map<std::string, std::shared_ptr<Material>> MaterialLibrary::s_materials;
@@ -23,6 +24,11 @@ void MaterialLibrary::init()
         GE_CORE_WARN("MaterialLibrary: Already initialized!");
         return;
     }
+
+    //Application& app = Application::getInstance();
+    //std::filesystem::path s_shaderPath = app.getCurrentProject()->getConfig().shaderPath;
+
+    std::filesystem::path s_shaderPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL";
     
     GE_CORE_INFO("MaterialLibrary: Initializing...");
     // Initialize static shaders for material types

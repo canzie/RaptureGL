@@ -438,6 +438,9 @@ namespace Rapture {
 
         buildGeometryQueue(request, false);
 
+        //ShadowPassCommand shadowPassCmd;
+        //request.resultQueue->add(shadowPassCmd);
+
         LightingPassCommand lightingPassCmd;
         // Placeholder: Eventually get the actual lighting shader if needed here
         // lightingPassCmd.lightPassShader = ...; 
@@ -449,6 +452,8 @@ namespace Rapture {
         // For now, we assume it will be set later or handled by the renderer
         // ssrCmd.ssrShader = AssetManager::getAsset<Shader>(/* SSR Shader Handle */);
         request.resultQueue->add(ssrCmd); 
+
+
 
         request.resultQueue->markAsDone();
     }

@@ -1,4 +1,7 @@
-#version 420 core
+#version 460 core
+
+#extension GL_ARB_bindless_texture : require
+#extension GL_ARB_gpu_shader_int64 : require // Needed for uint64_t
 
 layout(location = 0) out vec3 gPosition;
 layout(location = 1) out vec3 gNormal;
@@ -39,6 +42,12 @@ layout (std140, binding=1) uniform PBR
 	float roughnessFactor;
     float specularFactor;
     uint flags;
+    uint64_t albedoMap;
+    uint64_t normalMap;
+    uint64_t metallicMap;
+    uint64_t roughnessMap;
+    uint64_t aoMap;
+    uint64_t emissiveMap;
 };
 
 vec3 getNormalFromMap()
@@ -60,45 +69,75 @@ vec3 getNormalFromMap()
 
 void main() {
 
+
     // Get material properties from textures or fallback to uniforms
-    vec3 albedo = ((flags & ALBEDO_MAP_FLAG) != 0) ? 
-                   texture(u_AlbedoMap, fs_in.TexCoord).rgb : 
-                   baseColorFactor.rgb;
-                   
-    float material_roughness = ((flags & ROUGHNESS_MAP_FLAG) != 0) ? 
-                               texture(u_RoughnessMap, fs_in.TexCoord).r : 
-                               roughnessFactor;
-                               
-    float material_metallic = ((flags & METALLIC_MAP_FLAG) != 0) ? 
-                              texture(u_MetallicMap, fs_in.TexCoord).r : 
-                              metallicFactor;
-                              
-    float ao = ((flags & AO_MAP_FLAG) != 0) ? 
-               texture(u_AOMap, fs_in.TexCoord).r : 
-               1.0;
-               
-    vec3 emission = ((flags & EMISSIVE_MAP_FLAG) != 0) ? 
-                    texture(u_EmissiveMap, fs_in.TexCoord).rgb : 
-                    vec3(0.0);
+
+    vec3 albedo = baseColorFactor.rgb;
+
+    float roughness = roughnessFactor;
+    float metallic = metallicFactor;
+    float ao = 1.0;
+    vec3 emission = vec3(0.0);
+
+    // Albedo
+    if (albedoMap != 0) {
+        sampler2D albedoSampler = sampler2D(albedoMap);
+        albedo = texture(albedoSampler, fs_in.TexCoord).rgb;
+    } else if ((flags & ALBEDO_MAP_FLAG) != 0) {
+        albedo = texture(u_AlbedoMap, fs_in.TexCoord).rgb;
+    }
+
+    // Roughness
+    if (roughnessMap != 0) {
+        sampler2D roughnessSampler = sampler2D(roughnessMap);
+        roughness = texture(roughnessSampler, fs_in.TexCoord).g;
+    } else if ((flags & ROUGHNESS_MAP_FLAG) != 0) {
+        roughness = texture(u_RoughnessMap, fs_in.TexCoord).g;
+    }
+    
+    if (metallicMap != 0) {
+        sampler2D metallicSampler = sampler2D(metallicMap);
+        metallic = texture(metallicSampler, fs_in.TexCoord).b;
+    } else if ((flags & METALLIC_MAP_FLAG) != 0) {
+        metallic = texture(u_MetallicMap, fs_in.TexCoord).b;
+    }
+    
+    if (aoMap != 0) {
+        sampler2D aoSampler = sampler2D(aoMap);
+        ao = texture(aoSampler, fs_in.TexCoord).r;
+    } else if ((flags & AO_MAP_FLAG) != 0) {
+        ao = texture(u_AOMap, fs_in.TexCoord).r;
+    }
+    
+    if (emissiveMap != 0) {
+        sampler2D emissiveSampler = sampler2D(emissiveMap);
+        emission = texture(emissiveSampler, fs_in.TexCoord).rgb;
+    } else if ((flags & EMISSIVE_MAP_FLAG) != 0) {
+        emission = texture(u_EmissiveMap, fs_in.TexCoord).rgb;
+    }
 
     // Position (view space)
     gPosition = fs_in.FragPos;
     
     // Normal
     vec3 normal;
-    if ((flags & NORMAL_MAP_FLAG) != 0) {
+    if (normalMap != 0) {
+        sampler2D normalSampler = sampler2D(normalMap);
+        normal = texture(normalSampler, fs_in.TexCoord).rgb;
+    } else if ((flags & NORMAL_MAP_FLAG) != 0) {
         normal = getNormalFromMap();
     } else {
         normal = normalize(fs_in.Normal);
     }
+
     gNormal = normal;
     
     // Albedo and specular
     gAlbedoSpec = vec4(albedo, 1.0);
     
     // Material properties
-    float metallic = material_metallic;
-    float roughness = material_roughness;
+    //float metallic = material_metallic;
+    //float roughness = material_roughness;
     //float ao = ao;
     
     gMaterial = vec4(metallic, roughness, ao, 1.0);

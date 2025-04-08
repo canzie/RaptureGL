@@ -30,6 +30,7 @@ namespace Rapture {
         virtual void setMat3(const std::string& name, const glm::mat3& value) override;
         virtual void setMat4(const std::string& name, const glm::mat4& value) override;
         virtual void setTexture(const std::string& name, std::shared_ptr<Texture2D> texture, uint32_t slot = 0) override;
+        virtual void setUint64(const std::string& name, uint64_t value) override;
 
         // Returns the OpenGL program ID
         unsigned int getProgramID() const { return m_programID; }
