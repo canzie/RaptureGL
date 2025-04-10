@@ -65,15 +65,24 @@ namespace Rapture {
         // Find or create a vertex array with the given buffer layout
         auto vao = findOrCreateVertexArray(layout, vertexDataSize, indexDataSize, indexType);
 
-        // allocate the vertex data
+        if (!vao) {
+             GE_CORE_ERROR("BufferPoolManager::allocateMeshData: Failed to find or create a suitable VAO.");
+             return meshData;
+        }
+
+
+        // Allocate the vertex data within the chosen VAO
         auto vertexAllocation = allocateBuffer(vao, BufferType::Vertex, vertexDataSize);
-        // allocate the index data
+        // Allocate the index data within the chosen VAO
         auto indexAllocation = allocateBuffer(vao, BufferType::Index, indexDataSize);
 
 
         if (!vertexAllocation || !indexAllocation) {
-            GE_CORE_ERROR("Failed to allocate vertex or index buffer");
-            return meshData;
+            GE_CORE_ERROR("BufferPoolManager::allocateMeshData: Failed to allocate vertex ({0} bytes) or index ({1} bytes) buffer within VAO {2}, even after finding/creating it.",
+                          vertexDataSize, indexDataSize, vao ? vao->getID() : 0);
+            if (vertexAllocation && !vertexAllocation->isAllocated) meshData.vertexAllocation->isAllocated = false;
+            if (indexAllocation && !indexAllocation->isAllocated) meshData.indexAllocation->isAllocated = false;
+            return MeshBufferData{};
         }
 
         meshData.vao = vao;
@@ -102,96 +111,113 @@ namespace Rapture {
             return nullptr;
         }
         
+
         auto& allocations = m_vaoToBufferAllocationsMap[vaoId];
         for (auto allocation : allocations) {
-            if (allocation->bufferType == type && allocation->sizeBytes >= size) {
-                if (allocation->isAllocated) {
-                    continue;
-                }
-                //allocation->print();
-                // there is space and the allocation is not in use
+            if (allocation->bufferType == type && !allocation->isAllocated && allocation->sizeBytes >= size) {
                 allocation->isAllocated = true;
+                
                 splitBufferPoolAllocation(allocation, size, vao);
+                
                 return allocation;
             }
         }
 
-        GE_CORE_ERROR("BufferPoolManager::allocateBuffer: Failed to allocate buffer");
+        GE_CORE_WARN("BufferPoolManager::allocateBuffer: Failed to find a suitable free block for {0} bytes of type {1} in VAO ID: {2}", size, (type == BufferType::Vertex ? "Vertex" : "Index"), vaoId);
+        for(const auto& alloc : allocations) {
+            alloc->print();
+        }
         return nullptr;
     }
 
-    void BufferPoolManager::splitBufferPoolAllocation(std::shared_ptr<BufferAllocation> allocation, size_t size, std::shared_ptr<VertexArray> vao) {
-        if (!vao) {
-            GE_CORE_ERROR("BufferPoolManager::splitBufferPoolAllocation: Attempted to split allocation for null VAO");
+    void BufferPoolManager::splitBufferPoolAllocation(std::shared_ptr<BufferAllocation> allocation, size_t allocatedSize, std::shared_ptr<VertexArray> vao) {
+         if (!allocation || !vao) {
+            GE_CORE_ERROR("BufferPoolManager::splitBufferPoolAllocation: Invalid allocation or VAO pointer.");
             return;
         }
 
         unsigned int vaoId = vao->getID();
-        if (vaoId == 0) {
+         if (vaoId == 0) {
             GE_CORE_ERROR("BufferPoolManager::splitBufferPoolAllocation: Attempted to split allocation for VAO with invalid ID: {0}", vaoId);
             return;
         }
 
+        size_t remainingSize = allocation->sizeBytes - allocatedSize;
 
-        // if this value is smaller then 0, it would make a useless allocation, with a potentially buffed offset
-        if (allocation->sizeBytes - size > 0) {
+        if (remainingSize > 0) {
+             
             auto newAllocation = std::make_shared<BufferAllocation>(
-                allocation->offsetBytes + size,
-                allocation->sizeBytes - size, 
-                false, 
-                allocation->bufferType, 
+                allocation->offsetBytes + allocatedSize,
+                remainingSize,
+                false,
+                allocation->bufferType,
                 allocation->bufferUsage);
-            //newAllocation->print();
+
 
             m_vaoToBufferAllocationsMap[vaoId].push_back(newAllocation);
+            
 
-            // update the old allocation size
-            allocation->sizeBytes = size;
+            allocation->sizeBytes = allocatedSize;
+
         }
     }
 
     void BufferPoolManager::freeMeshData(MeshBufferData& meshData) {
         std::lock_guard<std::mutex> lock(m_mutex);
 
-        meshData.vertexAllocation->isAllocated = false;
-        meshData.indexAllocation->isAllocated = false;
+        if (!meshData.vao || !meshData.vertexAllocation || !meshData.indexAllocation) {
+            GE_CORE_WARN("BufferPoolManager::freeMeshData: Attempting to free invalid MeshBufferData.");
+            return;
+        }
+
+        unsigned int vaoId = meshData.vao->getID();
+        
+        if (meshData.vertexAllocation) {
+             meshData.vertexAllocation->isAllocated = false;
+        }
+        if (meshData.indexAllocation) {
+             meshData.indexAllocation->isAllocated = false;
+        }
     }
 
-    // guarantees a usable VAO
     std::shared_ptr<VertexArray> BufferPoolManager::findOrCreateVertexArray(const BufferLayout& layout, size_t vertexDataSize, size_t indexDataSize, unsigned int indexType) {
-        // Hash the layout to use as a key
         size_t layoutHash = layout.hash();
-        
-        // Check if we already have a VAO for this layout
-        auto it = m_layoutToVAOMap.find(layoutHash);
-        if (it != m_layoutToVAOMap.end() && it->second) {
-            auto vao = it->second;
-            unsigned int vaoId = vao->getID();
-            if (vaoId == 0) {
-                GE_CORE_ERROR("BufferPoolManager: Found VAO with invalid ID in layout map");
-                return nullptr;
-            }
+        auto mapIt = m_layoutToVAOMap.find(layoutHash);
+        if (mapIt != m_layoutToVAOMap.end()) {
+            auto& vaoList = mapIt->second;
 
-            auto bufferAllocationsIt = m_vaoToBufferAllocationsMap.find(vaoId);
-            if (bufferAllocationsIt != m_vaoToBufferAllocationsMap.end() && !bufferAllocationsIt->second.empty()) {
-                bool hasVBO = false;
-                bool hasIBO = false;
-                
-                for (auto& bufferAllocation : bufferAllocationsIt->second) {
-                    if (!hasVBO && 
-                        bufferAllocation->bufferType == BufferType::Vertex && 
-                        bufferAllocation->sizeBytes >= vertexDataSize) {
-                        hasVBO = true;
-                    } 
-                    else if (!hasIBO && 
-                        bufferAllocation->bufferType == BufferType::Index && 
-                        bufferAllocation->sizeBytes >= indexDataSize) {
-                        hasIBO = true;
-                    }
+            for (auto& vao : vaoList) {
+                 if (!vao) {
+                      GE_CORE_WARN("BufferPoolManager::findOrCreateVertexArray: Found null VAO pointer in list for hash {0}. Skipping.", layoutHash);
+                      continue;
+                 }
+                unsigned int vaoId = vao->getID();
+                if (vaoId == 0) {
+                    GE_CORE_WARN("BufferPoolManager::findOrCreateVertexArray: Found VAO with invalid ID (0) in list for hash {0}. Skipping.", layoutHash);
+                    continue;
+                }
 
-                    if (hasVBO && hasIBO) {
-                        return vao;
+
+                auto allocMapIt = m_vaoToBufferAllocationsMap.find(vaoId);
+                if (allocMapIt != m_vaoToBufferAllocationsMap.end()) {
+                    bool foundVboSpace = false;
+                    bool foundIboSpace = false;
+                    
+                    for (const auto& allocation : allocMapIt->second) {
+                        if (!allocation->isAllocated) {
+                            if (!foundVboSpace && allocation->bufferType == BufferType::Vertex && allocation->sizeBytes >= vertexDataSize) {
+                                foundVboSpace = true;
+                            }
+                            if (!foundIboSpace && allocation->bufferType == BufferType::Index && allocation->sizeBytes >= indexDataSize) {
+                                foundIboSpace = true;
+                            }
+                        }
+                        if (foundVboSpace && foundIboSpace) {
+                            return vao;
+                        }
                     }
+                } else {
+                     GE_CORE_WARN("BufferPoolManager::findOrCreateVertexArray: VAO ID {0} found in layout map but not in allocation map!", vaoId);
                 }
             }
         }
@@ -199,13 +225,13 @@ namespace Rapture {
         // Create a new VAO for this layout
         auto vao = std::make_shared<VertexArray>();
         if (!vao) {
-            GE_CORE_ERROR("BufferPoolManager: Failed to create new VAO");
+            GE_CORE_ERROR("BufferPoolManager::findOrCreateVertexArray: Failed to create new VAO object.");
             return nullptr;
         }
 
         unsigned int vaoId = vao->getID();
         if (vaoId == 0) {
-            GE_CORE_ERROR("BufferPoolManager: Newly created VAO has invalid ID");
+            GE_CORE_ERROR("BufferPoolManager::findOrCreateVertexArray: Newly created VAO has invalid ID (0).");
             return nullptr;
         }
 
@@ -213,57 +239,77 @@ namespace Rapture {
         size_t indexPoolSize;
         calculateNewBufferPairSize(vertexDataSize, indexDataSize, vertexPoolSize, indexPoolSize);
 
-        GE_CORE_INFO("BufferPoolManager: Creating new VAO with vertex pool size: {0}MB and index pool size: {1}MB", vertexPoolSize/1024.0f/1024.0f, indexPoolSize/1024.0f/1024.0f);
+        if (vertexPoolSize == 0 || indexPoolSize == 0) {
+             GE_CORE_ERROR("BufferPoolManager::findOrCreateVertexArray: Calculated buffer sizes are invalid (VBO: {0}, IBO: {1}). Cannot create VAO.", vertexPoolSize, indexPoolSize);
+             return nullptr;
+        }
+        
+        if (vertexPoolSize < vertexDataSize || indexPoolSize < indexDataSize) {
+             GE_CORE_WARN("BufferPoolManager::findOrCreateVertexArray: Initial requested size (VBO: {0}, IBO: {1}) is larger than calculated pool size (VBO: {2}, IBO: {3}). Adjusting pool size.",
+                           vertexDataSize, indexDataSize, vertexPoolSize, indexPoolSize);
+             vertexPoolSize = std::max(vertexPoolSize, vertexDataSize);
+             indexPoolSize = std::max(indexPoolSize, indexDataSize);
+             GE_CORE_INFO("BufferPoolManager::findOrCreateVertexArray: Adjusted pool sizes to VBO: {0}, IBO: {1}", vertexPoolSize, indexPoolSize);
+        }
+
+
+        GE_CORE_INFO("BufferPoolManager::findOrCreateVertexArray: New VAO ({0}) - VBO Size: {1} bytes, IBO Size: {2} bytes", vaoId, vertexPoolSize, indexPoolSize);
 
         auto vertexBuffer = std::make_shared<VertexBuffer>(vertexPoolSize);
         auto indexBuffer = std::make_shared<IndexBuffer>(indexPoolSize, indexType);
+
+        if (!vertexBuffer || vertexBuffer->getID() == 0 || !indexBuffer || indexBuffer->getID() == 0) {
+             GE_CORE_ERROR("BufferPoolManager::findOrCreateVertexArray: Failed to create underlying VertexBuffer or IndexBuffer for new VAO {0}.", vaoId);
+             return nullptr;
+        }
 
         vao->setVertexBuffer(vertexBuffer);
         vao->setIndexBuffer(indexBuffer);
         vao->setBufferLayout(layout);
         
-        // Store it in the maps
-        m_layoutToVAOMap[layout.hash()] = vao;
-        m_vaoToBufferAllocationsMap[vaoId].push_back(std::make_shared<BufferAllocation>(0, vertexPoolSize, false, BufferType::Vertex, BufferUsage::Static));
-        m_vaoToBufferAllocationsMap[vaoId].push_back(std::make_shared<BufferAllocation>(0, indexPoolSize, false, BufferType::Index, BufferUsage::Static));
+        m_layoutToVAOMap[layoutHash].push_back(vao);
+
+        m_vaoToBufferAllocationsMap[vaoId].push_back(std::make_shared<BufferAllocation>(
+            0, vertexPoolSize, false, BufferType::Vertex, BufferUsage::Static
+        ));
+        m_vaoToBufferAllocationsMap[vaoId].push_back(std::make_shared<BufferAllocation>(
+            0, indexPoolSize, false, BufferType::Index, BufferUsage::Static
+        ));
+        GE_CORE_TRACE("BufferPoolManager::findOrCreateVertexArray: Initial allocations created for new VAO {0}.", vaoId);
         
         return vao;
     }
 
     void BufferPoolManager::calculateNewBufferPairSize(size_t vertexDataSize, size_t indexDataSize, size_t& vertexPoolSize, size_t& indexPoolSize) {
 
-
-        // calculate the size of the vertex buffer pool
-        vertexPoolSize = SMALL_BUFFER_POOL_SIZE;
-        
-        // Check if we need to use a larger pool size based on vertex data size
-        if (vertexDataSize > SMALL_BUFFER_POOL_SIZE * NEXT_BUFFER_SIZE_THRESHOLD) {
+        if (vertexDataSize <= SMALL_BUFFER_POOL_SIZE * NEXT_BUFFER_SIZE_THRESHOLD) {
+            vertexPoolSize = SMALL_BUFFER_POOL_SIZE;
+        } else if (vertexDataSize <= MEDIUM_BUFFER_POOL_SIZE * NEXT_BUFFER_SIZE_THRESHOLD) {
             vertexPoolSize = MEDIUM_BUFFER_POOL_SIZE;
-            
-            if (vertexDataSize > MEDIUM_BUFFER_POOL_SIZE * NEXT_BUFFER_SIZE_THRESHOLD) {
-                vertexPoolSize = LARGE_BUFFER_POOL_SIZE;
-                
-                if (vertexDataSize > LARGE_BUFFER_POOL_SIZE * NEXT_BUFFER_SIZE_THRESHOLD) {
-                    vertexPoolSize = HUGE_BUFFER_POOL_SIZE;
-                }
-            }
+        } else if (vertexDataSize <= LARGE_BUFFER_POOL_SIZE * NEXT_BUFFER_SIZE_THRESHOLD) {
+            vertexPoolSize = LARGE_BUFFER_POOL_SIZE;
+        } else if (vertexDataSize <= HUGE_BUFFER_POOL_SIZE * NEXT_BUFFER_SIZE_THRESHOLD) {
+            vertexPoolSize = HUGE_BUFFER_POOL_SIZE;
+        } else {
+             GE_CORE_WARN("BufferPoolManager::calculateNewBufferPairSize: Requested vertex size ({0} bytes) exceeds largest threshold. Sizing based on request.", vertexDataSize);
+             vertexPoolSize = std::min(MAX_POOL_SIZE, (size_t)(vertexDataSize * 1.5));
         }
 
         if (vertexPoolSize < vertexDataSize) {
-            GE_CORE_ERROR("BufferPoolManager::allocateMeshData: Vertex data size({0}MB) exceeds maximum threshold of {1}MB", vertexDataSize/1024.0f/1024.0f, vertexPoolSize/1024.0f/1024.0f);
-            indexPoolSize=0;
-            vertexPoolSize=0;
+            GE_CORE_ERROR("BufferPoolManager::calculateNewBufferPairSize: Calculated vertex pool size ({0}) is smaller than vertexDataSize ({1})", vertexPoolSize, vertexDataSize);
+            vertexPoolSize = 0;
+            indexPoolSize = 0;
             return;
         }
 
-        if (vertexPoolSize < indexDataSize) {
-            indexPoolSize = std::min(vertexPoolSize*2, MAX_POOL_SIZE);
-            return;
-        }
-
-        // calculate the size of the index buffer pool
+        // can probavly be smaller 
         indexPoolSize = vertexPoolSize;
-
+        if (indexPoolSize < indexDataSize) {
+            GE_CORE_ERROR("BufferPoolManager::calculateNewBufferPairSize: Calculated index pool size ({0}) is smaller than indexDataSize ({1})", indexPoolSize, indexDataSize);
+            vertexPoolSize = 0;
+            indexPoolSize = 0;
+            return;
+        }
     }
 
 

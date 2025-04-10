@@ -113,7 +113,7 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     if (loader){
         loader->loadModel("Sponza/glTF/Sponza.gltf");
         loader->loadModel("sphere.gltf");
-        //loader->loadModel("Cube.gltf");
+        //loader->loadModel("main1_sponza/NewSponza_Main_glTF_003.gltf");
     }
 
     std::vector<std::filesystem::path> cubemapPaths = {
@@ -369,7 +369,7 @@ void TestLayer::onUpdate(float ts)
 	//Rapture::Renderer::sumbitScene(activeScene);
     Rapture::Renderer::drawSprites(activeScene);
     if (m_selectedEntity) {
-        Rapture::Renderer::drawBoundingBox(*m_selectedEntity);
+        //Rapture::Renderer::drawBoundingBox(*m_selectedEntity);
     }
 
 

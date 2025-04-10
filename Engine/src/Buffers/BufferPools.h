@@ -23,7 +23,7 @@ namespace Rapture {
     constexpr size_t DEFAULT_ALIGNMENT = 16;               // Default memory alignment
     constexpr size_t MAX_BUFFER_POOLS = 8;                 // Maximum number of buffer pools
     
-    constexpr size_t SMALL_BUFFER_POOL_SIZE = 64 * 1024 * 1024; // 4 MB small buffer pool size
+    constexpr size_t SMALL_BUFFER_POOL_SIZE = 8 * 1024 * 1024; // 4 MB small buffer pool size
     constexpr size_t MEDIUM_BUFFER_POOL_SIZE = 16 * 1024 * 1024; // 16 MB medium buffer pool size
     constexpr size_t LARGE_BUFFER_POOL_SIZE = 32 * 1024 * 1024; // 32 MB large buffer pool size
     constexpr size_t HUGE_BUFFER_POOL_SIZE = 64 * 1024 * 1024; // 64 MB huge buffer pool size
@@ -98,15 +98,17 @@ namespace Rapture {
         static BufferPoolManager& getInstance();
 
         void printBufferAllocations() {
-            for (auto& [i, vao] : m_layoutToVAOMap) {
-                GE_CORE_INFO("BufferPoolManager:: vao: {0}", vao->getID());
-                vao->getBufferLayout().print();
-                GE_CORE_INFO("BufferPoolManager:: buffrlayour hash: {0}", vao->getBufferLayout().hash());
-                auto& allocations = m_vaoToBufferAllocationsMap[vao->getID()];
-                for (auto& allocation : allocations) {
-                    allocation->print();
+            /*
+            for (auto& [i, vaos] : m_layoutToVAOMap) {
+                for (auto& vao : vaos) {
+                    GE_CORE_INFO("BufferPoolManager:: vao: {0}", vao->getID());
+                    vao->getBufferLayout().print();
+                    auto& allocations = m_vaoToBufferAllocationsMap[vao->getID()];
+                    for (auto& allocation : allocations) {
+                        allocation->print();
+                    }
                 }
-            }
+            }*/
         }
         
         // Allocate mesh data in buffer pools
@@ -140,11 +142,11 @@ namespace Rapture {
         
         std::mutex m_mutex;
 
-        // potential issue in the future is that when the buffers inside of a vao are full
-        // a new vao will be created, and the old one will be overwritten, while we would still like access because space can be cleared
-        // however, with a large enogh initial buffer, we can avoid this case for now, until the system works
-        std::unordered_map<size_t, std::shared_ptr<VertexArray>> m_layoutToVAOMap;
+        // Map from buffer layout hash to a list of VAOs sharing that layout.
+        // This allows creating new VAOs when existing ones are full.
+        std::unordered_map<size_t, std::vector<std::shared_ptr<VertexArray>>> m_layoutToVAOMap;
 
+        // Map from VAO ID to its buffer allocations. This remains the same.
         std::unordered_map<unsigned int, std::vector<std::shared_ptr<BufferAllocation>>> m_vaoToBufferAllocationsMap;
     };
 }
