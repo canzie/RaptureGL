@@ -25,18 +25,73 @@ layout(std140, binding = 6) uniform BoneMatrices {
 
 uniform mat4 u_model;
 
+// Skinning control - 1.0 when skinning is enabled, 0.0 when disabled
+uniform float u_SkinningEnabled = 0.0;
 
 out VS_OUT {
     vec3 FragPos;
     vec3 Normal;
     vec2 TexCoord;
+    vec3 Tangent;
+    vec3 Bitangent;
 } vs_out;
 
 void main() {
-    vs_out.FragPos = vec3(u_model * vec4(a_Position, 1.0));
-    vs_out.Normal = normalize(a_Normal);
+
+    // Start with vertex in bind pose
+    vec4 skinnedPosition = vec4(a_Position, 1.0);
+    vec3 skinnedNormal = a_Normal;
+    vec3 skinnedTangent = a_Tangent;
+    
+    // Calculate bitangent (cross product of normal and tangent)
+    vec3 skinnedBitangent = cross(skinnedNormal, skinnedTangent);
+    
+    // Apply skinning using weighted bone transformations
+    vec4 blendedPosition = vec4(0.0);
+    vec3 blendedNormal = vec3(0.0);
+    vec3 blendedTangent = vec3(0.0);
+    vec3 blendedBitangent = vec3(0.0);
+    
+    for(int i = 0; i < 4; i++) {
+        // Get bone index and weight
+        int boneIndex = int(a_Joints[i]);
+        float weight = a_Weights[i];
+        
+        // Calculate skin influence - no branches needed
+        mat4 boneTransform = u_BoneTransforms[boneIndex];
+        
+        // Transform position, normal, tangent and bitangent by bone matrix, weighted by influence
+        blendedPosition += weight * (boneTransform * vec4(a_Position, 1.0));
+        blendedNormal += weight * (mat3(boneTransform) * a_Normal);
+        blendedTangent += weight * (mat3(boneTransform) * a_Tangent);
+        blendedBitangent += weight * (mat3(boneTransform) * skinnedBitangent);
+    }
+    
+    // Linearly interpolate between original and skinned vertices based on skinning flag
+    // When u_SkinningEnabled is 0, we get the original vertex
+    // When u_SkinningEnabled is 1, we get the skinned vertex
+    skinnedPosition = mix(skinnedPosition, blendedPosition, u_SkinningEnabled);
+    skinnedNormal = mix(skinnedNormal, blendedNormal, u_SkinningEnabled);
+    skinnedTangent = mix(skinnedTangent, blendedTangent, u_SkinningEnabled);
+    skinnedBitangent = mix(skinnedBitangent, blendedBitangent, u_SkinningEnabled);
+    
+    // Transform to world space
+    vs_out.FragPos = vec3(u_model * skinnedPosition);
+    vs_out.Normal = mat3(u_model) * skinnedNormal;
+    vs_out.Tangent = mat3(u_model) * skinnedTangent;
+    vs_out.Bitangent = mat3(u_model) * skinnedBitangent;
+    
+    // Ensure orthogonality in world space
+    vs_out.Normal = normalize(vs_out.Normal);
+    vs_out.Tangent = normalize(vs_out.Tangent);
+    // Re-orthogonalize tangent with respect to normal
+    vs_out.Tangent = normalize(vs_out.Tangent - dot(vs_out.Tangent, vs_out.Normal) * vs_out.Normal);
+    // Recalculate bitangent to ensure orthogonal basis
+    vs_out.Bitangent = cross(vs_out.Normal, vs_out.Tangent);
+
+
     vs_out.TexCoord = a_TexCoord;
     
     
-    gl_Position = u_proj * u_view * u_model * vec4(a_Position, 1.0);
+    gl_Position = u_proj * u_view * vec4(vs_out.FragPos, 1.0);
 }

@@ -129,7 +129,7 @@ namespace Rapture {
     Line::Line(glm::vec3 start, glm::vec3 end, glm::vec4 color)
         : m_start(start), m_end(end), m_color(color) 
     {
-        // Create the line mesh
+        // Create the line mesh using the helper
         std::vector<float> positions = {
             start.x, start.y, start.z,
             end.x, end.y, end.z
@@ -145,6 +145,33 @@ namespace Rapture {
         // Create a solid color material using MaterialLibrary
         std::string materialName = "Line_Material_" + std::to_string(reinterpret_cast<uintptr_t>(this));
         m_material = MaterialLibrary::createSolidMaterial(materialName, glm::vec3(color));
+        if (m_material) {
+            m_material->setVec3("color", glm::vec3(m_color));
+        }
+    }
+    
+    void Line::setPoints(glm::vec3 start, glm::vec3 end)
+    {
+        m_start = start;
+        m_end = end;
+
+        // Recreate the mesh with the new points using the existing helper
+        std::vector<float> positions = {
+            start.x, start.y, start.z,
+            end.x, end.y, end.z
+        };
+        std::vector<uint32_t> indices = { 0, 1 };
+
+        // Replace the existing mesh object with a new one
+        m_mesh = createPositionOnlyMesh(positions, indices);
+    }
+
+    void Line::setColor(const glm::vec4& color)
+    {
+        m_color = color;
+        if (m_material) {
+            m_material->setVec3("color", glm::vec3(m_color));
+        }
     }
     
     //-----------------------------------------------------------------------------

@@ -6,7 +6,7 @@
 #include "../../Materials/MaterialLibrary.h"
 #include "../../Mesh/Mesh.h"
 #include "../../Camera/PerspectiveCamera.h"
-#include "../../Scenes/EntityNode.h"
+#include "../../Scenes/EntityNode.h" // Forward declare instead
 #include "Transforms.h"
 #include "BoundingBox.h"
 #include "../../Debug/Profiler.h"
@@ -16,6 +16,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include "../../Animations/Skeleton/Skeleton.h"
 #include "../../Animations/Animation.h"
@@ -24,9 +25,12 @@
 
 
 #include <vector>
+#include <memory> // For shared_ptr
 //#include <string>
 
 namespace Rapture {
+
+
 
 
 	struct TransformComponent
@@ -38,6 +42,10 @@ namespace Rapture {
         glm::vec3 scale() const { return transforms.getScale(); }
         glm::mat4 transformMatrix() const { return transforms.getTransform(); }
 
+        private:
+            mutable std::size_t m_lastHash = 0;
+
+        public:
         TransformComponent()
         {
             transforms = Transforms();
@@ -45,7 +53,6 @@ namespace Rapture {
 
         TransformComponent(glm::vec3 translation, glm::vec3 rotation, glm::vec3 scale) {
             transforms = Transforms(translation, rotation, scale);
-
         }
 
         // Add constructor for quaternion rotation
@@ -55,6 +62,32 @@ namespace Rapture {
 
         TransformComponent(glm::mat4 transformMatrix) {
             transforms.setTransform(transformMatrix);
+        }
+
+        std::size_t calculateCurrentHash() const
+        {
+            const glm::mat4& matrix = transforms.getTransform();
+            std::size_t hash = 0;
+            
+            // Hash the 16 float values in the transform matrix
+            const float* values = glm::value_ptr(matrix);
+            for (int i = 0; i < 16; ++i) {
+                // Simple hash combination using bit operations
+                // Multiply by prime number and XOR with current hash
+                hash ^= std::hash<float>{}(values[i]) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+            }
+            
+            return hash;
+        }
+
+        bool hasChanged() const
+        {
+            uint32_t currentHash = calculateCurrentHash();
+            if (m_lastHash != currentHash) {
+                m_lastHash = currentHash;
+                return true;
+            }
+            return false;
         }
 	};
 
@@ -279,6 +312,12 @@ namespace Rapture {
             this->materialName = materialName;
 		}
 
+        MaterialComponent(std::shared_ptr<Material> material)
+        {
+            this->material = material;
+            this->materialName = material->getName();
+        }
+
         void setMaterial(const AssetHandle& handle)
         {
             m_weakMaterial = AssetManager::getAsset<Material>(handle);
@@ -491,6 +530,14 @@ namespace Rapture {
 
     };
 
+    struct SkeletonRefComponent
+    {
+        const std::weak_ptr<Skeleton> skeleton;
+
+        SkeletonRefComponent(std::shared_ptr<Skeleton> skeleton) : skeleton(skeleton) {}
+        
+    };
+
     struct EntityNodeComponent
     {
         std::shared_ptr<EntityNode> entity_node;
@@ -556,7 +603,12 @@ namespace Rapture {
         
         // Flag indicating if the light is active
         bool isActive = true;
+        bool castsShadow = false;
         
+        private:
+            mutable uint32_t m_lastHash = 0;
+
+        public:
         // Constructors
         LightComponent() = default;
         
@@ -574,6 +626,56 @@ namespace Rapture {
             : type(LightType::Spot), color(color), intensity(intensity), range(range),
               innerConeAngle(glm::radians(innerAngleDegrees)), 
               outerConeAngle(glm::radians(outerAngleDegrees)) {}
+
+
+        std::uint32_t calculateCurrentHash() const {
+            std::uint32_t hash = 0;
+            
+            // Common properties for all light types
+            hash ^= std::hash<LightType>{}(type) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+            hash ^= std::hash<bool>{}(isActive) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+            hash ^= std::hash<bool>{}(castsShadow) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+            hash ^= std::hash<float>{}(intensity) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+            
+            // Hash color components
+            hash ^= std::hash<float>{}(color.r) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+            hash ^= std::hash<float>{}(color.g) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+            hash ^= std::hash<float>{}(color.b) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+            
+            // Properties specific to light types
+            switch (type) {
+                case LightType::Point:
+                    // Point lights use range
+                    hash ^= std::hash<float>{}(range) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+                    break;
+                    
+                case LightType::Directional:
+                    // Directional lights don't need additional properties
+                    break;
+                    
+                case LightType::Spot:
+                    // Spot lights use range and cone angles
+                    hash ^= std::hash<float>{}(range) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+                    hash ^= std::hash<float>{}(innerConeAngle) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+                    hash ^= std::hash<float>{}(outerConeAngle) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+                    break;
+            }
+            
+            return hash;
+        }
+
+        bool hasChanged() const {
+
+            uint32_t currentHash = calculateCurrentHash();
+            if (m_lastHash != currentHash) {
+                m_lastHash = currentHash;
+                return true;
+            }
+            return false;
+        }
+
     };
+
+
 
 }

@@ -13,6 +13,7 @@ namespace Rapture {
     // Forward declare Scene and World classes
     class Scene;
     class World;
+    class Entity;
 
 /**
  * Unified Event System for Rapture Engine
@@ -233,6 +234,8 @@ namespace GameEvents {
 	// Project events
 	using ProjectLoadRequestedEvent = EventBus<std::string>;
 	using ProjectLoadedEvent = EventBus<std::string>;
+
+	using EntitySelectedEvent = EventBus<std::shared_ptr<Entity>>;
 	
 	// Global event accessors
 	inline SceneLoadRequestedEvent& onSceneLoadRequested() {
@@ -265,6 +268,10 @@ namespace GameEvents {
 	
 	inline ProjectLoadedEvent& onProjectLoaded() {
 		return EventRegistry::getInstance().getEventBus<std::string>("ProjectLoaded");
+	}
+
+	inline EntitySelectedEvent& onEntitySelected() {
+		return EventRegistry::getInstance().getEventBus<std::shared_ptr<Entity>>("EntitySelected");
 	}
 }
 

@@ -1,6 +1,7 @@
 #version 330 core
 
+// Fragment shader output (depth is written automatically)
 void main()
 {
-    // No color output is needed, the depth buffer handles the depth value automatically.
+
 }

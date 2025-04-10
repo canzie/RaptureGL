@@ -9,6 +9,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "../../Scenes/Components/Components.h"
+#include "../../Scenes/EntityNode.h"
 #include "../../Logger/Log.h"
 #include "../../Textures/Texture.h"
 #include "../../Materials/Material.h"
@@ -323,6 +324,19 @@ namespace Rapture {
 
                     NodeType nodeType = processNode(childEntity, m_nodes[childIndex]);
 
+                    bool hasSkeleton = nodeEntity.hasComponent<SkeletonComponent>();
+                    bool hasSkeletonRef = nodeEntity.hasComponent<SkeletonRefComponent>();
+
+                    bool hasChildSkeleton = childEntity.hasComponent<SkeletonComponent>();
+                    bool hasChildSkeletonRef = childEntity.hasComponent<SkeletonRefComponent>();
+
+                    // check for skeleton hierarchy
+                    if (hasSkeleton && (!hasChildSkeleton || !hasChildSkeletonRef)) {
+                        childEntity.addComponent<SkeletonRefComponent>(nodeEntity.getComponent<SkeletonComponent>().skeleton);
+                    } else if (hasSkeletonRef && (!hasChildSkeleton || !hasChildSkeletonRef)) {
+                        childEntity.addComponent<SkeletonRefComponent>(nodeEntity.getComponent<SkeletonRefComponent>().skeleton.lock());
+                    }
+
                     if (nodeType == NodeType::Bone) {
                         // use the child transform as the bone transform
 
@@ -392,7 +406,7 @@ namespace Rapture {
             auto entNodeComp = entity.tryGetComponent<EntityNodeComponent>();
             if (entNodeComp) {
                 if (entNodeComp->entity_node->getParent() != nullptr) {
-                    TransformComponent& parentTransformComp = entNodeComp->entity_node->getParentComponent<TransformComponent>();
+                    TransformComponent& parentTransformComp = entNodeComp->entity_node->getParent()->getEntity()->getComponent<TransformComponent>();
                     transformComp->transforms.setTransform(parentTransformComp.transformMatrix() * nodeTransform);
                 } else {
                     transformComp->transforms.setTransform(nodeTransform);

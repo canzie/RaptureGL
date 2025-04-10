@@ -39,6 +39,7 @@ namespace Rapture {
 		bool m_isMapped;
 		
 		unsigned int m_bindingPoint = 0;
+		void* m_persistentlyMappedPtr = nullptr;
 	};
     
 }

@@ -113,6 +113,7 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     if (loader){
         loader->loadModel("Sponza/glTF/Sponza.gltf");
         loader->loadModel("sphere.gltf");
+        //loader->loadModel("Cube.gltf");
     }
 
     std::vector<std::filesystem::path> cubemapPaths = {
@@ -124,21 +125,44 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
         "D:/downloads/skybox/skybox/back.jpg"
     };
 
+
     activeScene->getSkyBox().setTexturePaths(cubemapPaths);
     m_showDebugRay = activeScene->getSettings().rayCastDebugEnabled;
+
+
+    Rapture::Entity cube = activeScene->createEntity("Cube");
+    cube.addComponent<Rapture::TransformComponent>(
+        glm::vec3(0.0f, 0.0f, 0.0f),  // Position to the right of the sphere, same Z coordinate
+        glm::vec3(0.0f),              // No rotation needed for point light
+        glm::vec3(1.0f)               // Small scale to make the cube compact
+    );
+
+    Rapture::PrimitiveConfig cubeConfig;
+    cubeConfig.useTexCoords = true;
+    
+    Rapture::Cube cubeMesh = Rapture::Cube(cubeConfig);
+
+    cube.addComponent<Rapture::MeshComponent>(cubeMesh.getMesh());
+    cube.addComponent<Rapture::MaterialComponent>(cubeMesh.getMaterial());
+
 
     Rapture::Entity light1 = activeScene->createEntity("Light 1");
     light1.addComponent<Rapture::TransformComponent>(
         glm::vec3(2.0f, 1.0f, -3.0f),  // Position to the right of the sphere, same Z coordinate
-        glm::vec3(0.0f),              // No rotation needed for point light
+        glm::vec3(-2.243f, 0.0f, 0.0f),              // No rotation needed for point light
         glm::vec3(0.2f)               // Small scale to make the cube compact
     );
-    // White light with high intensity
+
+
     light1.addComponent<Rapture::LightComponent>(
         glm::vec3(1.0f, 1.0f, 1.0f),  // Pure white color
         1.2f,                         // High intensity
-        10.0f                         // Range
+        10.0f,                         // Range
+        30.0f,                         // Inner cone angle
+        45.0f                          // Outer cone angle
     );
+    light1.getComponent<Rapture::LightComponent>().castsShadow = true;
+
     light1.addComponent<Rapture::SpriteComponent>();
     
     // Light 2: A blue-tinted light to the left side
@@ -148,8 +172,8 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
         glm::vec3(0.0f),               // No rotation needed for point light
         glm::vec3(0.2f)                // Small scale to make the cube compact
     );
-    // Blue-tinted light with medium intensity
     light2.addComponent<Rapture::LightComponent>();
+    // Blue-tinted light with medium intensity
     light2.addComponent<Rapture::SpriteComponent>();
 
 	// Create camera controller

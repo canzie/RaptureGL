@@ -63,7 +63,18 @@ void DebugViewPanel::render()
     } catch (const std::exception& e) {
         Rapture::GE_CORE_ERROR("Failed to display Depth texture: {0}", e.what());
     }
-    
+
+    // Display Normal texture (side by side)
+    ImGui::SameLine();
+    try {
+        if (Rapture::DeferredRenderer::getShadowMap())
+        {
+            //displayTexture("Shadows DEBUG", Rapture::DeferredRenderer::getShadowMap()->getShadowMapDebugTextureID(), textureSize);
+            displayTexture("Shadows", Rapture::DeferredRenderer::getShadowMap()->getShadowMapID(), textureSize);
+        }
+    } catch (const std::exception& e) {
+        Rapture::GE_CORE_ERROR("Failed to display Shadows texture: {0}", e.what());
+    }
     ImGui::End();
 }
 

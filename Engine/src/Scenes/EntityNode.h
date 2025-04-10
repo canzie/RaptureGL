@@ -2,56 +2,54 @@
 
 #include <memory>
 #include <vector>
+#include <stdexcept> // For std::runtime_error
+#include <algorithm> // For std::find
 
 #include "Entity.h"
 
-
 namespace Rapture
 {
+    // Forward declaration
+    class EntityNode;
 
-
-    // used to create a hierarchy of entities and save the relationships between them
-    // usefull for complex meshes with a hierarchy of submeshes and when they each need their own components
+    // Used to create a hierarchy of entities and save the relationships between them
+    // Useful for complex meshes with a hierarchy of submeshes and when they each need their own components
+    // The lifetime of the EntityNode object is managed by the shared_ptr in the EntityNodeComponent.
+    // This class uses raw pointers internally for tree structure to avoid shared_ptr overhead and cycles.
     class EntityNode : public std::enable_shared_from_this<EntityNode>
     {
     public:
+        // Constructor remains the same, taking the owning entity
         EntityNode(std::shared_ptr<Entity> entity);
         EntityNode(std::shared_ptr<Entity> entity, std::shared_ptr<EntityNode> parent);
         ~EntityNode();
 
-        // Setters
+        // --- Public API (Preserved where possible, using shared_ptr for external interaction) ---
+
+        // Adds a child node. Takes ownership via shared_ptr from component.
         void addChild(std::shared_ptr<EntityNode> child);
-        void setParent(std::shared_ptr<EntityNode> parent);
-        void removeParent();
+
+        // Removes a specific child node.
         void removeChild(std::shared_ptr<EntityNode> child);
+
+        // Sets the parent node. Internal link is raw pointer.
+        void setParent(std::shared_ptr<EntityNode> parent);
+
+        // Removes the parent link.
+        void removeParent();
+
         // Getters
         std::shared_ptr<Entity> getEntity() const;
+        std::vector<std::shared_ptr<EntityNode>> getChildren() const; // Returns shared_ptrs for safety
+        std::shared_ptr<EntityNode> getParent() const;             // Returns shared_ptr for safety
 
-        std::vector<std::shared_ptr<EntityNode>> getChildren() const;
-        std::shared_ptr<EntityNode> getParent() const;
 
 
-        // helper function to get the parents component
-        template<typename T>
-        T& getParentComponent()
-        {
-            if (m_parent) {
-                auto parentComp = m_parent->getEntity()->tryGetComponent<T>();
-                if (parentComp) {
-                    return *parentComp;
-                }
-                throw std::runtime_error("Component of type T not found in parent entity");
-            }
-            throw std::runtime_error("EntityNode has no parent");
-        }
-
-    private:    
-        std::shared_ptr<Entity> m_entity;
-        std::vector<std::shared_ptr<EntityNode>> m_children;
-        std::shared_ptr<EntityNode> m_parent;
+    private:
+        std::shared_ptr<Entity> m_entity; // Owning pointer to the entity data
+        std::weak_ptr<EntityNode> m_parent; // Non-owning raw pointer to parent
+        std::vector<std::weak_ptr<EntityNode>> m_children; // Non-owning raw pointers to children
     };
 
-
-    
-} // namespace name
+} // namespace Rapture
 

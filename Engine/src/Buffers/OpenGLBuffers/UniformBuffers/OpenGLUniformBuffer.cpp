@@ -12,7 +12,7 @@ namespace Rapture {
 
 	// UniformBuffer implementation with CPU cache
 	UniformBuffer::UniformBuffer(size_t size, BufferUsage usage, const void* data, unsigned int bindingPoint)
-		: m_size(size), m_usage(usage), m_isImmutable(false), m_isMapped(false), m_bindingPoint(bindingPoint)
+		: m_size(size), m_usage(usage), m_isImmutable(false), m_isMapped(false), m_bindingPoint(bindingPoint), m_persistentlyMappedPtr(nullptr)
 	{
 		RAPTURE_PROFILE_FUNCTION();
 
@@ -21,8 +21,14 @@ namespace Rapture {
 			glCreateBuffers(1, &m_rendererId);
 			// Add GL_DYNAMIC_STORAGE_BIT to allow updates even with immutable storage
 			GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_DYNAMIC_STORAGE_BIT;
+			bool isPersistent = false; // Track if persistent flag is set
 			if (usage == BufferUsage::Stream) {
 				flags |= GL_MAP_PERSISTENT_BIT;
+				isPersistent = true;
+				// Optional: Add coherent bit if desired and available, avoids manual flushing
+				// if (GLCapabilities::hasCoherentMapping()) {
+				//     flags |= GL_MAP_COHERENT_BIT;
+				// }
 			}
 			
 			// Clear any previous OpenGL errors
@@ -34,6 +40,27 @@ namespace Rapture {
 				GE_CORE_ERROR("UNIFORM BUFFER: Error creating buffer storage: {0} (0x{1:x})", error, error);
 			}
 			m_isImmutable = true;
+
+			// Map persistently if requested and possible
+			if (m_isImmutable && isPersistent) {
+				GLbitfield mapFlags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT;
+				 // If coherent: mapFlags |= GL_MAP_COHERENT_BIT;
+
+				if (GLCapabilities::hasDSA()) {
+					 m_persistentlyMappedPtr = glMapNamedBufferRange(m_rendererId, 0, m_size, mapFlags);
+				} else {
+					 glBindBuffer(GL_UNIFORM_BUFFER, m_rendererId);
+					 m_persistentlyMappedPtr = glMapBufferRange(GL_UNIFORM_BUFFER, 0, m_size, mapFlags);
+					 glBindBuffer(GL_UNIFORM_BUFFER, 0); // Unbind after mapping
+				}
+
+				if (!m_persistentlyMappedPtr) {
+					GE_CORE_ERROR("UNIFORM BUFFER: Failed to persistently map buffer (ID: {0})", m_rendererId);
+					// Decide how to handle failure: maybe fall back to non-persistent?
+				} else {
+					 GE_CORE_INFO("UNIFORM BUFFER: Persistently mapped buffer (ID: {0})", m_rendererId);
+				}
+			}
 		} else {
 			// Fall back to traditional buffer
 			if (GLCapabilities::hasDSA()) {
@@ -115,41 +142,52 @@ namespace Rapture {
 			return;
 		}
 
-		// Clear previous errors
-		while (glGetError() != GL_NO_ERROR);
 
-		if (m_isImmutable) {
-			// For immutable storage, use mapping
-			RAPTURE_PROFILE_SCOPE("Map and Write Immutable Buffer");
-			
-			// Map the buffer
+
+		if (m_persistentlyMappedPtr) {
+			RAPTURE_PROFILE_SCOPE("Write Persistent Buffer");
+			// Write directly to the persistently mapped pointer
+			memcpy(static_cast<char*>(m_persistentlyMappedPtr) + offset, data, size);
+
+			// Flush the range to make writes visible to the GPU
+			// (Only needed if GL_MAP_COHERENT_BIT was NOT used)
+			if (GLCapabilities::hasDSA()) {
+				glFlushMappedNamedBufferRange(m_rendererId, offset, size);
+			} else {
+				glBindBuffer(GL_UNIFORM_BUFFER, m_rendererId);
+				glFlushMappedBufferRange(GL_UNIFORM_BUFFER, offset, size);
+				glBindBuffer(GL_UNIFORM_BUFFER, 0);
+			}
+		} else if (m_isImmutable) {
+			RAPTURE_PROFILE_SCOPE("Map and Write Immutable Buffer (Temporary)");
+			// Use the original temporary map/unmap logic
 			void* mappedPtr = nullptr;
 			if (GLCapabilities::hasDSA()) {
 				mappedPtr = glMapNamedBufferRange(m_rendererId, offset, size, GL_MAP_WRITE_BIT);
 			} else {
 				glBindBuffer(GL_UNIFORM_BUFFER, m_rendererId);
 				mappedPtr = glMapBufferRange(GL_UNIFORM_BUFFER, offset, size, GL_MAP_WRITE_BIT);
+				// Keep bound until unmap
 			}
-			
+
 			if (!mappedPtr) {
 				GE_CORE_ERROR("UNIFORM BUFFER: Failed to map buffer for writing");
+				// Unbind if non-DSA path failed after bind
+				 if (!GLCapabilities::hasDSA()) glBindBuffer(GL_UNIFORM_BUFFER, 0);
 				return;
 			}
-			
-			// Copy data to the mapped buffer
+
 			memcpy(mappedPtr, data, size);
-			
-			// Unmap the buffer
+
 			if (GLCapabilities::hasDSA()) {
 				glUnmapNamedBuffer(m_rendererId);
 			} else {
 				glUnmapBuffer(GL_UNIFORM_BUFFER);
-				glBindBuffer(GL_UNIFORM_BUFFER, 0);
+				glBindBuffer(GL_UNIFORM_BUFFER, 0); // Now unbind
 			}
 		} else {
-			// For non-immutable storage, use glBufferSubData
 			RAPTURE_PROFILE_SCOPE("BufferSubData Update");
-			
+			// Use glBufferSubData (existing logic)
 			if (GLCapabilities::hasDSA()) {
 				glNamedBufferSubData(m_rendererId, offset, size, data);
 			} else {
@@ -159,23 +197,7 @@ namespace Rapture {
 			}
 		}
 		
-		GLenum error = glGetError();
-		if (error != GL_NO_ERROR) {
-			GE_CORE_ERROR("UNIFORM BUFFER: OpenGL error during setData: {0} (0x{1:x})", error, error);
-			
-			// More detailed error reporting
-			switch (error) {
-				case GL_INVALID_ENUM:
-					GE_CORE_ERROR("  GL_INVALID_ENUM: Probably invalid buffer target");
-					break;
-				case GL_INVALID_VALUE:
-					GE_CORE_ERROR("  GL_INVALID_VALUE: Offset or size out of range");
-					break;
-				case GL_INVALID_OPERATION:
-					GE_CORE_ERROR("  GL_INVALID_OPERATION: Buffer is not valid or is mapped");
-					break;
-			}
-		}
+
 	}
 
 	void* UniformBuffer::map(size_t offset, size_t size) {

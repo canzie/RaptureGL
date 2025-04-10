@@ -22,5 +22,8 @@ namespace Rapture {
         // Project events
         inline auto& onProjectLoadRequested = onProjectLoadRequested();
         inline auto& onProjectLoaded = onProjectLoaded();
+
+
+        inline auto& onEntitySelected = onEntitySelected();
     }
 } 

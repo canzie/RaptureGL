@@ -179,10 +179,6 @@ namespace Rapture {
         // Check if the system is initialized
         static bool isInitialized() { return s_initialized; }
 
-        // Synchronous queue building
-        static RenderQueue buildGeometryCommandQueue(const std::shared_ptr<Scene>& scene);
-        static RenderQueue buildPostProcessCommandQueue(const std::shared_ptr<Scene>& scene);
-        
 
         // Asynchronous queue building
         static std::shared_ptr<RenderQueue> buildGeometryCommandQueueAsync(const std::shared_ptr<Scene>& scene, RenderQueueType type=RenderQueueType::FORWARD);
@@ -207,7 +203,7 @@ namespace Rapture {
         // Build implementation used by both sync and async paths
         static void buildGeometryQueue(const QueueBuildRequest& request, bool isFinal=true);
         static void buildDeferredQueue(const QueueBuildRequest& request);
-
+        static void buildShadowPassQueue(const QueueBuildRequest& request);
     };
 
 }

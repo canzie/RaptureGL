@@ -84,7 +84,7 @@ namespace Rapture {
         glActiveTexture(GL_TEXTURE0 + static_cast<uint32_t>(TextureActiveSlot::MATERIAL));
         glBindTexture(GL_TEXTURE_2D, 0);
 
-        glActiveTexture(GL_TEXTURE0 + static_cast<uint32_t>(TextureActiveSlot::POSTITION)); // Note: Typo in enum (POSTION)
+        glActiveTexture(GL_TEXTURE0 + static_cast<uint32_t>(TextureActiveSlot::POSTITION)); 
         glBindTexture(GL_TEXTURE_2D, 0);
 
         // Optionally unbind depth if it was bound

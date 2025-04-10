@@ -119,8 +119,17 @@ namespace Rapture
 			return;
 		}
 		
+        bool isDepthBufferOnly = false;
+        if (spec.attachments.size() == 1){
+            if (IsDepthFormat(spec.attachments[0].textureFormat))
+            {
+                isDepthBufferOnly = true;
+            }
+        }
+
+        invalidate(isDepthBufferOnly);
+
 		
-		invalidate();
 	}
 
 	Framebuffer::~Framebuffer()
@@ -257,8 +266,8 @@ namespace Rapture
 
         if (isDepthBufferOnly)
         {
-            glDrawBuffer(GL_NONE);
-            glReadBuffer(GL_NONE);
+            glNamedFramebufferDrawBuffer(m_framebufferID, GL_NONE);
+            glNamedFramebufferReadBuffer(m_framebufferID, GL_NONE);
         }
 		
 
@@ -282,8 +291,8 @@ namespace Rapture
 		}
 		else
 		{
-			GE_CORE_INFO("Framebuffer successfully created ({0}x{1}, {2} samples)", 
-				m_specification.width, m_specification.height, m_specification.samples);
+			GE_CORE_INFO("Framebuffer {0} successfully created ({1}x{2}, {3} samples)", 
+				m_framebufferID, m_specification.width, m_specification.height, m_specification.samples);
 		}
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -315,10 +324,25 @@ namespace Rapture
 		glDepthFunc(GL_LESS);
 		glDepthMask(GL_TRUE); // Ensure depth writing is enabled
 		
+        bool isDepthBufferOnly = false;
+        if (m_specification.attachments.size() == 1){
+            if (IsDepthFormat(m_specification.attachments[0].textureFormat))
+            {
+                isDepthBufferOnly = true;
+            }
+        }
+
 		// Clear both color and depth buffers to ensure a clean start
 		if(clear)
 		{
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			if (isDepthBufferOnly)
+			{
+				glClear(GL_DEPTH_BUFFER_BIT);
+			}
+			else
+			{
+				glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			}
 		}
 		
 		// Make sure blending is disabled for the framebuffer to prevent transparency issues

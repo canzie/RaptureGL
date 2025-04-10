@@ -37,6 +37,10 @@ namespace Rapture {
             inline std::shared_ptr<Mesh> getMesh() const { return m_mesh; }
             inline std::shared_ptr<Material> getMaterial() const { return m_material; }
 
+            // Setters for dynamic updates
+            void setPoints(glm::vec3 start, glm::vec3 end);
+            void setColor(const glm::vec4& color);
+
         private:
             glm::vec3 m_start;
             glm::vec3 m_end;

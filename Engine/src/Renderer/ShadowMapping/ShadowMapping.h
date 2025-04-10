@@ -19,11 +19,14 @@ namespace Rapture {
 
         void bind();
         void bindForReading();
-
+        void unbindForReading();
         void unbind();
 
         void setShader(AssetHandle shaderHandle);
         std::shared_ptr<Shader> getShader();
+
+        uint32_t getShadowMapID() { return m_ShadowMap->getDepthAttachmentRendererID(); }
+        uint32_t getShadowMapDebugTextureID() { return m_ShadowMap->getColorAttachmentRendererID(); }
 
         void setWVPMatrix(const glm::mat4& gWVP);
 

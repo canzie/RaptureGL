@@ -23,7 +23,6 @@ namespace Rapture
 
     std::shared_ptr<UniformBuffer> DeferredRenderer::s_cameraUBO = nullptr;
     std::shared_ptr<UniformBuffer> DeferredRenderer::s_lightsUBO = nullptr;
-    void* DeferredRenderer::s_persistentLightsBufferPtr = nullptr; // Initialize static member
 
     // Initialize light cache members
     bool DeferredRenderer::s_lightsDirty = true;
@@ -32,6 +31,15 @@ namespace Rapture
 
     std::weak_ptr<Shader> DeferredRenderer::s_lightingPassShader;
     AssetHandle DeferredRenderer::s_lightingPassShaderHandle;
+
+    // Shadow mapping static members
+    std::shared_ptr<ShadowMap> DeferredRenderer::s_shadowMap = nullptr;
+    bool DeferredRenderer::s_shadowMapDirty = true;
+    std::shared_ptr<Entity> DeferredRenderer::s_shadowCastingLight = nullptr;
+    glm::mat4 DeferredRenderer::s_lightWVPMatrix = glm::mat4(1.0f);
+    bool DeferredRenderer::s_isShadowPass = false;
+
+    glm::vec3 DeferredRenderer::s_cameraPosition = glm::vec3(0.0f);
 
     void DeferredRenderer::init()
     {
@@ -61,6 +69,9 @@ namespace Rapture
         };
         s_lightingBuffer = Framebuffer::create(lightingBufferSpec);
         
+        // Initialize shadow map (2048x2048 is a common size for shadow maps)
+        setupShadowMap();
+        
         s_cameraUBO = std::make_shared<UniformBuffer>(sizeof(CameraUniform), BufferUsage::Stream, nullptr, BASE_BINDING_POINT_IDX);
         s_lightsUBO = std::make_shared<UniformBuffer>(sizeof(LightsUniform), BufferUsage::Stream, nullptr, LIGHTS_BINDING_POINT_IDX);
 
@@ -73,6 +84,25 @@ namespace Rapture
         setupFullscreenQuad();
 
         GE_CORE_INFO("Deferred rendering initialized");
+    }
+
+    void DeferredRenderer::setupShadowMap()
+    {
+        RAPTURE_PROFILE_FUNCTION();
+
+        if (s_shadowMap) {
+            GE_CORE_INFO("Shadow map already initialized");
+            return;
+        }
+
+        // Create shadow map with 2048x2048 resolution (can be adjusted for performance/quality)
+        uint32_t shadowMapSize = 2048;
+        s_shadowMap = std::make_shared<ShadowMap>(shadowMapSize, shadowMapSize);
+        
+        // Mark shadow map as dirty to ensure it's updated on first use
+        s_shadowMapDirty = true;
+        
+        GE_CORE_INFO("Shadow mapping initialized with {}x{} resolution", shadowMapSize, shadowMapSize);
     }
 
     void DeferredRenderer::shutdown()
@@ -89,25 +119,26 @@ namespace Rapture
         s_lightsUBO.reset();
         s_lightingPassShader.reset();
         s_lightingPassShaderHandle = 0;
+        
+        // Clean up shadow mapping resources
+        s_shadowMap.reset();
+        s_shadowCastingLight.reset();
 
         // Reset cache flags
         s_lightsDirty = true;
+        s_shadowMapDirty = true;
         s_cachedLightEntities.clear();
         s_cachedLightCount = 0;
 
-
-        s_lightsUBO->unmap();
-        s_persistentLightsBufferPtr = nullptr;
     }
 
     void DeferredRenderer::onFrameBegin()
     {
-        // Not needed for now
     }
 
     void DeferredRenderer::onFrameEnd()
     {
-        // Not needed for now
+
     }
 
 
@@ -127,7 +158,21 @@ namespace Rapture
             if (queue->tryServe(cmd)) {
                 if (std::holds_alternative<RenderCommand>(cmd)) {
                     geometryPassRender(std::get<RenderCommand>(cmd));
-                } else if (std::holds_alternative<LightingPassCommand>(cmd)) {
+                } 
+                else if (std::holds_alternative<ShadowPassCommand>(cmd)) {
+                    // one shadow pass command will be at the begining and the end to toggle the shadow pass
+                    s_isShadowPass = !s_isShadowPass;
+                    
+                    // Handle binding/unbinding of correct framebuffer
+                    if (s_isShadowPass) {
+                        // Bind shadow map
+                        s_shadowMap->bind();
+                    } else {
+                        // Exiting shadow pass - unbind shadow map
+                        s_shadowMap->unbind();
+                    }
+                }
+                else if (std::holds_alternative<LightingPassCommand>(cmd)) {
                     // Geometry pass finished, G-Buffer is complete.
 
                     // Unbind G-buffer as render target
@@ -176,16 +221,19 @@ namespace Rapture
             auto& reg = s->getRegistry();
             auto cams = reg.view<CameraControllerComponent>();
 
-            Entity camera_ent(cams.front(), s.get());
-            CameraControllerComponent& controller_comp = camera_ent.getComponent<CameraControllerComponent>();
+            //Entity camera_ent(cams.front(), s.get());
+            CameraControllerComponent& controller_comp = cams.get<CameraControllerComponent>(cams.front());
 
             // Get projection and view matrices
             const glm::mat4& projMat = controller_comp.camera.getProjectionMatrix();
             const glm::mat4& viewMat = controller_comp.camera.getViewMatrix();
 
+            s_cameraPosition = controller_comp.translation;
+
 			CameraUniform cameraData;
 			cameraData.projection_mat = projMat;
 			cameraData.view_mat = viewMat;
+
 				
 			s_cameraUBO->setData(&cameraData, sizeof(CameraUniform));
 		}
@@ -193,10 +241,139 @@ namespace Rapture
         // Setup lights (uses caching)
         setupLightsUniforms(s);
 
+        updateShadowMatrix(s);
+
+
+
+        // the 2 queues should be made at the same time, this only happens when they are called after each other,
+        // the other methods are no async so they would be blocking the main thread, so it cannot ask for the other queue
         auto geometryQueue = CommandQueueBuilder::buildGeometryCommandQueueAsync(s, RenderQueueType::DEFERRED);
+        std::shared_ptr<RenderQueue> shadowQueue = nullptr;
+        if (s_shadowMapDirty) {
+            shadowQueue = CommandQueueBuilder::buildGeometryCommandQueueAsync(s, RenderQueueType::SHADOWMAP);
+            renderQueueAsync(shadowQueue);
+
+            s_shadowMapDirty = false;
+
+        }
+
         renderQueueAsync(geometryQueue);
 
+    }
 
+    // TODO: Dogshit, needs to be giga optimized
+    void DeferredRenderer::updateShadowMatrix(const std::shared_ptr<Scene>& scene)
+    {
+        RAPTURE_PROFILE_FUNCTION();
+        
+        // Skip update if shadow map isn't dirty and we have a valid shadow casting light
+        if (!s_shadowMapDirty && s_shadowCastingLight && s_shadowCastingLight->isValid()) {
+            return;
+        }
+
+        
+        auto& reg = scene->getRegistry();
+        auto lightView = reg.view<LightComponent, TransformComponent>();
+        
+        // Find a suitable light for shadow casting (preferably a directional light)
+        Entity selectedLight;
+        glm::vec3 lightPos;
+        glm::vec3 lightDir;
+        
+        for (auto entityID : lightView) {
+            Entity lightEntity(entityID, scene.get());
+            LightComponent& light = lightView.get<LightComponent>(entityID);
+            
+            if (!light.castsShadow) continue;
+
+            // Prefer directional lights for shadows
+            if (light.isActive && light.type == LightType::Directional) {
+                selectedLight = lightEntity;
+                
+                // Get light transform
+                TransformComponent& transform = lightView.get<TransformComponent>(entityID);
+                lightPos = transform.translation();
+                
+                // Calculate light direction from rotation (already in radians)
+                // Use quaternion for more robust direction calculation
+                glm::quat rotationQuat = transform.transforms.getRotationQuat(); // Access Transforms member
+                lightDir = glm::normalize(rotationQuat * glm::vec3(0, 0, -1)); // Forward vector in local space
+
+                break;
+            }
+            
+            // Fallback to spot or point lights if no directional lights found
+            if (!selectedLight.isValid() && light.isActive) {
+                selectedLight = lightEntity;
+                
+                TransformComponent& transform = lightView.get<TransformComponent>(entityID);
+                lightPos = transform.translation();
+                
+                if (light.type == LightType::Spot) {
+                    // Calculate spot light direction using quaternion
+                    glm::quat rotationQuat = transform.transforms.getRotationQuat(); // Access Transforms member
+                    lightDir = glm::normalize(rotationQuat * glm::vec3(0, 0, -1)); // Forward vector
+
+                } else {
+                    // Point light has no direction, so use a default
+                    lightDir = glm::vec3(0.0f, -1.0f, 0.0f); // Down direction
+                }
+            }
+        }
+
+        
+        // If no suitable light found, return
+        if (!selectedLight.isValid()) {
+            GE_RENDER_WARN("No suitable light found for shadow mapping");
+            return;
+        }
+        
+        // Store the selected light for next frame reference
+        s_shadowCastingLight = std::make_shared<Entity>(selectedLight);
+        
+        // Calculate light view matrix
+        glm::vec3 lightUp = glm::vec3(0.0f, 1.0f, 0.0f);
+        if (abs(glm::dot(lightDir, lightUp)) > 0.99f) {
+            // If light is pointing directly up or down, use a different up vector
+            lightUp = glm::vec3(0.0f, 0.0f, 1.0f);
+        }
+        
+        // Create the light's view matrix
+        const glm::mat4 viewMatrix = glm::lookAt(
+            lightPos,               // Light position
+            lightPos + lightDir,    // Look at center (Point along the light direction)
+            lightUp                 // Up vector
+        );
+        
+        // Calculate orthographic projection matrix for directional lights
+        // or perspective for spot/point lights
+        glm::mat4 lightProj(1.0f);
+        
+        LightComponent& light = selectedLight.getComponent<LightComponent>();
+        
+        if (light.type == LightType::Directional) {
+            // Orthographic projection for directional light
+            // These values may need adjustment based on your scene scale
+            float orthoSize = 10.0f;
+            lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1f, 1000.0f);
+        } else {
+            // Perspective projection for spot/point light
+            // Use the light's actual outer cone angle for FOV
+            float aspect = 1.0f; // Shadow map is square
+            float nearPlane = 0.1f;
+            // Use outerConeAngle * 2 for FOV, but ensure it's > 0
+            float fovRadians = (light.type == LightType::Spot) ? glm::max(light.outerConeAngle * 2.0f, glm::radians(1.0f)) : glm::radians(90.0f);
+            lightProj = glm::perspective(fovRadians, aspect, nearPlane, light.range);
+        }
+        
+        // Combine for final light space matrix
+        s_lightWVPMatrix = lightProj * viewMatrix;
+        
+        // Update the shadow map shader with the new matrix
+        s_shadowMap->setWVPMatrix(s_lightWVPMatrix);
+        
+        // Mark shadow map as no longer dirty
+        //s_shadowMapDirty = false;
     }
 
 
@@ -209,7 +386,7 @@ namespace Rapture
         // Use const references to avoid copies
         const auto& mesh = cmd.mesh;
         const auto& material = cmd.material;
-        const auto& transform = cmd.transform;
+        const auto& localTransform = cmd.transform;
         const auto& meshData = mesh->getMeshData();
 
         if (!mesh || !material) {
@@ -218,28 +395,64 @@ namespace Rapture
         }
 
         meshData.vao->bind();
-        material->bind(ShaderRenderPassType::GEOMETRY);
         
-        std::shared_ptr<Shader> const shdr = material->getGeometryPassShader();
-        if (!shdr) {
-            GE_RENDER_ERROR("GeometryPassRender: Geometry pass shader is null");
-            meshData.vao->unbind();
+        if (s_isShadowPass) {
+            // Use shadow map shader for shadow pass
+            auto shadowShader = s_shadowMap->getShader();
+            if (!shadowShader) {
+                GE_RENDER_ERROR("Shadow pass shader is null");
+                meshData.vao->unbind();
+                return;
+            }
+            
+            shadowShader->bind();
+            
+            // Calculate and set model-view-projection matrix for this object
+            // The light WVP (view and projection) is already set in the shadow map
+            // We just need to multiply by the model matrix here
+            glm::mat4 mvp = s_lightWVPMatrix * localTransform;
+            shadowShader->setMat4("gWVP", mvp);
+            
+            // Additional parameters for skinning if needed
+            shadowShader->setFloat("u_SkinningEnabled", cmd.isSkeletal ? 1.0f : 0.0f);
+            
+            {
+                RAPTURE_PROFILE_SCOPE("Draw Call");
+                RAPTURE_PROFILE_GPU_SCOPE("Draw Call");
+                // Draw shadow map
+                OpenGLRendererAPI::drawIndexed(meshData.indexCount, meshData.indexType, 
+                    meshData.indexAllocation->offsetBytes, meshData.vertexOffsetInVertices);
+            }
+            
+            // Unbind shader
+            shadowShader->unBind();
+        }
+        else {
+            // Normal geometry pass
+            material->bind(ShaderRenderPassType::GEOMETRY);
+            
+            std::shared_ptr<Shader> const shdr = material->getGeometryPassShader();
+            if (!shdr) {
+                GE_RENDER_ERROR("GeometryPassRender: Geometry pass shader is null");
+                meshData.vao->unbind();
+                material->unbind();
+                return;
+            }
+
+            shdr->setFloat("u_SkinningEnabled", cmd.isSkeletal ? 1.0f : 0.0f);
+            shdr->setMat4("u_model", localTransform);
+            {
+                RAPTURE_PROFILE_SCOPE("Draw Call");
+                RAPTURE_PROFILE_GPU_SCOPE("Draw Call");
+                // Single draw call - avoid function call overhead by directly accessing members
+                OpenGLRendererAPI::drawIndexed(meshData.indexCount, meshData.indexType, 
+                    meshData.indexAllocation->offsetBytes, meshData.vertexOffsetInVertices);
+            }
+
+            // Clean state once
             material->unbind();
-            return;
         }
-
-        shdr->setFloat("u_SkinningEnabled", cmd.isSkeletal ? 1.0f : 0.0f);
-        shdr->setMat4("u_model", transform);
-        {
-            RAPTURE_PROFILE_SCOPE("Draw Call");
-            RAPTURE_PROFILE_GPU_SCOPE("Draw Call");
-            // Single draw call - avoid function call overhead by directly accessing members
-            OpenGLRendererAPI::drawIndexed(meshData.indexCount, meshData.indexType, 
-                meshData.indexAllocation->offsetBytes, meshData.vertexOffsetInVertices);
-        }
-
-        // Clean state once
-        material->unbind();
+        
         meshData.vao->unbind();
     }
 
@@ -273,8 +486,13 @@ namespace Rapture
 
             // Set Camera Position uniform
             if (boundShader) {
-                glm::vec3 cameraPosition(1.0f, 1.0f, 1.0f);
-                boundShader->setVec3("u_CameraPosition", cameraPosition);
+                boundShader->setVec3("u_CameraPosition", s_cameraPosition);
+                
+                // Set light space matrix for shadow mapping
+                boundShader->setMat4("u_LightSpaceMatrix", s_lightWVPMatrix);
+            }
+            if (s_shadowMap) {
+                s_shadowMap->bindForReading();
             }
         
             s_lightingBuffer->bind(false);
@@ -296,6 +514,9 @@ namespace Rapture
         }
 
 
+            if (s_shadowMap) {
+                s_shadowMap->unbindForReading();
+            }
 
         {
             RAPTURE_PROFILE_SCOPE("Unbind G-Buffer Textures");
@@ -381,30 +602,14 @@ namespace Rapture
         RAPTURE_PROFILE_SCOPE("Deferred Lights Uniform Setup");
         auto& reg = s->getRegistry();
 
-        // TODO: Implement proper caching/dirty checking if needed.
-        // For now, update every frame like the provided Renderer example.
-        s_lightsDirty = true; 
-
-        if (!s_lightsDirty && s_persistentLightsBufferPtr) {
-           // return; // Skip update if not dirty and using persistent mapping
-        }
-
-        // Use persistent mapping if available
-        LightsUniform* lightsDataPtr = nullptr;
-        if (s_persistentLightsBufferPtr) {
-            lightsDataPtr = static_cast<LightsUniform*>(s_persistentLightsBufferPtr);
-            memset(lightsDataPtr, 0, sizeof(LightsUniform)); // Clear buffer memory
-        } else {
-            // Fallback if persistent mapping not available
-            static LightsUniform lightsData; 
-            memset(&lightsData, 0, sizeof(LightsUniform));
-            lightsDataPtr = &lightsData;
-        }
+        // Declare LightsUniform locally
+        LightsUniform lightsData; 
+        memset(&lightsData, 0, sizeof(LightsUniform));
 
         // Collect light data
         auto lightView = reg.view<LightComponent, TransformComponent>();
         uint32_t lightCount = 0;
-        s_cachedLightEntities.clear(); // Clear cache before refilling
+        //s_cachedLightEntities.clear(); // Clear cache before refilling
 
         {
             RAPTURE_PROFILE_SCOPE("Deferred Light Data Collection");
@@ -416,15 +621,26 @@ namespace Rapture
                 }
                 
                 Entity lightEntity(entityID, s.get());
-                TransformComponent& transform = lightEntity.getComponent<TransformComponent>();
-                LightComponent& light = lightEntity.getComponent<LightComponent>();
-                
+                TransformComponent& transform = lightView.get<TransformComponent>(entityID);
+                LightComponent& light = lightView.get<LightComponent>(entityID);
+
                 if (!light.isActive) continue;
                 
-                s_cachedLightEntities.push_back(entityID); // Cache entity handle
+                if (light.hasChanged() || transform.hasChanged()) {
+                    if (light.castsShadow) {
+                        s_shadowMapDirty = true;
+                    }                
+                } else {
+                    // can only do continue if i fix the persistent mapping
+                    // right now it gets reset and flushes each frame ...
+                    //continue;
+                }
+
+
+                //s_cachedLightEntities.push_back(entityID); // Cache entity handle
 
                 // Fill light data
-                LightData& lightData = lightsDataPtr->lights[lightCount];
+                LightData& lightData = lightsData.lights[lightCount]; // Use local lightsData
                 
                 lightData.position = glm::vec4(transform.translation(), static_cast<float>(light.type));
                 lightData.color = glm::vec4(light.color, light.intensity);
@@ -432,13 +648,14 @@ namespace Rapture
                 // Direction calculation (same as in Renderer.cpp)
                 if (light.type == LightType::Directional || light.type == LightType::Spot)
                 {
-					// Convert Euler angles to direction vector
+					// Convert Euler angles (already in radians) to direction vector
 					glm::vec3 euler = transform.rotation();
+					// Use rotation directly as it's stored in radians
 					glm::mat4 rotMat = glm::rotate(glm::mat4(1.0f), euler.z, glm::vec3(0, 0, 1)) *
 									  glm::rotate(glm::mat4(1.0f), euler.y, glm::vec3(0, 1, 0)) *
 									  glm::rotate(glm::mat4(1.0f), euler.x, glm::vec3(1, 0, 0));
 					
-					glm::vec3 direction = glm::vec3(rotMat * glm::vec4(0, 0, -1, 0)); // Forward vector
+					glm::vec3 direction = glm::normalize(glm::vec3(rotMat * glm::vec4(0, 0, -1, 0))); // Forward vector
 					lightData.direction = glm::vec4(direction, light.range);
                 } else {
                     lightData.direction = glm::vec4(0.0f, 0.0f, 0.0f, light.range); 
@@ -447,7 +664,7 @@ namespace Rapture
                 // Cone angles
                  if (light.type == LightType::Spot) {
                     // Convert degrees to radians then cosine for shader
-                    lightData.coneAngles = glm::vec4(glm::cos(glm::radians(light.innerConeAngle)), glm::cos(glm::radians(light.outerConeAngle)), 0.0f, 0.0f);
+                    lightData.coneAngles = glm::vec4(glm::cos(light.innerConeAngle), glm::cos(light.outerConeAngle), 0.0f, 0.0f);
                 } else {
                     lightData.coneAngles = glm::vec4(0.0f);
                 }
@@ -456,16 +673,13 @@ namespace Rapture
             }
         }
         
-        lightsDataPtr->lightCount = lightCount;
+        lightsData.lightCount = lightCount; // Use local lightsData
         s_cachedLightCount = lightCount;
         
-        // Update the UBO
-        if (s_persistentLightsBufferPtr) {
-            s_lightsUBO->flush(); // Flush changes if using persistent mapping
-        } else {
-            s_lightsUBO->setData(lightsDataPtr, sizeof(LightsUniform)); // Fallback update
-        }
-
+        // Update the UBO - setData will handle persistent mapping internally
+        s_lightsUBO->setData(&lightsData, sizeof(LightsUniform)); // Always call setData
+        
         s_lightsDirty = false; // Mark as clean after update
+
     }
 }

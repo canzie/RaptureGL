@@ -75,6 +75,9 @@ namespace Rapture
         static inline void renderMesh(const RenderCommand& cmd);
 
 	private:
+		// Static reusable line for debug purposes
+		static std::unique_ptr<Line> s_debugLightLine;
+
 		// Extract scene entities for rendering
 		static void extractSceneData(const std::shared_ptr<Scene> s, 
 			entt::entity& cameraEntity,

@@ -6,7 +6,7 @@
 layout(location = 0) out vec3 gPosition;
 layout(location = 1) out vec3 gNormal;
 layout(location = 2) out vec4 gAlbedoSpec;
-layout(location = 3) out vec4 gMaterial;
+layout(location = 3) out vec4 gMaterial; // R: Metallic, G: Roughness, B: AO
 
 precision highp float;
 
@@ -15,6 +15,8 @@ in VS_OUT {
     vec3 FragPos;
     vec3 Normal;
     vec2 TexCoord;
+    vec3 Tangent;     // Assumed to be valid and non-zero if normal mapping is needed
+    vec3 Bitangent;   // Assumed to be valid and non-zero if normal mapping is needed
 } fs_in;
 
 // Define texture flag constants - must match C++ side
@@ -50,9 +52,15 @@ layout (std140, binding=1) uniform PBR
     uint64_t emissiveMap;
 };
 
-vec3 getNormalFromMap()
+vec3 getNormalFromMapNoTangent()
 {
-    vec3 tangentNormal = texture(u_NormalMap,  fs_in.TexCoord).xyz * 2.0 - 1.0;
+    vec3 tangentNormal = vec3(0.0);
+    if (normalMap != 0) {
+        sampler2D normalSampler = sampler2D(normalMap);
+        tangentNormal = texture(normalSampler, fs_in.TexCoord).xyz * 2.0 - 1.0;
+    } else if ((flags & NORMAL_MAP_FLAG) != 0) {
+        tangentNormal = texture(u_NormalMap, fs_in.TexCoord).xyz * 2.0 - 1.0;
+    }
 
     vec3 Q1  = dFdx(fs_in.FragPos);
     vec3 Q2  = dFdy(fs_in.FragPos);
@@ -62,6 +70,27 @@ vec3 getNormalFromMap()
     vec3 N   = normalize(fs_in.Normal);
     vec3 T  = normalize(Q1*st2.t - Q2*st1.t);
     vec3 B  = -normalize(cross(N, T));
+    mat3 TBN = mat3(T, B, N);
+
+    return normalize(TBN * tangentNormal);
+}
+
+// Function to calculate tangent space normal from normal map using pre-computed TBN
+vec3 getNormalFromMap()
+{
+    vec3 tangentNormal = vec3(0.0);
+    if (normalMap != 0) {
+        sampler2D normalSampler = sampler2D(normalMap);
+        tangentNormal = texture(normalSampler, fs_in.TexCoord).xyz * 2.0 - 1.0;
+    } else if ((flags & NORMAL_MAP_FLAG) != 0) {
+        tangentNormal = texture(u_NormalMap, fs_in.TexCoord).xyz * 2.0 - 1.0;
+    }
+    // Use the pre-calculated tangent and bitangent
+    vec3 N = normalize(fs_in.Normal);
+    vec3 T = normalize(fs_in.Tangent);
+    vec3 B = normalize(fs_in.Bitangent);
+    
+    // Form TBN matrix from pre-computed vectors
     mat3 TBN = mat3(T, B, N);
 
     return normalize(TBN * tangentNormal);
@@ -121,12 +150,13 @@ void main() {
     
     // Normal
     vec3 normal;
-    if (normalMap != 0) {
-        sampler2D normalSampler = sampler2D(normalMap);
-        normal = texture(normalSampler, fs_in.TexCoord).rgb;
-    } else if ((flags & NORMAL_MAP_FLAG) != 0) {
-        normal = getNormalFromMap();
-    } else {
+    if (normalMap != 0 || (flags & NORMAL_MAP_FLAG) != 0) {
+        // Check if tangent data exists by checking if it's not a zero vector
+        if (length(fs_in.Tangent) > 0.01) {
+            normal = getNormalFromMap();
+        } else {
+            normal = getNormalFromMapNoTangent();
+        }    } else {
         normal = normalize(fs_in.Normal);
     }
 

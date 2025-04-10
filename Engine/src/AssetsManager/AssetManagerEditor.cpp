@@ -73,6 +73,8 @@ namespace Rapture {
     std::pair<std::shared_ptr<Asset>, AssetHandle> AssetManagerEditor::importAsset(std::filesystem::path path, std::vector<uint32_t> indices, AssetType assetType)
     {
 
+
+
         if (path.empty()) {
             GE_CORE_ERROR("AssetManagerEditor::importAsset - Path is empty");
             return std::make_pair(nullptr, AssetHandle());

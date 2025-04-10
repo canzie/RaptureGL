@@ -24,6 +24,9 @@ namespace Rapture
 	std::shared_ptr<UniformBuffer> Renderer::s_lightsUBO = nullptr;
 	std::shared_ptr<UniformBuffer> Renderer::s_cameraPositionUBO = nullptr;
 
+	// Define the static debug line member
+	std::unique_ptr<Line> Renderer::s_debugLightLine = nullptr;
+
 	// Cache for camera data to avoid redundant uploads
 	bool Renderer::s_cameraDataInitialized = false;
 	glm::mat4 Renderer::s_cachedProjectionMatrix = glm::mat4(1.0f);
@@ -58,6 +61,9 @@ namespace Rapture
 		// Initialize the CommandQueueBuilder with a thread pool
 		CommandQueueBuilder::init(2); // Create 2 worker threads by default
 		
+		// Initialize the debug light line (default points and color)
+		s_debugLightLine = std::make_unique<Line>(glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec4(1.0f, 1.0f, 0.0f, 1.0f));
+
 		// Create camera UBO with persistent mapping capability
 		s_cameraUBO = std::make_shared<UniformBuffer>(sizeof(CameraUniform), BufferUsage::Stream, nullptr, BASE_BINDING_POINT_IDX);
 		s_cameraUBO->bindBase();
@@ -103,6 +109,9 @@ namespace Rapture
 		// Shutdown worker threads first to prevent accessing released resources
 		CommandQueueBuilder::shutdownWorkers();
 		
+		// Release the debug light line
+		s_debugLightLine.reset();
+
 		// Shutdown the shared resources for BoundingBoxComponent
 		BoundingBoxComponent::shutdownSharedResources();
 		
@@ -278,8 +287,8 @@ namespace Rapture
     void Renderer::processScene(const std::shared_ptr<Scene> s)
     {
         RAPTURE_PROFILE_GPU_SCOPE("ProcessScene");
-        RenderQueue queue = CommandQueueBuilder::buildGeometryCommandQueue(s);
-        renderQueue(&queue);
+        //RenderQueue queue = CommandQueueBuilder::buildGeometryCommandQueue(s);
+        //renderQueue(&queue);
     }
 
     void Renderer::processSceneAsync(const std::shared_ptr<Scene> s)
@@ -769,10 +778,47 @@ namespace Rapture
         for (auto entity : view) {
             auto ent = Entity(entity, s.get());
             auto sprite = ent.getComponent<SpriteComponent>();
+            
+            glm::mat4 transformMatrix = glm::mat4(1.0f); // Default to identity if no transform
             if (ent.hasComponent<TransformComponent>()) {
-                drawQuad(sprite.quad, ent.getComponent<TransformComponent>().transformMatrix());
+                transformMatrix = ent.getComponent<TransformComponent>().transformMatrix();
+                drawQuad(sprite.quad, transformMatrix);
             } else {
                 drawQuad(sprite.quad);
+            }
+
+            // Draw debug line for lights associated with this sprite
+            if (ent.hasComponent<LightComponent>() && ent.hasComponent<TransformComponent>()) {
+                auto& lightComp = ent.getComponent<LightComponent>();
+                auto& transformComp = ent.getComponent<TransformComponent>();
+
+                if (lightComp.isActive && (lightComp.type == LightType::Directional || lightComp.type == LightType::Spot)) {
+                    glm::vec3 startPos = transformComp.translation();
+                    
+                    // Calculate direction vector from rotation (assuming default direction is -Z)
+                    glm::vec3 euler = transformComp.rotation();
+					glm::mat4 rotMat = glm::rotate(glm::mat4(1.0f), euler.z, glm::vec3(0, 0, 1)) *
+									  glm::rotate(glm::mat4(1.0f), euler.y, glm::vec3(0, 1, 0)) *
+									  glm::rotate(glm::mat4(1.0f), euler.x, glm::vec3(1, 0, 0));
+					
+					glm::vec3 direction = glm::normalize(glm::vec3(rotMat * glm::vec4(0, 0, -1, 0))); // Forward vector
+
+
+                    const float DEBUG_LINE_LENGTH = 2.0f; // Adjust length as needed
+                    glm::vec3 endPos = startPos + direction * DEBUG_LINE_LENGTH;
+
+                    // Create and draw the line (using yellow for visibility)
+                    //Line debugLine(startPos, endPos, glm::vec4(1.0f, 1.0f, 0.0f, 1.0f)); 
+                    //drawLine(debugLine);
+                    
+                    // Update and draw the reusable debug line
+                    if (s_debugLightLine) {
+                        s_debugLightLine->setPoints(startPos, endPos);
+                        // Optionally set color if needed, but it's initialized yellow
+                        // s_debugLightLine->setColor(glm::vec4(1.0f, 1.0f, 0.0f, 1.0f)); 
+                        drawLine(*s_debugLightLine);
+                    }
+                }
             }
         }
    
