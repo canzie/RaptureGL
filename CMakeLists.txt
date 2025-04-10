@@ -21,6 +21,14 @@ if(MSVC)
         /FC     # Display full path of source code in diagnostics
         /diagnostics:caret # Show column and caret location in errors
     )
+    
+    # Release mode optimizations
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /Ob2 /Oi /Ot /GL")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /LTCG")
+    set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE} /LTCG")
+else()
+    # GCC/Clang optimizations for Release mode
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -march=native -flto")
 endif()
 
 # Add subdirectories

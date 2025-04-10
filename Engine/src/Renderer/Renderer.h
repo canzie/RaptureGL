@@ -74,6 +74,10 @@ namespace Rapture
         
         static inline void renderMesh(const RenderCommand& cmd);
 
+        static void drawAllBoundingBoxes(std::shared_ptr<Scene> s);
+		// Draw a bounding box for a specific entity
+		static void drawBoundingBox(Entity entity);
+
 	private:
 		// Static reusable line for debug purposes
 		static std::unique_ptr<Line> s_debugLightLine;
@@ -96,8 +100,7 @@ namespace Rapture
 		
 
 		
-		// Draw a bounding box for a specific entity
-		static void drawBoundingBox(Entity entity);
+
 		
 		// Uniform buffers for camera and lights
 		static std::shared_ptr<UniformBuffer> s_cameraUBO;

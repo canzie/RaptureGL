@@ -368,7 +368,9 @@ void TestLayer::onUpdate(float ts)
 	// Render the scene to the framebuffer
 	//Rapture::Renderer::sumbitScene(activeScene);
     Rapture::Renderer::drawSprites(activeScene);
-
+    if (m_selectedEntity) {
+        Rapture::Renderer::drawBoundingBox(*m_selectedEntity);
+    }
 
 
     // Draw the debug ray if active

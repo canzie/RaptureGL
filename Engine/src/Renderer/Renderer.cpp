@@ -400,6 +400,15 @@ namespace Rapture
         */
     }
 
+    void Renderer::drawAllBoundingBoxes(std::shared_ptr<Scene> s)
+    {
+        auto& reg = s->getRegistry();
+        auto boundingBoxes = reg.view<BoundingBoxComponent>();
+        for (auto entity : boundingBoxes) {
+            drawBoundingBox(Entity(entity, s.get()));
+        }
+    }
+
     void Renderer::extractSceneData(const std::shared_ptr<Scene> s,
 								  entt::entity& cameraEntity,
 								  std::vector<entt::entity>& lightEntities)
