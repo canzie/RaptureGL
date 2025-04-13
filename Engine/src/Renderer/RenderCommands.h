@@ -1,15 +1,29 @@
 #pragma once
 
-#include <cstdint>
-#include <memory>
-#include <glm/glm.hpp>
+
 #include "../Scenes/Entity.h"
 #include "../Materials/Material.h"
 #include "../Mesh/Mesh.h"
 #include "../Animations/Skeleton/Skeleton.h"
 #include "../Animations/Animation.h"
+#include "ShadowMapping/ShadowMapping.h"
+#include "ShadowMapping/CascadedShadowMapping.h"
+#include "../Scenes/Components/Components.h"
+
+#include <glm/glm.hpp>
+
+#include <variant>
+#include <cstdint>
+#include <memory>
 
 namespace Rapture {
+
+
+    enum class CommandExectionPhase {
+        NONE,
+        BEGIN_PASS, 
+        END_PASS   
+    };
 
     struct Command {
         uint64_t sortKey = 0;  // Bit-packed sorting key
@@ -64,9 +78,14 @@ namespace Rapture {
         // Add any SSR-specific parameters here later if needed
     };
 
+    using ShadowVariant = std::variant<std::monostate, std::shared_ptr<ShadowMap>, std::shared_ptr<CascadedShadowMapping>>;
+
+
     struct ShadowPassCommand : Command {
-        //std::shared_ptr<ShadowMap> shadowMap = nullptr;
-        bool dummy = true;
+        CommandExectionPhase commandType = CommandExectionPhase::NONE;
+        ShadowVariant shadowMap = std::monostate();
+        
+        LightType lightType = LightType::Directional; 
     };
 
 

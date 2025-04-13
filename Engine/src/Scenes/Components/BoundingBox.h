@@ -21,7 +21,7 @@ namespace Rapture {
     public:
         // Default constructor creates an invalid bounding box
         BoundingBox() : 
-            _min(std::numeric_limits<float>::max()),
+            _min((std::numeric_limits<float>::max)()),
             _max(std::numeric_limits<float>::lowest()),
             _isValid(false) {}
 

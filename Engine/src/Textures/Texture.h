@@ -82,17 +82,25 @@ public:
     virtual void makeNonResident() = 0;
     virtual bool isResident() const = 0;
     virtual uint64_t getTextureHandle() const = 0;
+
+
 };
 
 class Texture2D : public Texture {
 public:
     virtual void setData(void* data, uint32_t size) = 0;
 
+    // Static bindless texture methods
+    static uint64_t generateTextureHandleFromID(uint32_t textureID);
+    static bool makeTextureResident(uint64_t textureHandle);
+    static void makeTextureNonResident(uint64_t textureHandle);
+
 protected:
+    // Static factory methods
     static std::shared_ptr<Texture2D> create(const std::string& path);
     static std::shared_ptr<Texture2D> create(uint32_t width, uint32_t height, uint32_t channels);
-
     static std::shared_ptr<Texture2D> createCubemap(const std::vector<std::string>& filepaths);
+    static std::shared_ptr<Texture2D> createFromExistingTexture(uint32_t textureID);
 
     // Give TextureLibrary access to protected create methods
     friend class TextureLibrary;

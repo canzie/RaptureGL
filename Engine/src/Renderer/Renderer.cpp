@@ -168,7 +168,7 @@ namespace Rapture
 		// Setup camera uniforms and get camera position for shaders
 		{
 			RAPTURE_PROFILE_SCOPE("Camera Setup");
-			if (!setupCameraUniforms(s, cameraEntity)) {
+			if (!setupCameraUniforms(s)) {
 				return;
 			}
 		}
@@ -435,10 +435,10 @@ namespace Rapture
 		}
 	}
 
-	bool Renderer::setupCameraUniforms(const std::shared_ptr<Scene> s, entt::entity cameraEntity)
+	bool Renderer::setupCameraUniforms(const std::shared_ptr<Scene> s)
 	{
 		RAPTURE_PROFILE_SCOPE("Camera Uniform Setup");
-		Entity camera_ent(cameraEntity, s.get());
+		Entity camera_ent = *s->getMainCamera();
 		CameraControllerComponent& controller_comp = camera_ent.getComponent<CameraControllerComponent>();
 
 		// Get projection and view matrices

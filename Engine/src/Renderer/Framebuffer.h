@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include <map>
 
 namespace Rapture
 {
@@ -44,6 +45,8 @@ namespace Rapture
 			: textureFormat(format) {}
 			
 		FramebufferTextureFormat textureFormat = FramebufferTextureFormat::None;
+        bool isBindless = false;
+        bool isShadowMap = false;
 		// TODO: Add filtering/wrap options if needed
 	};
 
@@ -79,7 +82,7 @@ namespace Rapture
 		void resize(uint32_t width, uint32_t height);
 		
 		uint32_t getColorAttachmentRendererID(uint32_t index = 0) const;
-		uint32_t getDepthAttachmentRendererID() const { return m_depthAttachmentID; }
+		uint32_t getDepthAttachmentRendererID() const { return m_depthAttachment; }
 
         const uint32_t& getFramebufferID() const { return m_framebufferID; }
 
@@ -97,12 +100,20 @@ namespace Rapture
 		// G-buffer creation helper
 		static std::shared_ptr<Framebuffer> createGBuffer(uint32_t width, uint32_t height, bool useHighPrecision = true);
 		
+		// Bindless texture support
+		uint64_t getColorAttachmentTextureHandle(uint32_t index = 0) const;
+		uint64_t getDepthAttachmentTextureHandle() const;
+		
+		bool makeAllTexturesResident();
+		void makeAllTexturesNonResident();
 
 	private:
 		FramebufferSpecification m_specification;
 		
 		uint32_t m_framebufferID = 0;
 		std::vector<uint32_t> m_colorAttachments;
-		uint32_t m_depthAttachmentID = 0;
+        std::map<uint32_t, uint64_t> m_colorAttachmentsHandlesMap;
+		uint32_t m_depthAttachment = 0;
+        uint64_t m_depthAttachmentHandle = 0;
 	};
 }

@@ -4,6 +4,9 @@
 #include "../../Shaders/Shader.h"
 #include "../../Logger/Log.h"
 #include "../../AssetsManager/AssetManager.h"
+#include "../Frustum.h"
+#include "../../Buffers/OpenGLBuffers/UniformBuffers/OpenGLUniformBuffer.h"
+#include "ShadowMappingBase.h"
 
 #include <glm/glm.hpp>
 
@@ -11,33 +14,24 @@
 
 namespace Rapture {
 
-    class ShadowMap {
+    class ShadowMap : public ShadowMapBase {
 
     public:
 
         ShadowMap(uint32_t width, uint32_t height);
+        ~ShadowMap();
 
-        void bind();
-        void bindForReading();
-        void unbindForReading();
-        void unbind();
+        virtual void bind() override;
+        virtual void unbind() override;
 
-        void setShader(AssetHandle shaderHandle);
-        std::shared_ptr<Shader> getShader();
+
+        virtual void setShaderUniforms(const glm::mat4& mesh_transform) override;
 
         uint32_t getShadowMapID() { return m_ShadowMap->getDepthAttachmentRendererID(); }
-        uint32_t getShadowMapDebugTextureID() { return m_ShadowMap->getColorAttachmentRendererID(); }
-
-        void setWVPMatrix(const glm::mat4& gWVP);
+        uint64_t getShadowMapHandle() { return m_ShadowMap->getDepthAttachmentTextureHandle(); }
 
 
     private:
-
-        std::shared_ptr<Framebuffer> m_ShadowMap;
-        std::weak_ptr<Shader> m_Shader;
-        AssetHandle m_SMShaderHandle;
-
-        glm::mat4 m_gWVP;
 
 
     };

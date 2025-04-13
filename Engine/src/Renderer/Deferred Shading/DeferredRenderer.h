@@ -9,6 +9,7 @@
 #include "../PrimitiveShapes.h"
 #include "../ShadowMapping/ShadowMapping.h"
 
+#include "../../Buffers/OpenGLBuffers/StorageBuffers/OpenGLStorageBuffer.h"
 
 
 namespace Rapture
@@ -32,11 +33,12 @@ namespace Rapture
 
         static void geometryPassRender(const RenderCommand& cmd);
         static inline void lightingPassRender(const LightingPassCommand& cmd);
+        static inline void shadowPassRender(const ShadowPassCommand& cmd);
 
         static std::shared_ptr<GBuffer> getGBuffer() { return s_gBuffer; }
         static std::shared_ptr<Framebuffer> getLightingBuffer() { return s_lightingBuffer; }
 
-        static std::shared_ptr<ShadowMap> getShadowMap() { return s_shadowMap; }
+        static std::shared_ptr<ShadowMap> getShadowMap() { return nullptr; }
 
 
     private:
@@ -46,8 +48,9 @@ namespace Rapture
         static void setupFullscreenQuad();
         static void renderFullscreenQuad();
         // Helper method for shadow pass
-        static void setupShadowMap();
         static void updateShadowMatrix(const std::shared_ptr<Scene>& scene);
+
+        static void copyDepthBuffer2LightingBuffer();
 
     private:
         // deferred shading
@@ -62,8 +65,6 @@ namespace Rapture
         // fullscreen quad for lighting pass
         static std::shared_ptr<Quad> s_fullscreenQuad;
 
-
-
         static glm::vec3 s_cameraPosition;
 
         // Caching for lights data
@@ -72,10 +73,11 @@ namespace Rapture
         static uint32_t s_cachedLightCount;
 
         // Shadow mapping
-        static std::shared_ptr<ShadowMap> s_shadowMap;
         static bool s_shadowMapDirty;
-        static std::shared_ptr<Entity> s_shadowCastingLight;
-        static glm::mat4 s_lightWVPMatrix;
         static bool s_isShadowPass;
+
+        static std::shared_ptr<ShadowMapBase> s_currentShadowMap;
+
+        static std::shared_ptr<ShaderStorageBuffer> s_shadowSSBO;
     };
 }

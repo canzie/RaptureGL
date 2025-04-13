@@ -1386,24 +1386,66 @@ namespace Rapture {
 
         json& materialJSON = m_materials[materialIndex];
         if (materialJSON.contains("pbrMetallicRoughness")) {
-            // Process material properties
+            // Process standard metallic-roughness material properties
             std::shared_ptr<Material> material = processPBRMaterial(materialJSON);
-
             return material;
-        } else if (materialJSON.contains("extensions")) {
-            // Process material properties
+        } 
+        else if (materialJSON.contains("extensions")) {
+            // Process material extensions
             json& extensionsJSON = materialJSON["extensions"];
             if (extensionsJSON.contains("KHR_materials_pbrSpecularGlossiness")) {
-                std::shared_ptr<Material> material = processPBRMaterial(extensionsJSON);
-
+                // Keep specular-glossiness as it was
+                std::shared_ptr<Material> material = processSpecularGlossinessMaterial(materialJSON);
                 return material;
             }
-        } else {
+        } 
+        else {
+            // Convert simple materials to PBR metallic-roughness
+            std::string materialName = materialJSON.value("name", "DefaultMaterial");
             
-            auto material = MaterialLibrary::createSolidMaterial(materialJSON.value("name", "DefaultMaterial"), glm::vec3(0.5f, 0.5f, 0.5f));
-            if (material) {
-                return material;
+            // Default values for a basic non-metallic surface
+            glm::vec3 baseColor(0.5f, 0.5f, 0.5f);
+            float roughness = 0.5f;
+            float metallic = 0.0f;
+            
+            // Create a PBR material with default values
+            auto material = MaterialLibrary::createPBRMaterial(
+                materialName,
+                baseColor,
+                roughness,
+                metallic,
+                0.5f  // Default specular
+            );
+            
+            // Check for normal maps, emissive textures, etc. that might be present in simple materials
+            if (materialJSON.contains("normalTexture")) {
+                int texIndex = materialJSON["normalTexture"]["index"];
+                if (GLCapabilities::hasBindlessTextures()) {
+                    loadAndSetTexture(material, ParameterID::TEXTURE_NORMAL_BINDLESS, texIndex);
+                } else {
+                    loadAndSetTexture(material, ParameterID::TEXTURE_NORMAL, texIndex);
+                }
             }
+            
+            if (materialJSON.contains("emissiveTexture")) {
+                int texIndex = materialJSON["emissiveTexture"]["index"];
+                if (GLCapabilities::hasBindlessTextures()) {
+                    loadAndSetTexture(material, ParameterID::TEXTURE_EMISSIVE_BINDLESS, texIndex);
+                } else {
+                    loadAndSetTexture(material, ParameterID::TEXTURE_EMISSIVE, texIndex);
+                }
+            }
+            
+            if (materialJSON.contains("emissiveFactor")) {
+                glm::vec3 emissiveFactor(
+                    materialJSON["emissiveFactor"][0],
+                    materialJSON["emissiveFactor"][1],
+                    materialJSON["emissiveFactor"][2]
+                );
+                material->setVec3(ParameterID::EMISSION, emissiveFactor);
+            }
+            
+            return material;
         }
 
         return nullptr;

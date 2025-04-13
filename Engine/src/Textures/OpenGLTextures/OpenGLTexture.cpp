@@ -367,20 +367,118 @@ OpenGLTexture2D::OpenGLTexture2D(const std::vector<std::string>& filepaths)
  
 }
 
-// Implement the static create functions from Texture2D
-std::shared_ptr<Texture2D> Texture2D::create(const std::string& path)
+
+// Static methods for bindless texture functionality
+uint64_t OpenGLTexture2D::generateTextureHandleFromID(uint32_t textureID)
+{
+    if (!GLCapabilities::hasBindlessTextures()) {
+        GE_CORE_WARN("OpenGLTexture2D::generateTextureHandleFromID - Bindless textures not supported");
+        return 0;
+    }
+
+    if (textureID == 0) {
+        GE_CORE_ERROR("OpenGLTexture2D::generateTextureHandleFromID - Invalid texture ID");
+        return 0;
+    }
+    
+    // Make sure the texture is bound to generate a handle
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    
+    // Get the texture handle
+    uint64_t handle = glGetTextureHandleARB(textureID);
+    
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    if (handle == 0) {
+        GE_CORE_ERROR("OpenGLTexture2D::generateTextureHandleFromID - Failed to generate texture handle for ID {0}", textureID);
+    }
+    
+    return handle;
+}
+
+bool OpenGLTexture2D::makeTextureResident(uint64_t textureHandle)
+{
+    if (!GLCapabilities::hasBindlessTextures()) {
+        GE_CORE_WARN("OpenGLTexture2D::makeTextureResident - Bindless textures not supported");
+        return false;
+    }
+    
+    if (textureHandle == 0) {
+        GE_CORE_ERROR("OpenGLTexture2D::makeTextureResident - Invalid texture handle");
+        return false;
+    }
+    
+    // Make the texture resident
+    glMakeTextureHandleResidentARB(textureHandle);
+    
+    return true;
+}
+
+void OpenGLTexture2D::makeTextureNonResident(uint64_t textureHandle)
+{
+    if (!GLCapabilities::hasBindlessTextures() || textureHandle == 0) {
+        return;
+    }
+    
+    // Make the texture non-resident
+    glMakeTextureHandleNonResidentARB(textureHandle);
+}
+
+
+// Static factory methods
+std::shared_ptr<OpenGLTexture2D> OpenGLTexture2D::createFromPath(const std::string& path)
 {
     return std::make_shared<OpenGLTexture2D>(path);
 }
 
-std::shared_ptr<Texture2D> Texture2D::create(uint32_t width, uint32_t height, uint32_t channels)
+std::shared_ptr<OpenGLTexture2D> OpenGLTexture2D::createBlank(uint32_t width, uint32_t height, uint32_t channels)
 {
     return std::make_shared<OpenGLTexture2D>(width, height, channels);
 }
 
-std::shared_ptr<Texture2D> Texture2D::createCubemap(const std::vector<std::string> &filepaths)
+std::shared_ptr<OpenGLTexture2D> OpenGLTexture2D::createCubemap(const std::vector<std::string>& filepaths)
 {
     return std::make_shared<OpenGLTexture2D>(filepaths);
+}
+
+
+
+
+
+// Static methods in Texture2D that delegate to OpenGLTexture2D
+std::shared_ptr<Texture2D> Texture2D::createFromExistingTexture(uint32_t textureID)
+{
+    return OpenGLTexture2D::createFromExistingTexture(textureID);
+}
+
+std::shared_ptr<Texture2D> Texture2D::create(const std::string& path)
+{
+    return OpenGLTexture2D::createFromPath(path);
+}
+
+std::shared_ptr<Texture2D> Texture2D::create(uint32_t width, uint32_t height, uint32_t channels)
+{
+    return OpenGLTexture2D::createBlank(width, height, channels);
+}
+
+std::shared_ptr<Texture2D> Texture2D::createCubemap(const std::vector<std::string> &filepaths)
+{
+    return OpenGLTexture2D::createCubemap(filepaths);
+}
+
+uint64_t Texture2D::generateTextureHandleFromID(uint32_t textureID)
+{
+    return OpenGLTexture2D::generateTextureHandleFromID(textureID);
+}
+
+bool Texture2D::makeTextureResident(uint64_t textureHandle)
+{
+    return OpenGLTexture2D::makeTextureResident(textureHandle);
+}
+
+void Texture2D::makeTextureNonResident(uint64_t textureHandle)
+{
+    OpenGLTexture2D::makeTextureNonResident(textureHandle);
 }
 
 } // namespace Rapture

@@ -20,7 +20,6 @@ namespace Rapture
         bool rayCastDebugEnabled = false;
         bool useAsyncRendering = true; // Enable by default for better performance
 
-        //Entity mainCamera;
 
 
     };
@@ -77,6 +76,10 @@ namespace Rapture
 
         std::string getSceneName() { return m_config.sceneName; }
 
+        std::shared_ptr<Entity> getMainCamera() { return mainCameraEntity.lock(); }
+        void setMainCamera(std::shared_ptr<Entity> camera) { mainCameraEntity = camera; }
+        //void setMainCamera(Entity camera) { mainCameraEntity = std::make_shared<Entity>(camera); }
+
 	private:
 		entt::registry m_Registry;
 		//unsigned int m_ViewportWidth = 0, m_ViewportHeight = 0;
@@ -85,6 +88,7 @@ namespace Rapture
 
         SceneSettings m_config;
         SkyBox m_SkyBox;
+        std::weak_ptr<Entity> mainCameraEntity;
 
 
 	};

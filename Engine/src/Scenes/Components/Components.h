@@ -23,6 +23,9 @@
 
 #include "../../AssetsManager/AssetManager.h"
 
+#include "../../Renderer/Frustum.h"
+#include "../../Renderer/ShadowMapping/CascadedShadowMapping.h"
+#include "../../Renderer/ShadowMapping/ShadowMapping.h"
 
 #include <vector>
 #include <memory> // For shared_ptr
@@ -436,9 +439,14 @@ namespace Rapture {
 	};
 
 
+    // could split this into a CameraComponent and a CameraControllerComponent
+    // but I cba
+    // frustum would then be added to the CameraComponent, since a camera
 	struct CameraControllerComponent
 	{
 		PerspectiveCamera camera;
+
+        Frustum frustum;
 
 		float fov;
 		float aspect_ratio;
@@ -588,10 +596,48 @@ namespace Rapture {
         Spot = 2
     };
 
+
+    // find a way to force some components to have a certain other component in their entity
+    // i.e. a shadow must have a light.
+    struct ShadowComponent
+    {
+        bool isActive = false;
+        std::shared_ptr<ShadowMap> shadowMap = nullptr;
+        
+        // Cache shadow map size
+        uint32_t width = 2048;
+        uint32_t height = 2048;
+
+        ShadowComponent(uint32_t width=2048, uint32_t height=2048) 
+            : width(width), height(height) {
+                isActive = true;
+                shadowMap = std::make_shared<ShadowMap>(width, height);
+        }
+    };
+
+    struct CascadedShadowComponent
+    {
+        bool isActive = false;
+        uint8_t numCascades = 3;
+        std::shared_ptr<CascadedShadowMapping> cascadedShadowMapping = nullptr;  // Using ShadowMap for now, will be replaced with CSM later
+        
+        // Cache shadow map size
+        uint32_t width = 2048;
+        uint32_t height = 2048;
+        bool isDirty = true;  // Flag to indicate if shadow map needs to be recreated
+
+        CascadedShadowComponent(uint32_t width=2048, uint32_t height=2048, uint8_t numCascades=3) 
+            : width(width), height(height), numCascades(numCascades) {
+                cascadedShadowMapping = std::make_shared<CascadedShadowMapping>(width, height, numCascades);
+            }
+
+    };
+
     struct LightComponent
     {
+
         LightType type = LightType::Point;
-        glm::vec3 color = glm::vec3(1.0f);    // Light color (default: white)
+        glm::vec3 color = glm::vec3(1.0f, 0.8f, 0.6f);    // Light color (default: warm white?) #FFDDAA
         float intensity = 1.0f;               // Light intensity multiplier
         
         // For point and spot lights
@@ -626,6 +672,7 @@ namespace Rapture {
             : type(LightType::Spot), color(color), intensity(intensity), range(range),
               innerConeAngle(glm::radians(innerAngleDegrees)), 
               outerConeAngle(glm::radians(outerAngleDegrees)) {}
+
 
 
         std::uint32_t calculateCurrentHash() const {

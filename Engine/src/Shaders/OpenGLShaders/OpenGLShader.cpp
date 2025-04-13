@@ -126,6 +126,9 @@ OpenGLShader::OpenGLShader(const std::filesystem::path& vertexPath, const std::f
         }
         else if (blockName == "Camera") {
             bindingPoint = CAMERA_BINDING_POINT_IDX;
+        } 
+        else if (blockName == "ShadowMatrices") {
+            bindingPoint = SHADOW_MATRICES_BINDING_POINT_IDX;
         }
         else {
             GE_CORE_WARN("OpenGLShader: Unknown uniform block '{}' found in shader '{}'", blockName, m_name);

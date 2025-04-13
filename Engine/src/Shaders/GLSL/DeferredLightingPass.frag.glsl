@@ -1,9 +1,18 @@
 #version 420 core
 
+#extension GL_ARB_bindless_texture : require
+#extension GL_ARB_gpu_shader_int64 : require // Needed for uint64_t
+#extension GL_ARB_shader_storage_buffer_object : require
+
+
 // Add a debug mode flag at the top
 #define DEBUG_SPOTLIGHTS 0
+#define MAX_CASCADES 4
+#define MAX_SHADOW_CASTERS 4
+
 
 layout(location = 0) out vec4 FragColor;
+
 
 in vec2 TexCoord;
 
@@ -13,14 +22,13 @@ layout(binding = 1) uniform sampler2D u_gNormal;
 layout(binding = 0) uniform sampler2D u_gAlbedo;
 layout(binding = 2) uniform sampler2D u_gMaterialProps; // metallic, roughness, ao
 
-// Shadow map texture (using sampler2DShadow for hardware comparison)
-layout(binding = 8) uniform sampler2DShadow u_shadowMap;
+//layout(binding = 8) uniform sampler2DShadow u_shadowMap;
 
 // Camera position for specular calculations
 uniform vec3 u_CameraPosition;
 
-// Light space matrix for shadow mapping
-uniform mat4 u_LightSpaceMatrix;
+// Light space matrix for shadow mapping - keeping for backward compatibility
+//uniform mat4 u_LightSpaceMatrix;
 
 // Define max light count - must match the C++ side
 #define MAX_LIGHTS 8
@@ -42,6 +50,20 @@ struct Light {
 layout(std140, binding = 2) uniform Lights {
     uint u_LightCount;
     Light u_Lights[MAX_LIGHTS];
+};
+
+struct ShadowBufferData {
+    int type; // (0 = point), 1 = directional, 2 = spot
+    uint cascadeCount;
+    uint lightIndex; // Index of the light this shadow maps to
+    uint64_t textureIDs[MAX_CASCADES];
+    mat4 cascadeMatrices[MAX_CASCADES];
+    vec4 cascadeSplitsViewSpace[MAX_CASCADES];
+};
+
+layout(std430, binding = 0) buffer ShadowDataLayout {
+    uint shadowCount;
+    ShadowBufferData shadowData[];
 };
 
 #define PI 3.14159265359
@@ -132,14 +154,20 @@ float calculateSpotEffect(vec3 lightToFrag, vec3 spotDirection, float cosInnerAn
 #endif
 }
 
-// --------------------------------
-// Shadow mapping functions (Revised for sampler2DShadow)
-// --------------------------------
 
-float calculateShadow(vec3 fragPosWorld, vec3 normal, vec3 lightDir) {
-    // Transform fragment position from world space to light clip space
-    vec4 fragPosLightSpace = u_LightSpaceMatrix * vec4(fragPosWorld, 1.0);
+// Modified to use bindless texture handle from SSBO
+float calculateShadow(vec3 fragPosWorld, vec3 normal, vec3 lightDir, ShadowBufferData shadowInfo) {
+    if (shadowInfo.type <= 0) return 1.0; // No shadow for this light or unsupported type
     
+    // Use the bindless texture handle directly
+    sampler2DShadow shadowMapSampler = sampler2DShadow(shadowInfo.textureIDs[0]);
+    
+    // Use the light matrix from the shadow info
+    mat4 lightMatrix = shadowInfo.cascadeMatrices[0];
+    
+    // Transform fragment position from world space to light clip space
+    vec4 fragPosLightSpace = lightMatrix * vec4(fragPosWorld, 1.0);
+
     // Perform perspective divide (clip space -> NDC [-1, 1])
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
     
@@ -147,37 +175,32 @@ float calculateShadow(vec3 fragPosWorld, vec3 normal, vec3 lightDir) {
     projCoords = projCoords * 0.5 + 0.5;
     
     // Check if fragment is outside the light's view frustum [0, 1] range
-    // (Can help avoid sampling outside the shadow map border)
     if(projCoords.x < 0.0 || projCoords.x > 1.0 || 
        projCoords.y < 0.0 || projCoords.y > 1.0 || 
        projCoords.z < 0.0 || projCoords.z > 1.0) { // Check Z too
         return 1.0; // Outside frustum = Not shadowed (fully lit)
     }
     
-
     // PCF (Percentage-Closer Filtering) using sampler2DShadow
     float shadowFactor = 0.0;
-    vec2 texelSize = 1.0 / textureSize(u_shadowMap, 0); // textureSize works on sampler2DShadow
-    
+    //vec2 texelSize = 1.0 / textureSize(u_shadowMap, 0); // textureSize works on sampler2DShadow
+    vec2 texelSize = 1.0 / textureSize(shadowMapSampler, 0);
+
     // Apply bias to avoid shadow acne - adjust based on surface angle
     float cosTheta = clamp(dot(normal, lightDir), 0.0, 1.0);
     float bias = max(0.05 * (1.0 - cosTheta), 0.005);
     
-
-    // Use smaller sampling kernel for better performance
+    // Use smaller sampling kernel for PCF
     for(int x = -1; x <= 1; ++x) {
         for(int y = -1; y <= 1; ++y) {
-            // The Z coordinate for texture() with sampler2DShadow is the depth to compare against.
-            // The texture function performs the depth comparison (fragment_depth <= texture_depth)
-            // It returns 1.0 if lit (comparison passes), 0.0 if shadowed (comparison fails) for that sample.
             float comparisonDepth = projCoords.z - bias; 
-            shadowFactor += texture(u_shadowMap, vec3(projCoords.xy + vec2(x, y) * texelSize, comparisonDepth));       
+            shadowFactor += texture(shadowMapSampler, vec3(projCoords.xy + vec2(x, y) * texelSize, comparisonDepth));       
+  
         }
     }
     
-    shadowFactor /= 9.0; // Average the results (percentage of samples that are lit)
+    shadowFactor /= 9.0; // Average the results
     
-    // shadowFactor is now in the range [0.0, 1.0], where 0.0 is full shadow and 1.0 is fully lit.
     return clamp(shadowFactor, 0.0, 1.0);
 }
 
@@ -239,13 +262,19 @@ void main() {
                 );
             }
         }
-        
-        // Calculate shadow only for the first light (assuming light 0 is the shadow caster)
-        if (i == 0u) { 
-            // Note: lightDirWorld points TOWARDS the light source.
-            // calculateShadow might need the direction FROM the light source depending on bias calculation.
-            // Let's pass the direction towards the light source as standard practice for lighting calcs.
-            shadowFactor = calculateShadow(FragPos, N, lightDirWorld);
+
+
+        // Look for a shadow matching this light's index
+        shadowFactor = 1.0; // Default: fully lit (no shadow)
+        for (uint j = 0u; j < shadowCount; j++) {
+            ShadowBufferData shadowInfo = shadowData[j];
+            
+            // Check if this shadow data is for the current light
+            if (shadowInfo.lightIndex == i && shadowInfo.type > 0) {
+                // Calculate shadow using the shadow info for this light
+                shadowFactor = calculateShadow(FragPos, N, lightDirWorld, shadowInfo);
+                break; // Found the shadow info for this light, so break out of the loop
+            }
         }
         
 #if DEBUG_SPOTLIGHTS

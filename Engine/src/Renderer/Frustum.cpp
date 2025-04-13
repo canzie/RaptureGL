@@ -1,11 +1,15 @@
 #include "Frustum.h"
 #include "../Scenes/Components/BoundingBox.h"
 #include "../Logger/Log.h"
+#include "../Debug/TracyProfiler.h"
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace Rapture
 {
     void Frustum::update(const glm::mat4& projection, const glm::mat4& view)
     {
+        RAPTURE_PROFILE_SCOPE("Update Main Camera Frustum");
+
         // Compute the view-projection matrix
         glm::mat4 viewProj = projection * view;
 
@@ -34,9 +38,7 @@ namespace Rapture
         _planes[3].z = viewProj[2][3] - viewProj[2][1];
         _planes[3].w = viewProj[3][3] - viewProj[3][1];
 
-        // Near plane - Fixed to avoid culling objects close to the camera
-        // Instead of adding the z component, we're taking just the pure z component
-        // This creates a more accurate near plane
+        // Near plane 
         _planes[4].x = viewProj[0][2];
         _planes[4].y = viewProj[1][2];
         _planes[4].z = viewProj[2][2];
@@ -71,58 +73,42 @@ namespace Rapture
             return FrustumResult::Outside;
         }
 
-        // Get the corners of the bounding box
-        glm::vec3 min = boundingBox.getMin();
-        glm::vec3 max = boundingBox.getMax();
+        glm::vec3 center = boundingBox.getCenter();
+        glm::vec3 extents = boundingBox.getExtents() * 0.5f; // Use half-extents for radius calculation
 
-        // Flag to track if the box is fully inside
-        bool fullyInside = true;
+        bool intersects = false; // Keep track if it intersects any plane
 
         // Test against each frustum plane
-        for (int i = 0; i < _planes.size(); i++)
+        for (const auto& plane : _planes)
         {
-            const auto& plane = _planes[i];
-            
-            // Find the point that is furthest along the normal direction (positive vertex)
-            glm::vec3 positiveVertex;
-            positiveVertex.x = (plane.x > 0.0f) ? max.x : min.x;
-            positiveVertex.y = (plane.y > 0.0f) ? max.y : min.y;
-            positiveVertex.z = (plane.z > 0.0f) ? max.z : min.z;
+            glm::vec3 normal(plane.x, plane.y, plane.z);
+            float planeDist = plane.w;
 
-            // Find the point that is furthest along the inverse normal direction (negative vertex)
-            glm::vec3 negativeVertex;
-            negativeVertex.x = (plane.x > 0.0f) ? min.x : max.x;
-            negativeVertex.y = (plane.y > 0.0f) ? min.y : max.y;
-            negativeVertex.z = (plane.z > 0.0f) ? min.z : max.z;
+            // Calculate distance from center to plane
+            float dist = glm::dot(normal, center) + planeDist;
 
-            // Calculate distance
-            float negDistance = plane.x * negativeVertex.x + plane.y * negativeVertex.y + 
-                                plane.z * negativeVertex.z + plane.w;
-            
-            // Apply a small bias/epsilon for the near plane (index 4)
-            // This prevents objects close to the camera from being culled incorrectly
-            if (i == 4) { // Near plane index
-                constexpr float NEAR_PLANE_EPSILON = 0.05f; // Adjust as needed
-                negDistance += NEAR_PLANE_EPSILON;
-            }
-            
-            // If the negative vertex is outside, the box is outside
-            if (negDistance < 0.0f)
+            // Calculate projected radius of the box onto the plane normal
+            float radius = glm::dot(extents, glm::abs(normal));
+
+            // If the center is further away from the plane than the projected radius (negative side),
+            // the box is completely outside this plane.
+            if (dist < -radius)
             {
                 return FrustumResult::Outside;
             }
 
-            // Calculate positive vertex distance for inside/intersect determination
-            float posDistance = plane.x * positiveVertex.x + plane.y * positiveVertex.y + 
-                                plane.z * positiveVertex.z + plane.w;
-                                
-            // If the positive vertex is outside, the box is intersecting
-            if (posDistance < 0.0f)
+            // If the center is within the radius distance from the plane (on either side),
+            // the box potentially intersects this plane.
+            // We check `dist < radius` which covers both `abs(dist) < radius` cases effectively
+            // because if `dist >= radius`, the box is fully on the positive side of this plane.
+            if (dist < radius) // Check if the box intersects the plane
             {
-                fullyInside = false;
+                intersects = true;
             }
         }
 
-        return fullyInside ? FrustumResult::Inside : FrustumResult::Intersect;
+        // If it didn't intersect any plane (meaning it was fully inside all planes), return Inside.
+        // Otherwise, it must be intersecting.
+        return intersects ? FrustumResult::Intersect : FrustumResult::Inside;
     }
 } 

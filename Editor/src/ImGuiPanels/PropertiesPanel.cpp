@@ -125,6 +125,7 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
                         Rapture::GE_CORE_INFO("Added MaterialComponent to entity ID {0}", entity->getID());
                     }
                 }
+                
             }
             catch (const std::exception& e) {
                 Rapture::GE_CORE_ERROR("Error adding component: {0}", e.what());
@@ -484,6 +485,26 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
             Rapture::GE_CORE_ERROR("Error rendering bounding box component: {}", e.what());
         }
 
+        // Edit Shadow component if it exists
+        try {
+            bool hasShadow = entity->hasComponent<Rapture::ShadowComponent>();
+            
+            if (hasShadow && ImGui::CollapsingHeader("Shadow", ImGuiTreeNodeFlags_DefaultOpen)) {
+                renderShadowComponent(entity);
+            }
+            else if (!hasShadow && entity->hasComponent<Rapture::LightComponent>()) {
+                // Button to add a shadow component if it doesn't exist but the entity has a light
+                if (ImGui::Button("Add Shadow Component")) {
+                    entity->addComponent<Rapture::ShadowComponent>();
+                    Rapture::GE_CORE_INFO("Added ShadowComponent to entity {}", 
+                        entity->getID());
+                }
+            }
+        }
+        catch (const std::exception& e) {
+            Rapture::GE_CORE_ERROR("Error rendering shadow component: {}", e.what());
+        }
+
         // Edit Material component if it exists
         try {
             bool hasMaterial = entity->hasComponent<Rapture::MaterialComponent>();
@@ -551,11 +572,20 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
                 if (ImGui::Checkbox("Active", &isActive)) {
                     lightComp.isActive = isActive;
                 }
+
+                // Shadows toggle
+                bool castsShadow = lightComp.castsShadow;
+                if (ImGui::Checkbox("Cast Shadows", &castsShadow)) {
+                    lightComp.castsShadow = castsShadow;
+                    
+                    // If enabling shadows and no shadow component, suggest adding one
+                    if (castsShadow && !entity->hasComponent<Rapture::ShadowComponent>()) {
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Add a Shadow Component to enable shadows");
+                    }
+                }
                 
                 // Add light component button for entities without lights
                 ImGui::Separator();
-                
-
             }
             else if (!hasLight) {
                 // Button to add a light component if it doesn't exist
@@ -1140,4 +1170,82 @@ void PropertiesPanel::renderAnimationControls(std::shared_ptr<Rapture::Entity> e
             animComp.setAnimation(currentItem);
         }
     }
+}
+
+void PropertiesPanel::renderShadowComponent(std::shared_ptr<Rapture::Entity> entity) {
+    if (!entity) {
+        Rapture::GE_CORE_ERROR("renderShadowComponent: Null entity reference");
+        return;
+    }
+    
+    if (!entity->hasComponent<Rapture::ShadowComponent>()) {
+        Rapture::GE_CORE_ERROR("renderShadowComponent: Entity missing ShadowComponent");
+        return;
+    }
+    
+    auto& shadowComp = entity->getComponent<Rapture::ShadowComponent>();
+    
+    // Toggle shadow active state
+    bool isActive = shadowComp.isActive;
+    if (ImGui::Checkbox("Active", &isActive)) {
+        shadowComp.isActive = isActive;
+    }
+    
+    // Display shadow map resolution
+    ImGui::Text("Shadow Map Resolution:");
+    
+    int width = static_cast<int>(shadowComp.width);
+    int height = static_cast<int>(shadowComp.height);
+
+    
+    // Shadow map preview
+    ImGui::Separator();
+    ImGui::Text("Shadow Map Preview:");
+    
+    if (shadowComp.shadowMap) {
+        try {
+            // Get the shadow map texture ID
+            uint32_t shadowMapID = shadowComp.shadowMap->getShadowMapID();
+            
+            if (shadowMapID > 0) {
+                // Calculate preview size
+                float availWidth = ImGui::GetContentRegionAvail().x;
+                float previewSize = std::min(availWidth, 312.0f);
+                
+                // Shadow maps are typically square, but use 1:1 aspect ratio just in case
+                ImVec2 previewDimensions(previewSize, previewSize);
+                
+                // Display the depth texture
+                ImGui::Image((ImTextureID)(uint64_t)shadowMapID, previewDimensions, 
+                             ImVec2(0, 0), ImVec2(1, 1), 
+                             ImVec4(1, 1, 1, 1), ImVec4(1, 1, 1, 0.5f));
+                
+                // Display texture info
+                ImGui::Text("Shadow Map ID: %u", shadowMapID);
+                ImGui::Text("Resolution: %ux%u", shadowComp.width, shadowComp.height);
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Invalid shadow map texture ID");
+            }
+        }
+        catch (const std::exception& e) {
+            Rapture::GE_CORE_ERROR("Error displaying shadow map: {}", e.what());
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Error displaying shadow map");
+        }
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Shadow map not initialized");
+        
+        // Add a button to create the shadow map
+        if (ImGui::Button("Create Shadow Map")) {
+            try {
+                shadowComp.shadowMap = std::make_shared<Rapture::ShadowMap>(shadowComp.width, shadowComp.height);
+                shadowComp.isActive = true;
+                Rapture::GE_CORE_INFO("Created shadow map with resolution {}x{}", 
+                                      shadowComp.width, shadowComp.height);
+            }
+            catch (const std::exception& e) {
+                Rapture::GE_CORE_ERROR("Failed to create shadow map: {}", e.what());
+            }
+        }
+    }
+    
 }

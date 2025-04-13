@@ -1,4 +1,4 @@
-#version 330 core
+#version 420 core
 
 // Basic vertex attributes
 layout(location = 0) in vec3 a_Position;
@@ -12,10 +12,16 @@ layout(location = 6) in vec3 a_Tangent;
 
 // Uniforms
 uniform mat4 gWVP;  // World-View-Projection matrix
+
+layout (std140, binding=8) uniform shadowMatrices
+{
+	mat4 u_LightSpaceMatrix[4];
+};
+
 uniform float u_IsSkinnedMesh = 0.0f;
 
 
 void main() {
     
-    gl_Position = gWVP * vec4(a_Position, 1.0);
+    gl_Position = u_LightSpaceMatrix[0] * vec4(a_Position, 1.0);
 }

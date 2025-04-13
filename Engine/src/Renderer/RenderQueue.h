@@ -12,6 +12,9 @@
 #include <future>
 #include <thread>
 #include "../Debug/TracyProfiler.h"
+#include "../Renderer/Frustum.h"
+#include "../Renderer/ShadowMapping/ShadowMapping.h"
+#include "../Renderer/ShadowMapping/CascadedShadowMapping.h"
 
 namespace Rapture {
 
@@ -21,6 +24,12 @@ namespace Rapture {
         FORWARD,
         POSTPROCESS,
         SHADOWMAP
+    };
+
+
+    struct GeometryQueueBuilderConfig {
+        std::shared_ptr<Frustum> frustum = nullptr;
+
     };
 
     //using CommandVariant = std::variant<RenderCommand, PostProcessCommand>;
@@ -201,7 +210,9 @@ namespace Rapture {
         static void queueBuilderThread();
         
         // Build implementation used by both sync and async paths
-        static void buildGeometryQueue(const QueueBuildRequest& request, bool isFinal=true);
+        static void buildGeometryQueue(const QueueBuildRequest& request, GeometryQueueBuilderConfig config);
+
+        static void buildForwardQueue(const QueueBuildRequest& request);
         static void buildDeferredQueue(const QueueBuildRequest& request);
         static void buildShadowPassQueue(const QueueBuildRequest& request);
     };

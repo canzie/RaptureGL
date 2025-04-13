@@ -54,5 +54,8 @@ private:
     // Added methods for material drag-drop support
     void renderMaterialComponent(std::shared_ptr<Rapture::Entity> entity);
     bool handleMaterialDragDrop(std::shared_ptr<Rapture::Entity> entity);
+    
+    // Helper method to render shadow component
+    void renderShadowComponent(std::shared_ptr<Rapture::Entity> entity);
 };
 

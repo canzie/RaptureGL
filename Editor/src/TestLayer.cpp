@@ -13,7 +13,7 @@
 #include "Renderer/PrimitiveShapes.h"
 #include "Renderer/Raycast.h"
 #include "Scenes/Systems/AnimationSystem.h"
-
+#include "Scenes/Systems/BoundingBoxSystem.h"
 #include "File Loaders/glTF/glTF2Loader.h"
 #include "Textures/Texture.h"
 #include "Debug/Profiler.h"
@@ -162,7 +162,8 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
         45.0f                          // Outer cone angle
     );
     light1.getComponent<Rapture::LightComponent>().castsShadow = true;
-
+    light1.addComponent<Rapture::ShadowComponent>(2048, 2048);
+    
     light1.addComponent<Rapture::SpriteComponent>();
     
     // Light 2: A blue-tinted light to the left side
@@ -172,7 +173,7 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
         glm::vec3(0.0f),               // No rotation needed for point light
         glm::vec3(0.2f)                // Small scale to make the cube compact
     );
-    light2.addComponent<Rapture::LightComponent>();
+    //light2.addComponent<Rapture::LightComponent>();
     // Blue-tinted light with medium intensity
     light2.addComponent<Rapture::SpriteComponent>();
 
@@ -182,6 +183,8 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     m_cameraEntity = std::make_shared<Rapture::Entity>(camera_controller);
 	// Initialize the camera controller
 	CameraController::init(camera_controller);
+
+    activeScene->setMainCamera(m_cameraEntity);
 	
 	// Initialize with current mouse position
 	auto pos = Rapture::Input::getMousePos();
@@ -356,6 +359,8 @@ void TestLayer::onUpdate(float ts)
     
 
 
+    Rapture::BoundingBoxSystem::updateBoundingBoxes(activeScene.get());
+
     Rapture::DeferredRenderer::sumbitScene(activeScene);
 
 
@@ -367,11 +372,15 @@ void TestLayer::onUpdate(float ts)
 
 	// Render the scene to the framebuffer
 	//Rapture::Renderer::sumbitScene(activeScene);
+    //Rapture::Renderer::setupCameraUniforms(activeScene);
     Rapture::Renderer::drawSprites(activeScene);
     if (m_selectedEntity) {
         //Rapture::Renderer::drawBoundingBox(*m_selectedEntity);
     }
 
+
+    //Rapture::Renderer::drawAllBoundingBoxes(activeScene);
+    //Rapture::Renderer::drawDebugFrustum();
 
     // Draw the debug ray if active
     if (m_showDebugRay && m_debugRayLine) {

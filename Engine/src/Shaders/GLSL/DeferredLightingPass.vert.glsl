@@ -1,5 +1,10 @@
 #version 420 core
 
+#extension GL_ARB_bindless_texture : require
+#extension GL_ARB_gpu_shader_int64 : require // Needed for uint64_t
+#extension GL_ARB_shader_storage_buffer_object : require
+
+
 layout(location = 0) in vec3 a_Position;
 layout(location = 2) in vec2 a_TexCoord;
 

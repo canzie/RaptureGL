@@ -21,7 +21,7 @@ namespace Rapture {
 			glCreateBuffers(1, &m_rendererId);
 			// Add GL_DYNAMIC_STORAGE_BIT to allow updates even with immutable storage
 			GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_DYNAMIC_STORAGE_BIT;
-			bool isPersistent = false; // Track if persistent flag is set
+            bool isPersistent = false; // Track if persistent flag is set
 			if (usage == BufferUsage::Stream) {
 				flags |= GL_MAP_PERSISTENT_BIT;
 				isPersistent = true;

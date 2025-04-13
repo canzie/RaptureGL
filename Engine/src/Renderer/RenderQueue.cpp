@@ -157,7 +157,7 @@ namespace Rapture {
                     // Use a switch for clarity
                     switch (request.resultQueue->m_type) {
                         case RenderQueueType::FORWARD:
-                            buildGeometryQueue(request); // Pass true for isFinal
+                            buildForwardQueue(request); // Pass true for isFinal
                             break;
                         case RenderQueueType::DEFERRED:
                             buildDeferredQueue(request);
@@ -198,14 +198,26 @@ namespace Rapture {
         GE_RENDER_INFO("CommandQueueBuilder: Worker thread stopped");
     }
 
+    void CommandQueueBuilder::buildForwardQueue(const QueueBuildRequest& request)
+    {
+        RAPTURE_PROFILE_FUNCTION();
+
+        GeometryQueueBuilderConfig config;
+        buildGeometryQueue(request, config);
+        request.resultQueue->markAsDone();
+
+    }
+
     // Refactored buildGeometryQueue using SkeletonRefComponent
-    void CommandQueueBuilder::buildGeometryQueue(const QueueBuildRequest& request, bool isFinal)
+    void CommandQueueBuilder::buildGeometryQueue(const QueueBuildRequest& request, GeometryQueueBuilderConfig config)
     {
         RAPTURE_PROFILE_FUNCTION();
         
         auto& scene = request.scene;
         auto& queue = request.resultQueue;
         auto& reg = scene->getRegistry();
+
+        uint32_t culledEntities = 0;
 
         // --- Temporary Storage ---
         // Map: Skeleton Ptr -> Vector of RenderCommands associated with that skeleton
@@ -244,6 +256,7 @@ namespace Rapture {
             RAPTURE_PROFILE_SCOPE("Pass 2: Collect Render Commands");
             // View all entities that are renderable (have Transform, Mesh, Material)
             auto renderableView = reg.view<TransformComponent, MeshComponent, MaterialComponent>();
+            auto boundingBoxes = reg.view<BoundingBoxComponent>();
 
             for (auto entityHandle : renderableView) {
                  // Check for shutdown condition periodically
@@ -258,6 +271,18 @@ namespace Rapture {
                 if (meshComp.isLoading || !meshComp.mesh || !materialComp.material) {
                     continue;
                 }
+
+                
+                if (config.frustum && boundingBoxes.contains(entityHandle)) {
+                    auto& boundingBoxComp = boundingBoxes.get<BoundingBoxComponent>(entityHandle);
+                    FrustumResult result = config.frustum->testBoundingBox(boundingBoxComp.worldBoundingBox);
+                    if (result == FrustumResult::Outside) {
+                        culledEntities++;
+                        continue;
+                        
+                    }
+                }
+                
 
                 // Create the base RenderCommand
                 RenderCommand command;
@@ -340,11 +365,9 @@ namespace Rapture {
                 queue->add(renderCmd);
             }
         }
-        
-        // Mark the queue as done when finished, if requested
-        if (isFinal) {
-            queue->markAsDone();
-        }
+
+
+        //GE_RENDER_INFO("CommandQueueBuilder::BuildGeometryQueue - Culled {} entities", culledEntities);
     }
 
     // buildDeferredQueue now uses the refactored buildGeometryQueue
@@ -352,8 +375,18 @@ namespace Rapture {
     {
         RAPTURE_PROFILE_FUNCTION();
 
-        // Build the geometry part first (passing isFinal = false)
-        buildGeometryQueue(request, false); 
+        // setup the configuration for specifics like the frustum to use or, 
+        // any other render pass specific things
+        GeometryQueueBuilderConfig config;
+        auto mainCamera = request.scene->getMainCamera();
+        if (mainCamera && request.scene->getSettings().frustumCullingEnabled) {
+            auto* camComp = mainCamera->tryGetComponent<CameraControllerComponent>();
+            if (camComp) {
+                config.frustum = std::make_shared<Frustum>(camComp->frustum);
+            }
+        }
+
+        buildGeometryQueue(request, config); 
         if (s_shuttingDown) { request.resultQueue->markAsDone(); return; } // Check shutdown after buildGeometryQueue
 
 
@@ -378,21 +411,60 @@ namespace Rapture {
     {
         RAPTURE_PROFILE_FUNCTION();
 
-        // Add command indicating start of shadow pass
-        ShadowPassCommand shadowPassStartCmd;
-        request.resultQueue->add(shadowPassStartCmd);
-        if (s_shuttingDown) { request.resultQueue->markAsDone(); return; }
+        auto& scene = request.scene;
+        auto& reg = scene->getRegistry();
+        auto& queue = request.resultQueue;
 
-        // Build the geometry part (passing isFinal = false)
-        // Note: Shadow pass might need different material/shader handling,
-        // which might require adjustments here or in the renderer later.
-        buildGeometryQueue(request, false);
-        if (s_shuttingDown) { request.resultQueue->markAsDone(); return; }
+        // Get views for each relevant component
+        auto lightView = reg.view<LightComponent, TransformComponent>();
+        auto shadowView = reg.view<ShadowComponent>();
+        auto csmView = reg.view<CascadedShadowComponent>();
 
-        // Add command indicating end of shadow pass
-        ShadowPassCommand shadowPassEndCmd;
-        request.resultQueue->add(shadowPassEndCmd);
-        if (s_shuttingDown) { request.resultQueue->markAsDone(); return; }
+        ShadowVariant shadowMap = std::monostate();
+
+        for (auto entityHandle : lightView) {
+            GeometryQueueBuilderConfig config;
+
+            // get the shadowmap type/variant
+            auto& lightComp = lightView.get<LightComponent>(entityHandle);
+            if (lightComp.castsShadow && csmView.contains(entityHandle)) {
+                // add cascaded shadow maps
+                auto& csmComp = csmView.get<CascadedShadowComponent>(entityHandle);
+                if (csmComp.isActive) {
+                    shadowMap = csmComp.cascadedShadowMapping;
+                }
+            } else if (lightComp.castsShadow && shadowView.contains(entityHandle)) {
+                // add regular shadow maps
+                auto& shadowComp = shadowView.get<ShadowComponent>(entityHandle);
+                if (shadowComp.isActive) {
+                    //config.frustum = shadowComp.shadowMap->getFrustum();
+                    shadowMap = shadowComp.shadowMap;
+                    
+                }
+            }
+
+             
+            if (!std::holds_alternative<std::monostate>(shadowMap)) {
+                // setup start of 1 shadowpass
+                ShadowPassCommand shadowPassStartCmd;
+                shadowPassStartCmd.shadowMap = shadowMap;
+                shadowPassStartCmd.lightType = lightComp.type;
+                shadowPassStartCmd.commandType = CommandExectionPhase::BEGIN_PASS;
+                queue->add(shadowPassStartCmd);
+
+                // add the geometryqueue
+                buildGeometryQueue(request, config);
+
+                // notify end of the this shadowpass
+                ShadowPassCommand shadowPassEndCmd;
+                shadowPassEndCmd.shadowMap = shadowMap;
+                shadowPassEndCmd.lightType = lightComp.type;
+                shadowPassEndCmd.commandType = CommandExectionPhase::END_PASS;
+                queue->add(shadowPassEndCmd);
+
+                if (s_shuttingDown) { request.resultQueue->markAsDone(); return; }
+            }
+        }
 
         // Mark queue as done
         request.resultQueue->markAsDone();

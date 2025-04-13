@@ -88,8 +88,7 @@ namespace Rapture
 			std::vector<entt::entity>& lightEntities);
 
 		// Setup camera uniform buffer
-		static bool setupCameraUniforms(const std::shared_ptr<Scene> s, 
-			entt::entity cameraEntity);
+		static bool setupCameraUniforms(const std::shared_ptr<Scene> s);
 			
 		// Setup lights uniform buffer
 		static void setupLightsUniforms(const std::shared_ptr<Scene> s, 
