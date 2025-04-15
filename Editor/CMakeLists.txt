@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 # Set the Editor project name
-set(EDITOR_NAME LiDAR_Editor)
+set(EDITOR_NAME RaptureEditor)
 
 # Find all source files in the Editor directory
 file(GLOB_RECURSE EDITOR_SOURCES
@@ -12,6 +12,9 @@ file(GLOB_RECURSE EDITOR_SOURCES
 
 # Create Editor executable with appropriate entry point
 add_executable(${EDITOR_NAME} ${EDITOR_SOURCES})
+
+# Set the desired output executable name (can contain spaces)
+set_target_properties(${EDITOR_NAME} PROPERTIES OUTPUT_NAME "Rapture Editor")
 
 # Set include directories
 target_include_directories(${EDITOR_NAME} PRIVATE

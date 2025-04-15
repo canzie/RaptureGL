@@ -445,11 +445,6 @@ std::shared_ptr<OpenGLTexture2D> OpenGLTexture2D::createCubemap(const std::vecto
 
 
 
-// Static methods in Texture2D that delegate to OpenGLTexture2D
-std::shared_ptr<Texture2D> Texture2D::createFromExistingTexture(uint32_t textureID)
-{
-    return OpenGLTexture2D::createFromExistingTexture(textureID);
-}
 
 std::shared_ptr<Texture2D> Texture2D::create(const std::string& path)
 {
