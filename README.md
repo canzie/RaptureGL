@@ -1,4 +1,4 @@
-# LiDAR Game
+# Rapture Engine
 
 A modern 3D game engine built with C++ and OpenGL. 
 Created for learning 3D graphics and game engine architecures from scratch.
