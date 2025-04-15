@@ -9,8 +9,8 @@
 
 namespace Rapture {
 
-    CascadedShadowMapping::CascadedShadowMapping(uint32_t width, uint32_t height, uint8_t numCascades)
-        : m_Width(width), m_Height(height), m_NumCascades(numCascades)
+    CascadedShadowMapping::CascadedShadowMapping(uint32_t width, uint32_t height, uint8_t numCascades, float lambda)
+        : m_Width(width), m_Height(height), m_NumCascades(numCascades), m_Lambda(lambda)
     {
        GE_CORE_INFO("CascadedShadowMapping: Creating with {0} cascades at {1}x{2} resolution", 
             m_NumCascades, m_Width, m_Height);
@@ -362,7 +362,6 @@ namespace Rapture {
                 top = 10.0f;
             }
 
-            GE_CORE_INFO("CascadedShadowMapping: Extracted orthographic parameters: right={0}, top={1}", right, top);
 
             // Create orthographic projection matrix with the cascade's depth range
             cascadeProjectionMatrix = glm::ortho(
@@ -436,7 +435,7 @@ namespace Rapture {
         ProjectionType cameraProjectionType)
     {
         // Calculate cascade splits - Use lambda=0.95 for better distribution
-        std::vector<float> cascadeSplits = calculateCascadeSplits(nearPlane, farPlane, 0.8f); 
+        std::vector<float> cascadeSplits = calculateCascadeSplits(nearPlane, farPlane, m_Lambda); 
 
 
         std::vector<CascadeData> cascadeData(m_NumCascades);
@@ -475,7 +474,7 @@ namespace Rapture {
                 up
             );
 
-            // 4. Transform Corners to Light Space & Find X/Y AABB (for stabilization)
+            // 4. Transform Corners to Light Space & Find X/Y AABB
             float minX = std::numeric_limits<float>::max(), maxX = std::numeric_limits<float>::lowest();
             float minY = std::numeric_limits<float>::max(), maxY = std::numeric_limits<float>::lowest();
             // We don't need minZ/maxZ from light-space AABB anymore for ortho Z range
@@ -488,13 +487,12 @@ namespace Rapture {
                 maxY = std::max(maxY, lightSpaceCorner.y);
             }
 
-            // 5. Calculate Projection Center & Extents (X/Y only)
+            // 5. Calculate Projection Center & Initial Extents
             float centerX = (maxX + minX) / 2.0f;
             float centerY = (maxY + minY) / 2.0f;
             float extentX = maxX - minX;
             float extentY = maxY - minY;
 
-            // 6. Stabilize X/Y via Center Snapping
             if (m_Width > 0 && m_Height > 0) {
                 float worldTexelSizeX = extentX / m_Width;
                 float worldTexelSizeY = extentY / m_Height;
@@ -523,6 +521,7 @@ namespace Rapture {
             float orthoNear = minLightDist; 
             float orthoFar = maxLightDist + 100.0f; // Add fixed extension to far plane for safety/bias
             
+
             // Optional: Ensure near is not too close or behind the 'light' position used in lookAt
             // This might need adjustment based on how minLightDist behaves
             // orthoNear = std::max(orthoNear, -lightDistance + 0.1f); 

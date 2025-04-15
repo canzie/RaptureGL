@@ -47,7 +47,7 @@ SettingsPanel::SettingsPanel(Rapture::WindowContext* context)
     }
     
     // Initialize frustum culling state from renderer
-    m_frustumCullingEnabled = Rapture::Renderer::isFrustumCullingEnabled();
+    m_frustumCullingEnabled = false;
 }
 
 bool SettingsPanel::openSkyboxFileDialog(char* outPath, size_t outPathSize) {
@@ -215,7 +215,6 @@ void SettingsPanel::renderSceneSettings()
     if (ImGui::Checkbox("Frustum Culling##SceneSetting", &settings.frustumCullingEnabled)) {
         // Sync with the panel's setting and update renderer
         m_frustumCullingEnabled = settings.frustumCullingEnabled;
-        Rapture::Renderer::enableFrustumCulling(settings.frustumCullingEnabled);
     }
     
     // Raycast debug option
@@ -241,9 +240,31 @@ void SettingsPanel::renderSceneSettings()
         settings.rayCastDebugEnabled = false;
         settings.useAsyncRendering = true;
         m_frustumCullingEnabled = true;
-        Rapture::Renderer::enableFrustumCulling(true);
         
         Rapture::GE_INFO("Scene settings reset to defaults");
+    }
+
+    ImGui::Separator();
+
+    auto camera = m_activeScene->getMainCamera();
+    auto& cameraController = camera->getComponent<Rapture::CameraControllerComponent>();
+    auto fovy = cameraController.fov;
+    auto near_plane = cameraController.near_plane;
+    auto far_plane = cameraController.far_plane;
+
+    if (ImGui::CollapsingHeader("Camera Settings")) {
+        if (ImGui::DragFloat("Field of View", &fovy, 1.0f, 15.0f, 120.0f)) {
+            cameraController.updateProjectionMatrix(fovy, cameraController.aspect_ratio, near_plane, far_plane);
+        }
+        if (ImGui::DragFloat("Near Plane", &near_plane, 0.5f, 0.1f, 10.0f)) {
+            near_plane = std::min(near_plane, far_plane);
+            cameraController.updateProjectionMatrix(fovy, cameraController.aspect_ratio, near_plane, far_plane);
+        }
+        if (ImGui::DragFloat("Far Plane", &far_plane, 1.0f, 10.0f, 1000.0f)) {
+            far_plane = std::max(far_plane, near_plane + 10.0f);
+            cameraController.updateProjectionMatrix(fovy, cameraController.aspect_ratio, near_plane, far_plane);
+        }
+
     }
     
     // Skybox Settings

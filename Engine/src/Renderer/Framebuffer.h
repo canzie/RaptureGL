@@ -19,7 +19,8 @@ namespace Rapture
 		RGB16F,
 		RGB32F,
 		RGBA16F,
-		
+		RGBA32F,
+
 		// Depth/stencil formats
 		DEPTH24STENCIL8,
 		DEPTH32F,

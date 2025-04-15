@@ -10,6 +10,9 @@ layout(location = 5) in vec4 a_Weights;   // Weights of each bone's influence
 
 layout(location = 6) in vec3 a_Tangent;
 
+precision highp float;
+
+
 // Output to geometry shader - simplified since matrices are applied in geometry shader
 out VS_OUT {
     vec3 position;

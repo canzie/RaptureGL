@@ -484,6 +484,15 @@ namespace Rapture {
 
 		}
 
+        void updateProjectionMatrix(float fovy, float AR, float nplane, float fplane)
+        {
+            fov = fovy;
+            aspect_ratio = AR;
+            near_plane = nplane;
+            far_plane = fplane;
+            camera.updateProjectionMatrix(fovy, AR, nplane, fplane);
+        }
+
 	};
 
     struct SpriteComponent

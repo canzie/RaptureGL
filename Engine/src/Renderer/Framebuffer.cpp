@@ -19,6 +19,7 @@ namespace Rapture
 			case FramebufferTextureFormat::RGB16F:      return GL_RGB16F;
 			case FramebufferTextureFormat::RGB32F:      return GL_RGB32F;
 			case FramebufferTextureFormat::RGBA16F:     return GL_RGBA16F;
+			case FramebufferTextureFormat::RGBA32F:     return GL_RGBA32F;
 			case FramebufferTextureFormat::DEPTH24STENCIL8: return GL_DEPTH24_STENCIL8;
 			case FramebufferTextureFormat::DEPTH32F:    return GL_DEPTH_COMPONENT32F;
 		}
@@ -37,6 +38,7 @@ namespace Rapture
 			case FramebufferTextureFormat::RGB16F:      return GL_RGB;
 			case FramebufferTextureFormat::RGB32F:      return GL_RGB;
 			case FramebufferTextureFormat::RGBA16F:     return GL_RGBA;
+			case FramebufferTextureFormat::RGBA32F:     return GL_RGBA;
 		}
 
 		GE_CORE_ERROR("Unknown framebuffer data format!");
@@ -53,6 +55,7 @@ namespace Rapture
 			case FramebufferTextureFormat::RGB16F:      return GL_FLOAT;
 			case FramebufferTextureFormat::RGB32F:      return GL_FLOAT;
 			case FramebufferTextureFormat::RGBA16F:     return GL_FLOAT;
+			case FramebufferTextureFormat::RGBA32F:     return GL_FLOAT;
 		}
 
 		GE_CORE_ERROR("Unknown framebuffer data type!");
@@ -81,7 +84,7 @@ namespace Rapture
 		
 		// Position buffer (RGB32F or RGB16F)
 		gBufferSpec.attachments.push_back(
-			useHighPrecision ? FramebufferTextureFormat::RGB32F : FramebufferTextureFormat::RGB16F
+			useHighPrecision ? FramebufferTextureFormat::RGBA32F : FramebufferTextureFormat::RGB16F
 		);
 		
 		// Normal buffer (RGB16F)

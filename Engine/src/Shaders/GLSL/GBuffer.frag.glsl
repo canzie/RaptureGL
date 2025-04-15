@@ -3,7 +3,7 @@
 #extension GL_ARB_bindless_texture : require
 #extension GL_ARB_gpu_shader_int64 : require // Needed for uint64_t
 
-layout(location = 0) out vec3 gPosition;
+layout(location = 0) out vec4 gPositionDepth; // Renamed and changed to vec4
 layout(location = 1) out vec3 gNormal;
 layout(location = 2) out vec4 gAlbedoSpec;
 layout(location = 3) out vec4 gMaterial; // R: Metallic, G: Roughness, B: AO
@@ -12,11 +12,12 @@ precision highp float;
 
 
 in VS_OUT {
-    vec3 FragPos;
+    vec3 FragPos;    // World position
     vec3 Normal;
     vec2 TexCoord;
     vec3 Tangent;     // Assumed to be valid and non-zero if normal mapping is needed
     vec3 Bitangent;   // Assumed to be valid and non-zero if normal mapping is needed
+    float FragDepthView; // Added: View-space Z depth
 } fs_in;
 
 // Define texture flag constants - must match C++ side
@@ -145,8 +146,9 @@ void main() {
         emission = texture(u_EmissiveMap, fs_in.TexCoord).rgb;
     }
 
-    // Position (view space)
-    gPosition = fs_in.FragPos;
+    // Position (world space) and Depth (view space Z)
+    // Store World Position in rgb, and linear View-Space Z Depth in alpha
+    gPositionDepth = vec4(fs_in.FragPos, fs_in.FragDepthView);
     
     // Normal
     vec3 normal;

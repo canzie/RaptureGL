@@ -1372,7 +1372,13 @@ void PropertiesPanel::renderCascadedShadowComponent(std::shared_ptr<Rapture::Ent
     // Display resolution and cascade count
     ImGui::Text("Resolution: %ux%u", csmComp.width, csmComp.height);
     ImGui::Text("Number of Cascades: %u", csmComp.numCascades);
-    
+
+    float lambda = csmComp.cascadedShadowMapping->getLambda();
+    if (ImGui::DragFloat("Lambda", &lambda, 0.005f, 0.0f, 1.0f, "%.3f")) {
+        csmComp.cascadedShadowMapping->setLambda(lambda);
+    }
+    ImGui::SameLine();
+    HelpMarker("Controls how much the cascade splits are spread out. Lower values mean more logarithmic spread, higher values mean more linear spread.");
     // Shadow map preview
     ImGui::Separator();
     ImGui::Text("Cascade Shadow Map Previews:");

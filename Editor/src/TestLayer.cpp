@@ -183,7 +183,7 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
 
 	// Create camera controller
 	Rapture::Entity camera_controller = activeScene->createEntity("Camera Controller");
-	camera_controller.addComponent<Rapture::CameraControllerComponent>(60.0f, 1920.0f / 1080.0f, 0.1f, 100.0f);
+	camera_controller.addComponent<Rapture::CameraControllerComponent>(90.0f, 1920.0f / 1080.0f, 0.1f, 100.0f);
     m_cameraEntity = std::make_shared<Rapture::Entity>(camera_controller);
 	// Initialize the camera controller
 	CameraController::init(camera_controller);

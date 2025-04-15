@@ -34,6 +34,7 @@ out VS_OUT {
     vec2 TexCoord;
     vec3 Tangent;
     vec3 Bitangent;
+    float FragDepthView;
 } vs_out;
 
 void main() {
@@ -92,6 +93,14 @@ void main() {
 
     vs_out.TexCoord = a_TexCoord;
     
-    
-    gl_Position = u_proj * u_view * vec4(vs_out.FragPos, 1.0);
+    // Calculate position in view space
+    vec4 viewPos = u_view * vec4(vs_out.FragPos, 1.0);
+
+    // Store the negative Z value (common convention, depth increases into the screen)
+    // Ensure this matches how cascade splits are calculated on the CPU.
+    // If cascade splits are positive distances, use abs(viewPos.z) or just viewPos.z
+    vs_out.FragDepthView = -viewPos.z;
+
+    // Final clip space position
+    gl_Position = u_proj * viewPos; // Use viewPos directly for projection
 }

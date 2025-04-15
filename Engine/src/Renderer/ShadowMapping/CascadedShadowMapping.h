@@ -24,7 +24,7 @@ namespace Rapture {
     class CascadedShadowMapping : public ShadowMapBase {
 
     public:
-        CascadedShadowMapping(uint32_t width, uint32_t height, uint8_t numCascades);
+        CascadedShadowMapping(uint32_t width, uint32_t height, uint8_t numCascades, float lambda = 0.8f);
         ~CascadedShadowMapping();
 
         virtual void bind() override;
@@ -52,6 +52,9 @@ namespace Rapture {
         std::vector<uint32_t> getCascadeTextureIDs() const;
         std::vector<glm::mat4> getViewProjectionMatrices() { return m_ViewProjectionMatrices; }
         
+        float getLambda() const { return m_Lambda; }
+        void setLambda(float lambda) { m_Lambda = std::clamp(lambda, 0.0f, 1.0f); }
+
     private:
         // Extracts view frustum corners for a specific cascade depth slice
         // All parameters relate to the camera, not the light
@@ -65,6 +68,7 @@ namespace Rapture {
         uint32_t m_Width;
         uint32_t m_Height;
         uint8_t m_NumCascades;
+        float m_Lambda;
         std::vector<glm::mat4> m_ViewProjectionMatrices;
     };
 
