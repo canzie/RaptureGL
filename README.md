@@ -1,6 +1,7 @@
-# LiDAR Game
+# Rapture Engine
 
-A modern 3D game engine built with C++ and OpenGL.
+A modern 3D game engine built with C++ and OpenGL. 
+Created for learning 3D graphics and game engine architecures from scratch.
 
 
 
@@ -9,41 +10,32 @@ A modern 3D game engine built with C++ and OpenGL.
   - Metallic-roughness workflow
   - Specular-glossiness workflow
   - Full PBR texture maps (albedo, normal, metallic, roughness, AO, emissive)
-- Material instance system with runtime parameter overrides
-- Efficient material library with serialization support
+- Support for both forward and deferred rendering pipelines
+- Support for Point, Spot and Directional lights
+- Traditional and Cascaded Shadow Mapping (CSM)
+- Frustum Culling
+- Modular and Asynchronous command queue system for creating streamlined render passes
 
 ### Scene Management
-- Flexible entity hierarchy system for complex scenes
-- Efficient bounding box system for collision detection
-- Smart scene serialization
+- Scenes consist out of Entities using the [entt ECS](https://github.com/skypjack/entt)
+- Advanced project hierarchy, Project->Worlds->Scenes
 
 ### Asset Pipeline
-- Efficient mesh loading with support for glTF
-- Multi-threaded asset loading
-- Material library with instance management
-- Advanced texture management with automatic resource pooling
-- Buffer pool management for optimal memory usage
+- Asset Manager for centralized loading of any asset
+- Efficient and custom glTF 2.0 loader
+- Multi-threaded Texture loading
+- Material System
+- Buffer pools for efficient Vertex and Index buffer allocation
 
-## TODO's
 
-### High Priority
+## Showcase of recent features
 
-- [ ] Deferred rendering pipeline
-- [ ] Instanced mesh rendering for large scenes
-- [ ] Advanced particle system with GPU acceleration
-- [x] Mouse picking system for editor interaction
-- [x] Vertex Skinning and Animations 
-- [ ] Post-processing pipeline
+### Cascaded Shadow Mapping (CSM)
 
-  
+I recently finished(mostly) my implementation of CSM, it uses scene independent matrix transformations for the cascade ligthview matrices.
+Uses a hybrid approach for spliting the frustum range with a lambda to bias either the logarithmic or linear splits
 
-### Future Plans
-
-- [ ] Physics engine integration
-- [ ] Audio system
-- [ ] Advanced serialization system
-- [ ] Scripting system for runtime behavior
-- [ ] Resource streaming system
+![CSM with visible cascades](screenshots/CSM_Example.PNG)
 
 ## Getting Started
 
@@ -71,18 +63,5 @@ mkdir build && cd build
 cmake ..
 cmake --build .
 ```
-
-## Project Structure
-```
-Engine/
-  ├── src/
-  │   ├── Buffers/        # Advanced buffer management
-  │   ├── Camera/         # Camera system
-  │   ├── Materials/      # PBR material system
-  │   ├── Mesh/          # Mesh loading
-  │   ├── Renderer/      # Core rendering
-  │   ├── Scenes/        # Scene management
-  │   ├── Shaders/       # Shader system
-  │   └── Textures/      # Texture management
-  └── vendor/            # External dependencies
-```
+Or run the build script, then nagivate to the build folder: 
+ - build\release\bin\Release
