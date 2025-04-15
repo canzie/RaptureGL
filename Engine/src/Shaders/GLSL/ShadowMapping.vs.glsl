@@ -11,7 +11,6 @@ layout(location = 5) in vec4 a_Weights;   // Weights of each bone's influence
 layout(location = 6) in vec3 a_Tangent;
 
 // Uniforms
-uniform mat4 gWVP;  // World-View-Projection matrix
 
 layout (std140, binding=8) uniform shadowMatrices
 {
@@ -19,9 +18,9 @@ layout (std140, binding=8) uniform shadowMatrices
 };
 
 uniform float u_IsSkinnedMesh = 0.0f;
-
+uniform mat4 u_model;
 
 void main() {
     
-    gl_Position = u_LightSpaceMatrix[0] * vec4(a_Position, 1.0);
+    gl_Position = u_LightSpaceMatrix[0] * u_model * vec4(a_Position, 1.0);
 }

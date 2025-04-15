@@ -24,15 +24,21 @@ namespace Rapture {
         virtual void bind() override;
         virtual void unbind() override;
 
-
         virtual void setShaderUniforms(const glm::mat4& mesh_transform) override;
+
+        void setWVPMatrix(const glm::mat4 viewproj);
 
         uint32_t getShadowMapID() { return m_ShadowMap->getDepthAttachmentRendererID(); }
         uint64_t getShadowMapHandle() { return m_ShadowMap->getDepthAttachmentTextureHandle(); }
+        
+        // Resize shadow map to new dimensions
+        void resize(uint32_t width, uint32_t height);
 
 
     private:
-
+        glm::mat4 m_ViewProjectionMatrix;
+        uint32_t m_Width;
+        uint32_t m_Height;
 
     };
 

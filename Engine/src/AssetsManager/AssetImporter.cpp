@@ -94,11 +94,53 @@ namespace Rapture {
             return nullptr;
         }
 
+        // Check for an optional geometry shader using the same base name
+        std::string geomPathStr;
+        bool hasGeometryShader = false;
+        std::filesystem::path geometryPath;
+
+        // Try to deduce geometry shader path from vertex path
+        // Look for both .gs and .geom conventions
+        if (std::regex_search(vertPathStr, match, vertRegex) && match.size() > 2) {
+            std::string base = match.prefix().str();
+            std::string ext = match[2].str();
+            
+            // Try .gs first
+            geomPathStr = base + ".gs" + ext;
+            geometryPath = std::filesystem::path(geomPathStr);
+            
+            if (std::filesystem::exists(geometryPath)) {
+                hasGeometryShader = true;
+                GE_CORE_INFO("AssetImporter::loadShader - Found geometry shader: {}", geometryPath.string());
+            } else {
+                // Try .geom if .gs doesn't exist
+                geomPathStr = base + ".geom" + ext;
+                geometryPath = std::filesystem::path(geomPathStr);
+                
+                if (std::filesystem::exists(geometryPath)) {
+                    hasGeometryShader = true;
+                    GE_CORE_INFO("AssetImporter::loadShader - Found geometry shader: {}", geometryPath.string());
+                } else {
+                    GE_CORE_TRACE("AssetImporter::loadShader - No geometry shader found, using standard rendering pipeline");
+                }
+            }
+        }
+
         // Create the shader using the updated Shader::create
-        std::shared_ptr<Shader> shader = Shader::create(vertexPath, fragmentPath);
+        std::shared_ptr<Shader> shader;
+        
+        if (hasGeometryShader) {
+            shader = Shader::create(vertexPath, fragmentPath, geometryPath);
+        } else {
+            shader = Shader::create(vertexPath, fragmentPath);
+        }
 
         if (!shader || !shader->isValid()) {
-            GE_CORE_ERROR("AssetImporter::loadShader - Failed to create or compile shader from {} and {}, with status {}", vertexPath.string(), fragmentPath.string(), (int)shader->getStatus());
+            GE_CORE_ERROR("AssetImporter::loadShader - Failed to create or compile shader from {} and {}{}, with status {}", 
+                vertexPath.string(), 
+                fragmentPath.string(), 
+                hasGeometryShader ? " and " + geometryPath.string() : "", 
+                (int)shader->getStatus());
             return nullptr;
         }
 

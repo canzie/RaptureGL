@@ -113,6 +113,7 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     if (loader){
         loader->loadModel("Sponza/glTF/Sponza.gltf");
         loader->loadModel("sphere.gltf");
+        //loader->loadModel("sphere.gltf");
         //loader->loadModel("main1_sponza/NewSponza_Main_glTF_003.gltf");
     }
 
@@ -163,7 +164,6 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     );
     light1.getComponent<Rapture::LightComponent>().castsShadow = true;
     light1.addComponent<Rapture::ShadowComponent>(2048, 2048);
-    
     light1.addComponent<Rapture::SpriteComponent>();
     
     // Light 2: A blue-tinted light to the left side
@@ -173,13 +173,17 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
         glm::vec3(0.0f),               // No rotation needed for point light
         glm::vec3(0.2f)                // Small scale to make the cube compact
     );
-    //light2.addComponent<Rapture::LightComponent>();
-    // Blue-tinted light with medium intensity
+    light2.addComponent<Rapture::CascadedShadowComponent>(2048, 2048, 4 );
+    light2.addComponent<Rapture::LightComponent>(
+        glm::vec3(1.0f, 1.0f, 1.0f),  // Pure white color
+        1.2f                         // High intensity
+    );
+    light2.getComponent<Rapture::LightComponent>().castsShadow = true;
     light2.addComponent<Rapture::SpriteComponent>();
 
 	// Create camera controller
 	Rapture::Entity camera_controller = activeScene->createEntity("Camera Controller");
-	camera_controller.addComponent<Rapture::CameraControllerComponent>(60.0f, 1920.0f / 1080.0f, 0.1f, 1000.0f);
+	camera_controller.addComponent<Rapture::CameraControllerComponent>(60.0f, 1920.0f / 1080.0f, 0.1f, 100.0f);
     m_cameraEntity = std::make_shared<Rapture::Entity>(camera_controller);
 	// Initialize the camera controller
 	CameraController::init(camera_controller);

@@ -44,7 +44,7 @@ std::string readShaderSource(const std::filesystem::path& filepath) {
     return source;
 }
 
-OpenGLShader::OpenGLShader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath) 
+OpenGLShader::OpenGLShader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, const std::filesystem::path& geometryPath) 
     : Shader(vertexPath.stem().string())
 {
     GE_CORE_TRACE("OpenGLShader: Creating shader from {} and {}", vertexPath.string(), fragmentPath.string());
@@ -64,6 +64,16 @@ OpenGLShader::OpenGLShader(const std::filesystem::path& vertexPath, const std::f
         return;
     }
     m_sources[ShaderType::FRAGMENT] = fragmentShaderSource;
+
+    if (!geometryPath.empty()) {
+        std::string geometryShaderSource = readShaderSource(geometryPath);
+        if (geometryShaderSource.empty()) {
+            m_status = ShaderStatus::SHADER_ERROR;
+            GE_CORE_CRITICAL("OpenGLShader: Geometry shader source failed to read: {}", geometryPath.string());
+            return;
+        }
+        m_sources[ShaderType::GEOMETRY] = geometryShaderSource;
+    }
 
      if (!compile()) {
         GE_CORE_ERROR("OpenGLShader: Failed to compile/link shader program derived from {} and {}", vertexPath.string(), fragmentPath.string());
@@ -163,6 +173,7 @@ OpenGLShader::OpenGLShader(const std::filesystem::path& vertexPath, const std::f
 
     GE_CORE_INFO("OpenGLShader: Successfully created Shader: {} (Program ID: {})", m_name, m_programID);
 }
+
 
 OpenGLShader::~OpenGLShader()
 	{
@@ -556,8 +567,6 @@ GLenum ShaderTypeToGL(ShaderType type)
 		case ShaderType::FRAGMENT: return GL_FRAGMENT_SHADER;
 		case ShaderType::GEOMETRY: return GL_GEOMETRY_SHADER;
 		case ShaderType::COMPUTE: return GL_COMPUTE_SHADER;
-		case ShaderType::TESS_CONTROL: return GL_TESS_CONTROL_SHADER;
-		case ShaderType::TESS_EVAL: return GL_TESS_EVALUATION_SHADER;
 		default: return 0;
 	}
 };
@@ -609,6 +618,19 @@ Shader* Shader::createRaw(const std::filesystem::path& vertexPath, const std::fi
 {
     return new OpenGLShader(vertexPath, fragmentPath);
 }
+
+std::shared_ptr<Shader> Shader::create(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, const std::filesystem::path& geometryPath)
+{
+    return std::make_shared<OpenGLShader>(vertexPath, fragmentPath, geometryPath);
+}
+
+Shader* Shader::createRaw(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, const std::filesystem::path& geometryPath)
+{
+    return new OpenGLShader(vertexPath, fragmentPath, geometryPath);
+}
+
+
+
 
 }
 

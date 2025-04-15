@@ -166,6 +166,11 @@ namespace Rapture
 				glDeleteTextures(1, &m_depthAttachment);
 			
 			m_depthAttachment = 0;
+            
+            if (m_depthTextureArray)
+                glDeleteTextures(1, &m_depthTextureArray);
+            
+            m_depthTextureArray = 0;
 		}
 
 		// Create framebuffer
@@ -175,8 +180,85 @@ namespace Rapture
 		// Create color attachments
 		bool multisample = m_specification.samples > 1;
         
+		// Check if we need to create a depth texture array
+		bool createDepthTextureArray = false;
+		uint32_t arrayLayers = 1;
+		for (auto& attachment : m_specification.attachments)
+		{
+			if (IsDepthFormat(attachment.textureFormat) && attachment.isTextureArray)
+			{
+				createDepthTextureArray = true;
+				arrayLayers = attachment.arrayLayers;
+				break;
+			}
+		}
 		
-		if (m_specification.attachments.size())
+		if (createDepthTextureArray)
+		{
+            // Find the depth attachment specification
+            FramebufferTextureSpecification depthSpec;
+            for (auto& attachment : m_specification.attachments)
+            {
+                if (IsDepthFormat(attachment.textureFormat) && attachment.isTextureArray)
+                {
+                    depthSpec = attachment;
+                    break;
+                }
+            }
+            
+            // Create depth texture array
+            glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &m_depthTextureArray);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, m_depthTextureArray);
+            
+            // Allocate storage for the texture array
+            glTexStorage3D(GL_TEXTURE_2D_ARRAY, 
+                           1, // mipmap levels
+                           TextureFormatToGL(depthSpec.textureFormat),
+                           m_specification.width, m_specification.height,
+                           arrayLayers);
+            
+            // Set texture parameters
+            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            
+            if (depthSpec.isShadowMap)
+            {
+                // Set proper wrapping for shadow map
+                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                
+                // Set border color to white (1.0) - fragments beyond shadow map will be considered lit
+                float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+                glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, borderColor);
+                
+                // Enable hardware PCF with linear filtering
+                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+            }
+            else
+            {
+                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);	
+                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            }
+            
+            // Attach depth texture array to framebuffer
+            glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, m_depthTextureArray, 0);
+            
+            // Generate bindless handle if needed
+            if (depthSpec.isBindless)
+            {
+                m_depthTextureArrayHandle = Texture2D::generateTextureHandleFromID(m_depthTextureArray);
+            }
+            
+            GE_CORE_INFO("Created depth texture array with {0} layers, size {1}x{2}", 
+                  arrayLayers, m_specification.width, m_specification.height);
+            
+            // For depth-only framebuffer, disable color attachments
+            glNamedFramebufferDrawBuffer(m_framebufferID, GL_NONE);
+            glNamedFramebufferReadBuffer(m_framebufferID, GL_NONE);
+		}
+		else if (m_specification.attachments.size())
 		{
 			m_colorAttachments.resize(m_specification.attachments.size());
 			
@@ -209,9 +291,12 @@ namespace Rapture
 					// Set texture parameters
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+				    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                    
+
 				}
 				
 				// Attach texture to framebuffer
@@ -234,74 +319,77 @@ namespace Rapture
 				glDrawBuffers(m_colorAttachments.size(), drawBuffers);
                 GE_CORE_INFO("Set up {0} draw buffers for multiple render targets", m_colorAttachments.size());
 			}
-		}
-
-		// Add default depth attachment
-        FramebufferTextureSpecification depthAttachmentSpec = FramebufferTextureSpecification();
-
-		for (auto& attachment : m_specification.attachments)
-		{
-			if (IsDepthFormat(attachment.textureFormat))
+			
+			// Add default depth attachment if we don't have a texture array
+			if (!createDepthTextureArray)
 			{
-				depthAttachmentSpec = attachment;
-				break;
+				FramebufferTextureSpecification depthAttachmentSpec = FramebufferTextureSpecification();
+
+				for (auto& attachment : m_specification.attachments)
+				{
+					if (IsDepthFormat(attachment.textureFormat))
+					{
+						depthAttachmentSpec = attachment;
+						break;
+					}
+				}
+					
+				// Create depth texture
+				glCreateTextures(multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, 1, &m_depthAttachment);
+				glBindTexture(multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, m_depthAttachment);
+					
+				if (multisample)
+				{
+					glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, m_specification.samples, 
+						TextureFormatToGL(depthAttachmentSpec.textureFormat), m_specification.width, m_specification.height, GL_FALSE);
+				}
+				else
+				{
+					glTexStorage2D(GL_TEXTURE_2D, 1, TextureFormatToGL(depthAttachmentSpec.textureFormat), 
+					m_specification.width, m_specification.height);
+
+					// Set linear filtering for smoother shadows
+					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+					if (depthAttachmentSpec.isShadowMap)
+					{
+						// Set proper wrapping for shadow map
+						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+						
+						// Set border color to white (1.0) - fragments beyond shadow map will be considered lit
+						float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+						glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+						
+						// Enable hardware PCF with linear filtering
+						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+					} else {
+
+						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);	
+						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+					}
+				}
+					
+				// Attach depth texture to framebuffer
+				glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, 
+					multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, m_depthAttachment, 0);
+
+				if (depthAttachmentSpec.isBindless)
+				{
+					m_depthAttachmentHandle = Texture2D::generateTextureHandleFromID(m_depthAttachment);
+				}
 			}
 		}
-		
-
-			
-		// Create depth texture
-		glCreateTextures(multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, 1, &m_depthAttachment);
-		glBindTexture(multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, m_depthAttachment);
-			
-		if (multisample)
-		{
-			glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, m_specification.samples, 
-				TextureFormatToGL(depthAttachmentSpec.textureFormat), m_specification.width, m_specification.height, GL_FALSE);
-		}
-		else
-		{
-            glTexStorage2D(GL_TEXTURE_2D, 1, TextureFormatToGL(depthAttachmentSpec.textureFormat), 
-			m_specification.width, m_specification.height);
-
-            // Set linear filtering for smoother shadows
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            if (depthAttachmentSpec.isShadowMap)
-            {
-                // Set proper wrapping for shadow map
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-
-                // Set border color to white (1.0) - fragments beyond shadow map will be considered lit
-                float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-                glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
-                
-                // Enable hardware PCF with linear filtering
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-
-            } else {
-
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);	
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            }
-        }
-			
-		// Attach depth texture to framebuffer
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, 
-			multisample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, m_depthAttachment, 0);
-
-        if (isDepthBufferOnly)
+        
+        // Handle the case when it's a depth-only framebuffer with no texture array
+        if (isDepthBufferOnly && !createDepthTextureArray)
         {
             glNamedFramebufferDrawBuffer(m_framebufferID, GL_NONE);
             glNamedFramebufferReadBuffer(m_framebufferID, GL_NONE);
         }
-		
 
-		
 		// Verify framebuffer is complete
 		if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		{
@@ -314,10 +402,12 @@ namespace Rapture
 			
 			if (m_depthAttachment)
 				glDeleteTextures(1, &m_depthAttachment);
+                
+            if (m_depthTextureArray)
+                glDeleteTextures(1, &m_depthTextureArray);
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             return;
-
 		}
 		else
 		{
@@ -325,14 +415,9 @@ namespace Rapture
 				m_framebufferID, m_specification.width, m_specification.height, m_specification.samples);
 		}
 
-        if (depthAttachmentSpec.isBindless)
-        {
-            m_depthAttachmentHandle = Texture2D::generateTextureHandleFromID(m_depthAttachment);
-        }
-
-
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
+
 
 	void Framebuffer::resize(uint32_t width, uint32_t height)
 	{
@@ -471,7 +556,12 @@ namespace Rapture
 		if (m_depthAttachmentHandle != 0)
 		{
 			success &= Texture2D::makeTextureResident(m_depthAttachmentHandle);
-			
+		}
+		
+		// Make depth texture array resident if available
+		if (m_depthTextureArrayHandle != 0)
+		{
+			success &= Texture2D::makeTextureResident(m_depthTextureArrayHandle);
 		}
 		
 		return success;
@@ -479,7 +569,7 @@ namespace Rapture
 
 	void Framebuffer::makeAllTexturesNonResident()
 	{
-		// Make color attachments resident
+		// Make color attachments non-resident
 		for (auto [textureID, handle] : m_colorAttachmentsHandlesMap)
 		{
 			if (handle != 0)
@@ -492,7 +582,12 @@ namespace Rapture
 		if (m_depthAttachmentHandle != 0)
 		{
 			Texture2D::makeTextureNonResident(m_depthAttachmentHandle);
-			
+		}
+		
+		// Make depth texture array non-resident if available
+		if (m_depthTextureArrayHandle != 0)
+		{
+			Texture2D::makeTextureNonResident(m_depthTextureArrayHandle);
 		}
 	}
 

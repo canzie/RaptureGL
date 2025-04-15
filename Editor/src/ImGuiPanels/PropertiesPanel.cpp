@@ -15,6 +15,20 @@
 // ImGuizmo
 #include "../vendor/ImGuizmo/ImGuizmo.h"
 
+// Implementation of HelpMarker function
+void PropertiesPanel::HelpMarker(const char* desc)
+{
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted(desc);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
 void PropertiesPanel::render(std::shared_ptr<Rapture::Entity> entity) {
     try {
         ImGui::Begin("Properties");
@@ -505,6 +519,28 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
             Rapture::GE_CORE_ERROR("Error rendering shadow component: {}", e.what());
         }
 
+        // Edit Cascaded Shadow component if it exists
+        try {
+            bool hasCascadedShadow = entity->hasComponent<Rapture::CascadedShadowComponent>();
+            
+            if (hasCascadedShadow && ImGui::CollapsingHeader("Cascaded Shadow", ImGuiTreeNodeFlags_DefaultOpen)) {
+                renderCascadedShadowComponent(entity);
+            }
+            else if (!hasCascadedShadow && !entity->hasComponent<Rapture::ShadowComponent>() && 
+                     entity->hasComponent<Rapture::LightComponent>()) {
+                // Button to add a cascaded shadow component if it doesn't exist, entity has a light,
+                // and doesn't already have a regular shadow component
+                if (ImGui::Button("Add Cascaded Shadow Component")) {
+                    entity->addComponent<Rapture::CascadedShadowComponent>();
+                    Rapture::GE_CORE_INFO("Added CascadedShadowComponent to entity {}", 
+                        entity->getID());
+                }
+            }
+        }
+        catch (const std::exception& e) {
+            Rapture::GE_CORE_ERROR("Error rendering cascaded shadow component: {}", e.what());
+        }
+
         // Edit Material component if it exists
         try {
             bool hasMaterial = entity->hasComponent<Rapture::MaterialComponent>();
@@ -579,13 +615,58 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
                     lightComp.castsShadow = castsShadow;
                     
                     // If enabling shadows and no shadow component, suggest adding one
-                    if (castsShadow && !entity->hasComponent<Rapture::ShadowComponent>()) {
-                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Add a Shadow Component to enable shadows");
+                    if (castsShadow && !entity->hasComponent<Rapture::ShadowComponent>() && 
+                        !entity->hasComponent<Rapture::CascadedShadowComponent>()) {
+                        
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.0f, 1.0f));
+                        ImGui::Text("Add a shadow component to enable shadows:");
+                        ImGui::PopStyleColor();
+                        
+                        ImGui::SameLine();
+                        
+                        if (ImGui::Button("Standard")) {
+                            entity->addComponent<Rapture::ShadowComponent>();
+                            Rapture::GE_CORE_INFO("Added ShadowComponent to entity {}", entity->getID());
+                        }
+                        
+                        ImGui::SameLine();
+                        
+                        if (ImGui::Button("Cascaded")) {
+                            entity->addComponent<Rapture::CascadedShadowComponent>();
+                            Rapture::GE_CORE_INFO("Added CascadedShadowComponent to entity {}", entity->getID());
+                        }
                     }
                 }
                 
-                // Add light component button for entities without lights
-                ImGui::Separator();
+                // Show shadow type if shadows are enabled
+                if (castsShadow) {
+                    ImGui::SameLine();
+                    
+                    bool hasShadow = entity->hasComponent<Rapture::ShadowComponent>();
+                    bool hasCascadedShadow = entity->hasComponent<Rapture::CascadedShadowComponent>();
+                    
+                    if (hasShadow) {
+                        ImGui::TextColored(ImVec4(0.0f, 0.8f, 0.2f, 1.0f), "(Standard)");
+                        ImGui::SameLine();
+                        if (ImGui::Button("Switch to Cascaded")) {
+                            entity->removeComponent<Rapture::ShadowComponent>();
+                            entity->addComponent<Rapture::CascadedShadowComponent>();
+                            Rapture::GE_CORE_INFO("Switched from Standard to Cascaded shadow maps");
+                        }
+                    }
+                    else if (hasCascadedShadow) {
+                        ImGui::TextColored(ImVec4(0.0f, 0.8f, 0.2f, 1.0f), "(Cascaded)");
+                        ImGui::SameLine();
+                        if (ImGui::Button("Switch to Standard")) {
+                            entity->removeComponent<Rapture::CascadedShadowComponent>();
+                            entity->addComponent<Rapture::ShadowComponent>();
+                            Rapture::GE_CORE_INFO("Switched from Cascaded to Standard shadow maps");
+                        }
+                    }
+                    else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "(No shadow component)");
+                    }
+                }
             }
             else if (!hasLight) {
                 // Button to add a light component if it doesn't exist
@@ -1191,12 +1272,31 @@ void PropertiesPanel::renderShadowComponent(std::shared_ptr<Rapture::Entity> ent
         shadowComp.isActive = isActive;
     }
     
-    // Display shadow map resolution
+    // Display and edit shadow map resolution
     ImGui::Text("Shadow Map Resolution:");
     
-    int width = static_cast<int>(shadowComp.width);
-    int height = static_cast<int>(shadowComp.height);
-
+    
+    // Add control for shadow map size (for directional lights)
+    // This controls the orthographic projection size
+    ImGui::Separator();
+    ImGui::Text("Shadow Map Settings:");
+    
+    // Check if this entity has a light component and it's a directional light
+    bool isDirectionalLight = false;
+    if (entity->hasComponent<Rapture::LightComponent>()) {
+        auto& lightComp = entity->getComponent<Rapture::LightComponent>();
+        isDirectionalLight = (lightComp.type == Rapture::LightType::Directional);
+    }
+    
+    // Only show this for directional lights
+    if (isDirectionalLight) {
+        float shadowSize = shadowComp.shadowMapSize;
+        if (ImGui::DragFloat("Coverage Size", &shadowSize, 1.0f, 10.0f, 500.0f, "%.1f")) {
+            shadowComp.shadowMapSize = shadowSize;
+        }
+        ImGui::SameLine();
+        HelpMarker("Controls how much area the directional light shadow covers. Higher values show more of the scene but with less detail.");
+    }
     
     // Shadow map preview
     ImGui::Separator();
@@ -1215,14 +1315,26 @@ void PropertiesPanel::renderShadowComponent(std::shared_ptr<Rapture::Entity> ent
                 // Shadow maps are typically square, but use 1:1 aspect ratio just in case
                 ImVec2 previewDimensions(previewSize, previewSize);
                 
-                // Display the depth texture
+                // Display the depth texture with zoom controls
+                static float zoomLevel = 1.0f;
+                if (ImGui::SliderFloat("Zoom", &zoomLevel, 0.5f, 3.0f, "%.1fx")) {
+                    // Zoom level changed
+                }
+                
+                // Display zoomed image
+                ImVec2 uv0 = ImVec2(0.5f - 0.5f/zoomLevel, 0.5f - 0.5f/zoomLevel);
+                ImVec2 uv1 = ImVec2(0.5f + 0.5f/zoomLevel, 0.5f + 0.5f/zoomLevel);
+                
                 ImGui::Image((ImTextureID)(uint64_t)shadowMapID, previewDimensions, 
-                             ImVec2(0, 0), ImVec2(1, 1), 
+                             uv0, uv1, 
                              ImVec4(1, 1, 1, 1), ImVec4(1, 1, 1, 0.5f));
                 
                 // Display texture info
                 ImGui::Text("Shadow Map ID: %u", shadowMapID);
                 ImGui::Text("Resolution: %ux%u", shadowComp.width, shadowComp.height);
+                if (isDirectionalLight) {
+                    ImGui::Text("Coverage: %.1f units", shadowComp.shadowMapSize);
+                }
             } else {
                 ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Invalid shadow map texture ID");
             }
@@ -1234,18 +1346,110 @@ void PropertiesPanel::renderShadowComponent(std::shared_ptr<Rapture::Entity> ent
     } else {
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Shadow map not initialized");
         
+
+    }
+}
+
+void PropertiesPanel::renderCascadedShadowComponent(std::shared_ptr<Rapture::Entity> entity) {
+    if (!entity) {
+        Rapture::GE_CORE_ERROR("renderCascadedShadowComponent: Null entity reference");
+        return;
+    }
+    
+    if (!entity->hasComponent<Rapture::CascadedShadowComponent>()) {
+        Rapture::GE_CORE_ERROR("renderCascadedShadowComponent: Entity missing CascadedShadowComponent");
+        return;
+    }
+    
+    auto& csmComp = entity->getComponent<Rapture::CascadedShadowComponent>();
+    
+    // Toggle shadow active state
+    bool isActive = csmComp.isActive;
+    if (ImGui::Checkbox("Active", &isActive)) {
+        csmComp.isActive = isActive;
+    }
+    
+    // Display resolution and cascade count
+    ImGui::Text("Resolution: %ux%u", csmComp.width, csmComp.height);
+    ImGui::Text("Number of Cascades: %u", csmComp.numCascades);
+    
+    // Shadow map preview
+    ImGui::Separator();
+    ImGui::Text("Cascade Shadow Map Previews:");
+    
+    if (csmComp.cascadedShadowMapping) {
+        try {
+            // Get the shadow map texture IDs for all cascades
+            std::vector<uint32_t> textureIDs = csmComp.cascadedShadowMapping->getCascadeTextureIDs();
+            
+            if (!textureIDs.empty()) {
+                // Calculate preview size and layout
+                float availWidth = ImGui::GetContentRegionAvail().x;
+                
+                // Number of cascades per row (2 for 4 cascades, 2 for 3 cascades, etc.)
+                int cascadesPerRow = 2;
+                int numCascades = textureIDs.size();
+                
+                // Adjust preview size based on available width
+                float padding = 10.0f;
+                float previewSize = std::min((availWidth - (cascadesPerRow - 1) * padding) / cascadesPerRow, 312.0f);
+                
+                // Display each cascade shadow map
+                for (int i = 0; i < numCascades; ++i) {
+                    // Start a new row if needed
+                    if (i > 0 && i % cascadesPerRow == 0) {
+                        ImGui::NewLine();
+                    } else if (i > 0) {
+                        ImGui::SameLine(i % cascadesPerRow * (previewSize + padding));
+                    }
+                    
+                    // Create a group for each cascade
+                    ImGui::BeginGroup();
+                    
+                    // Display the cascade number
+                    ImGui::Text("Cascade %d", i + 1);
+                    
+                    // Create preview dimensions (shadow maps are typically square)
+                    ImVec2 previewDimensions(previewSize, previewSize);
+                    
+                    // Display the depth texture
+                    uint32_t textureID = textureIDs[i];
+                    if (textureID > 0) {
+                        ImGui::Image(
+                            (ImTextureID)(uint64_t)textureID, 
+                            previewDimensions, 
+                            ImVec2(0, 0), ImVec2(1, 1), 
+                            ImVec4(1, 1, 1, 1), ImVec4(1, 1, 1, 0.5f)
+                        );
+                    } else {
+                        ImGui::Text("Invalid texture ID");
+                    }
+                    
+                    ImGui::EndGroup();
+                }
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "No cascade textures available");
+            }
+        }
+        catch (const std::exception& e) {
+            Rapture::GE_CORE_ERROR("Error displaying cascade shadow maps: {}", e.what());
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Error displaying cascade shadow maps");
+        }
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Cascaded shadow maps not initialized");
+        
         // Add a button to create the shadow map
-        if (ImGui::Button("Create Shadow Map")) {
+        if (ImGui::Button("Create Shadow Maps")) {
             try {
-                shadowComp.shadowMap = std::make_shared<Rapture::ShadowMap>(shadowComp.width, shadowComp.height);
-                shadowComp.isActive = true;
-                Rapture::GE_CORE_INFO("Created shadow map with resolution {}x{}", 
-                                      shadowComp.width, shadowComp.height);
+                csmComp.cascadedShadowMapping = std::make_shared<Rapture::CascadedShadowMapping>(
+                    csmComp.width, csmComp.height, csmComp.numCascades);
+                csmComp.isActive = true;
+                Rapture::GE_CORE_INFO("Created cascaded shadow maps with resolution {}x{} and {} cascades", 
+                                      csmComp.width, csmComp.height, csmComp.numCascades);
             }
             catch (const std::exception& e) {
-                Rapture::GE_CORE_ERROR("Failed to create shadow map: {}", e.what());
+                Rapture::GE_CORE_ERROR("Failed to create cascaded shadow maps: {}", e.what());
             }
         }
     }
-    
 }

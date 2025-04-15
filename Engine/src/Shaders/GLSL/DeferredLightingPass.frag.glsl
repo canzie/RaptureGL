@@ -9,6 +9,7 @@
 #define DEBUG_SPOTLIGHTS 0
 #define MAX_CASCADES 4
 #define MAX_SHADOW_CASTERS 4
+#define DEBUG_CASCADES 0 // Add macro for cascade debugging
 
 
 layout(location = 0) out vec4 FragColor;
@@ -155,15 +156,43 @@ float calculateSpotEffect(vec3 lightToFrag, vec3 spotDirection, float cosInnerAn
 }
 
 
-// Modified to use bindless texture handle from SSBO
-float calculateShadow(vec3 fragPosWorld, vec3 normal, vec3 lightDir, ShadowBufferData shadowInfo) {
+// Modified to use bindless texture handle from SSBO and output cascade index
+float calculateShadow(vec3 fragPosWorld, vec3 normal, vec3 lightDir, ShadowBufferData shadowInfo, out int cascadeIndexOut) {
+    cascadeIndexOut = -1; // Default value indicating no cascade applicable or calculated yet
+
     if (shadowInfo.type <= 0) return 1.0; // No shadow for this light or unsupported type
     
-    // Use the bindless texture handle directly
-    sampler2DShadow shadowMapSampler = sampler2DShadow(shadowInfo.textureIDs[0]);
+    // Calculate fragment position in view space for cascade selection
+    vec3 fragViewPos = vec3(0.0);
+    int cascadeIndex = 0;
+    mat4 lightMatrix;
     
-    // Use the light matrix from the shadow info
-    mat4 lightMatrix = shadowInfo.cascadeMatrices[0];
+    // Check if we're using cascaded shadow mapping
+    if (shadowInfo.cascadeCount > 1) {
+        // Calculate view-space position (using view matrix - needs camera view matrix)
+        // Simplified: Assuming camera position is origin in view space
+        vec3 viewDir = normalize(u_CameraPosition - fragPosWorld); // Direction from fragment to camera
+        float fragDepthView = dot(fragPosWorld - u_CameraPosition, -viewDir); // Project onto negative view direction (distance along view Z)
+
+        // Select cascade based on depth
+        // Start from farthest cascade split and go inwards
+        cascadeIndex = int(shadowInfo.cascadeCount - 1); // Assume farthest initially
+        for (uint i = 0; i < shadowInfo.cascadeCount - 1; ++i) {
+             // cascadeSplitsViewSpace stores negative Z values (distance from camera)
+            if (fragDepthView < shadowInfo.cascadeSplitsViewSpace[i].x) {
+                cascadeIndex = int(i);
+                break;
+            }
+        }
+        
+        // Use the selected cascade's matrix
+        lightMatrix = shadowInfo.cascadeMatrices[cascadeIndex];
+        cascadeIndexOut = cascadeIndex; // Output the calculated cascade index
+    } else {
+        // For backward compatibility - use the first cascade
+        lightMatrix = shadowInfo.cascadeMatrices[0];
+        cascadeIndexOut = 0; // Still assign 0 for single "cascade" case if needed for debug
+    }
     
     // Transform fragment position from world space to light clip space
     vec4 fragPosLightSpace = lightMatrix * vec4(fragPosWorld, 1.0);
@@ -181,21 +210,71 @@ float calculateShadow(vec3 fragPosWorld, vec3 normal, vec3 lightDir, ShadowBuffe
         return 1.0; // Outside frustum = Not shadowed (fully lit)
     }
     
-    // PCF (Percentage-Closer Filtering) using sampler2DShadow
+    // Create the appropriate sampler based on cascade count
     float shadowFactor = 0.0;
-    //vec2 texelSize = 1.0 / textureSize(u_shadowMap, 0); // textureSize works on sampler2DShadow
-    vec2 texelSize = 1.0 / textureSize(shadowMapSampler, 0);
+    vec2 texelSize;
+    float bias;
 
-    // Apply bias to avoid shadow acne - adjust based on surface angle
-    float cosTheta = clamp(dot(normal, lightDir), 0.0, 1.0);
-    float bias = max(0.05 * (1.0 - cosTheta), 0.005);
-    
-    // Use smaller sampling kernel for PCF
-    for(int x = -1; x <= 1; ++x) {
-        for(int y = -1; y <= 1; ++y) {
-            float comparisonDepth = projCoords.z - bias; 
-            shadowFactor += texture(shadowMapSampler, vec3(projCoords.xy + vec2(x, y) * texelSize, comparisonDepth));       
-  
+    if (shadowInfo.cascadeCount > 1) {
+        // Use texture array for cascaded shadow mapping
+        sampler2DArrayShadow shadowMapArray = sampler2DArrayShadow(shadowInfo.textureIDs[0]);
+        texelSize = 1.0 / vec2(textureSize(shadowMapArray, 0));
+        
+        // Apply bias to avoid shadow acne - adjust based on surface angle and cascade level
+        float cosTheta = clamp(dot(normal, lightDir), 0.0, 1.0);
+        // Progressively reduce bias for farther cascades to reduce light leaking
+        float cascadeBiasMultiplier = 1.0 / (1.0 + float(cascadeIndex) * 0.5);
+        
+        // Use an adaptive bias that scales with distance (for spotlights)
+        float distanceScale = 1.0;
+        if (shadowInfo.type == 2) { // Spotlight
+            // Increase bias with distance to handle perspective distortion
+            float viewDepth = abs(fragPosLightSpace.z);
+            distanceScale = mix(1.0, 3.0, clamp(viewDepth / 50.0, 0.0, 1.0));
+        }
+        
+        bias = max(0.005 * (1.0 - cosTheta) * distanceScale * cascadeBiasMultiplier, 0.0005);
+        
+        // Use a 3x3 kernel for PCF with the texture array
+        for(int x = -1; x <= 1; ++x) {
+            for(int y = -1; y <= 1; ++y) {
+                float comparisonDepth = projCoords.z - bias;
+                // Use vec4 for sampler2DArrayShadow: vec4(u, v, layer, comparisonValue)
+                shadowFactor += texture(shadowMapArray, vec4(
+                    projCoords.xy + vec2(x, y) * texelSize,
+                    float(cascadeIndex),  // Layer index
+                    comparisonDepth
+                ));
+            }
+        }
+    } else {
+        // Use regular 2D shadow map (backward compatibility)
+        sampler2DShadow shadowMapSampler = sampler2DShadow(shadowInfo.textureIDs[0]);
+        texelSize = 1.0 / textureSize(shadowMapSampler, 0);
+        cascadeIndexOut = 0; // Ensure cascade index is 0 for non-cascaded lights for debug
+
+        // Apply bias to avoid shadow acne - adjust based on surface angle
+        float cosTheta = clamp(dot(normal, lightDir), 0.0, 1.0);
+        
+        // Use an adaptive bias that scales with distance (for spotlights)
+        float distanceScale = 1.0;
+        if (shadowInfo.type == 2) { // Spotlight
+            // Increase bias with distance to handle perspective distortion
+            float viewDepth = abs(fragPosLightSpace.z);
+            distanceScale = mix(1.0, 3.0, clamp(viewDepth / 50.0, 0.0, 1.0));
+        }
+        
+        bias = max(0.005 * (1.0 - cosTheta) * distanceScale, 0.001);
+        
+        // Use a 3x3 kernel for PCF
+        for(int x = -1; x <= 1; ++x) {
+            for(int y = -1; y <= 1; ++y) {
+                float comparisonDepth = projCoords.z - bias; 
+                shadowFactor += texture(shadowMapSampler, vec3(
+                    projCoords.xy + vec2(x, y) * texelSize,
+                    comparisonDepth
+                ));
+            }
         }
     }
     
@@ -228,6 +307,7 @@ void main() {
     
     // Initialize total lighting contribution
     vec3 Lo = vec3(0.0);
+    int debugCascadeIndex = -1; // Store the cascade index for debugging
     
     // Process each light
     for (uint i = 0u; i < u_LightCount; i++) {
@@ -266,13 +346,19 @@ void main() {
 
         // Look for a shadow matching this light's index
         shadowFactor = 1.0; // Default: fully lit (no shadow)
+        int currentCascadeIndex = -1; // Cascade index for the current light's shadow
         for (uint j = 0u; j < shadowCount; j++) {
             ShadowBufferData shadowInfo = shadowData[j];
             
             // Check if this shadow data is for the current light
             if (shadowInfo.lightIndex == i && shadowInfo.type > 0) {
                 // Calculate shadow using the shadow info for this light
-                shadowFactor = calculateShadow(FragPos, N, lightDirWorld, shadowInfo);
+                shadowFactor = calculateShadow(FragPos, N, lightDirWorld, shadowInfo, currentCascadeIndex);
+
+                // Store the cascade index from the first shadow-casting light for debug purposes
+                if (debugCascadeIndex == -1 && shadowFactor < 1.0) {
+                     debugCascadeIndex = currentCascadeIndex;
+                }
                 break; // Found the shadow info for this light, so break out of the loop
             }
         }
@@ -328,6 +414,19 @@ void main() {
     // Add ambient lighting (modulated by AO)
     vec3 ambient = vec3(0.03) * Albedo.rgb * AO;
     vec3 finalColor = ambient + Lo;
+
+#if DEBUG_CASCADES
+    // Apply cascade visualization tint if enabled and a cascade was determined
+    if (debugCascadeIndex >= 0) {
+        vec3 cascadeColorTint = vec3(1.0); // Default: no tint
+        if (debugCascadeIndex == 0) cascadeColorTint = vec3(1.0, 0.5, 0.5); // Red tint
+        else if (debugCascadeIndex == 1) cascadeColorTint = vec3(0.5, 1.0, 0.5); // Green tint
+        else if (debugCascadeIndex == 2) cascadeColorTint = vec3(0.5, 0.5, 1.0); // Blue tint
+        else if (debugCascadeIndex == 3) cascadeColorTint = vec3(1.0, 1.0, 0.5); // Yellow tint
+        // Apply tint multiplicatively
+        finalColor *= cascadeColorTint;
+    }
+#endif
     
     // Tone mapping (Reinhard operator)
     finalColor = finalColor / (finalColor + vec3(1.0));

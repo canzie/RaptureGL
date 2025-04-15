@@ -607,28 +607,38 @@ namespace Rapture {
         // Cache shadow map size
         uint32_t width = 2048;
         uint32_t height = 2048;
+        
+        // Shadow map size for directional lights (controls the orthographic projection size)
+        float shadowMapSize = 100.0f;
+
+        std::shared_ptr<Frustum> frustum = nullptr;
 
         ShadowComponent(uint32_t width=2048, uint32_t height=2048) 
             : width(width), height(height) {
                 isActive = true;
                 shadowMap = std::make_shared<ShadowMap>(width, height);
+                frustum = std::make_shared<Frustum>();
+        }
+
+        void updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
+            frustum->update(projectionMatrix, viewMatrix);
         }
     };
 
     struct CascadedShadowComponent
     {
         bool isActive = false;
-        uint8_t numCascades = 3;
+        uint8_t numCascades = 4;
         std::shared_ptr<CascadedShadowMapping> cascadedShadowMapping = nullptr;  // Using ShadowMap for now, will be replaced with CSM later
         
         // Cache shadow map size
-        uint32_t width = 2048;
-        uint32_t height = 2048;
-        bool isDirty = true;  // Flag to indicate if shadow map needs to be recreated
+        uint32_t width = 1024;
+        uint32_t height = 1024;
 
-        CascadedShadowComponent(uint32_t width=2048, uint32_t height=2048, uint8_t numCascades=3) 
+        CascadedShadowComponent(uint32_t width=1024, uint32_t height=1024, uint8_t numCascades=4) 
             : width(width), height(height), numCascades(numCascades) {
                 cascadedShadowMapping = std::make_shared<CascadedShadowMapping>(width, height, numCascades);
+                isActive = true;
             }
 
     };

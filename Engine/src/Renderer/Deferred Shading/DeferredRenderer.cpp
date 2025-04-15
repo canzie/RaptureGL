@@ -40,6 +40,7 @@ namespace Rapture
     std::shared_ptr<ShadowMapBase> DeferredRenderer::s_currentShadowMap = nullptr;
 
     glm::vec3 DeferredRenderer::s_cameraPosition = glm::vec3(0.0f);
+    glm::mat4 DeferredRenderer::s_cameraViewMatrixCache = glm::mat4(1.0f);
 
     void DeferredRenderer::init()
     {
@@ -179,7 +180,8 @@ namespace Rapture
             const glm::mat4& projMat = controller_comp.camera.getProjectionMatrix();
             const glm::mat4& viewMat = controller_comp.camera.getViewMatrix();
 
-            
+            s_cameraViewMatrixCache = projMat*viewMat;
+
             controller_comp.frustum.update(projMat, viewMat);
             
 
@@ -209,7 +211,7 @@ namespace Rapture
             shadowQueue = CommandQueueBuilder::buildGeometryCommandQueueAsync(s, RenderQueueType::SHADOWMAP);
             renderQueueAsync(shadowQueue);
 
-            s_shadowMapDirty = false;
+            //s_shadowMapDirty = false;
 
         }
 
@@ -256,9 +258,9 @@ namespace Rapture
             }
             
             Entity lightEntity(entityID, scene.get());
-            LightComponent& light = lightEntity.getComponent<LightComponent>();
-            TransformComponent& transform = lightEntity.getComponent<TransformComponent>();
-            ShadowComponent& shadowComp = lightEntity.getComponent<ShadowComponent>();
+            LightComponent& light = shadowLightView.get<LightComponent>(entityID);
+            TransformComponent& transform = shadowLightView.get<TransformComponent>(entityID);
+            ShadowComponent& shadowComp = shadowLightView.get<ShadowComponent>(entityID);
             
             // Skip inactive lights or shadows
             if (!light.isActive || !light.castsShadow || !shadowComp.isActive) {
@@ -291,41 +293,70 @@ namespace Rapture
                 // Point light - use default direction
                 lightDir = glm::vec3(0.0f, -1.0f, 0.0f); // Down direction
             }
+        
+        // Calculate light view matrix
+        glm::vec3 lightUp = glm::vec3(0.0f, 1.0f, 0.0f);
+        if (abs(glm::dot(lightDir, lightUp)) > 0.99f) {
+            // If light is pointing directly up or down, use a different up vector
+            lightUp = glm::vec3(0.0f, 0.0f, 1.0f);
+        }
+        
+        // Create the light's view matrix
+        glm::mat4 viewMatrix = glm::lookAt(
+            lightPos,               // Light position
+            lightPos + lightDir,    // Look at center (Point along the light direction)
+            lightUp                 // Up vector
+        );
+        
+            // Calculate projection matrix based on light type
+        glm::mat4 lightProj(1.0f);
+        
+        if (light.type == LightType::Directional) {
+            // Get scene bounds or focus on camera frustum
+            glm::vec3 sceneCenter = s_cameraPosition; // Use camera position as center point
+            float sceneBounds = 50.0f; // Start with a reasonable size based on your scene scale
             
-            // Calculate light view matrix
-            glm::vec3 lightUp = glm::vec3(0.0f, 1.0f, 0.0f);
-            if (abs(glm::dot(lightDir, lightUp)) > 0.99f) {
-                // If light is pointing directly up or down, use a different up vector
-                lightUp = glm::vec3(0.0f, 0.0f, 1.0f);
-            }
+            // Position the light based on scene center and direction
+            glm::vec3 shadowCamPos = sceneCenter - lightDir * (sceneBounds * 0.5f);
             
-            // Create the light's view matrix
-            const glm::mat4 viewMatrix = glm::lookAt(
-                lightPos,               // Light position
-                lightPos + lightDir,    // Look at center (Point along the light direction)
-                lightUp                 // Up vector
+            // Create view matrix centered on the scene, not on the light entity
+            viewMatrix = glm::lookAt(
+                shadowCamPos,          // Position light relative to scene center
+                sceneCenter,           // Look at scene center
+                lightUp                // Up vector
             );
             
-            // Calculate projection matrix based on light type
-            glm::mat4 lightProj(1.0f);
+            // Use appropriate size for your scene
+            float orthoSize = sceneBounds;
+            // Use near/far planes that encompass your entire scene
+            lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1f, sceneBounds * 2.0f);
+        } else {
+            // Perspective projection for spot/point light
+            float aspect = 1.0f; // Shadow map is square
             
-            if (light.type == LightType::Directional) {
-                // Orthographic projection for directional light
-                float orthoSize = 100.0f;
-                lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1f, 1000.0f);
+            if (light.type == LightType::Spot) {
+                // For spotlights, use more aggressive near plane scaling
+                float nearPlane = glm::max(0.1f, light.range * 0.001f); // Much closer near plane
+                float farPlane = light.range * 1.2f; // Extend beyond light range for better coverage
+                
+                // Use slightly wider angle for shadows to avoid edge artifacts
+                float shadowConeAngle = light.outerConeAngle * 1.1f; // 10% wider angle for shadows
+                float fovRadians = glm::max(shadowConeAngle * 2.0f, glm::radians(5.0f));
+                
+                lightProj = glm::perspective(fovRadians, aspect, nearPlane, farPlane);
             } else {
-                // Perspective projection for spot/point light
-                float aspect = 1.0f; // Shadow map is square
+                // Point light settings (default)
                 float nearPlane = 0.1f;
-                float fovRadians = (light.type == LightType::Spot) ? 
-                    glm::max(light.outerConeAngle * 2.0f, glm::radians(1.0f)) : 
-                    glm::radians(90.0f);
-                lightProj = glm::perspective(fovRadians, aspect, nearPlane, light.range);
+                lightProj = glm::perspective(glm::radians(90.0f), aspect, nearPlane, light.range);
             }
-            
+        }
+
             // Combine for final light space matrix and set it in the shadow map
             glm::mat4 lightViewProj = lightProj * viewMatrix;
-            shadowMap->setWVPMatrices(lightViewProj);
+            shadowMap->setWVPMatrix(lightViewProj);
+
+            // Update the frustum
+            shadowComp.updateFrustum(viewMatrix, lightProj);
             
             // Store shadow data for the shader
             ShadowBufferData& shadowData = shadowLayout.shadowData[shadowCount];
@@ -334,6 +365,7 @@ namespace Rapture
             shadowData.textureIDs[0] = shadowMap->getShadowMapHandle();
             shadowData.cascadeMatrices[0] = lightViewProj;
             shadowData.cascadeSplitsViewSpace[0] = glm::vec4(0.0f);
+
             
             // Store the light index this shadow map belongs to
             if (lightIndexMap.find(entityID) != lightIndexMap.end()) {
@@ -346,8 +378,119 @@ namespace Rapture
             shadowCount++;
         }
         
-        shadowLayout.shadowCount = shadowCount;
+        // Third pass: Process entities with CascadedShadowComponent
+        auto csmLightView = reg.view<LightComponent, TransformComponent, CascadedShadowComponent>();
         
+        // Get the main camera data for CSM calculations
+        auto mainCamera = scene->getMainCamera();
+        if (!mainCamera) {
+            GE_RENDER_WARN("No main camera found for CSM calculations");
+        }
+        else {
+            CameraControllerComponent& cameraComp = mainCamera->getComponent<CameraControllerComponent>();
+            const glm::mat4& cameraViewMatrix = cameraComp.camera.getViewMatrix();
+            const glm::mat4& cameraProjMatrix = cameraComp.camera.getProjectionMatrix();
+            float cameraNearPlane = cameraComp.near_plane;
+            float cameraFarPlane = cameraComp.far_plane;
+            
+            for (auto entityID : csmLightView) {
+                if (shadowCount >= MAX_SHADOW_CASTERS) {
+                    GE_RENDER_WARN("Maximum shadow maps ({0}) exceeded", MAX_SHADOW_CASTERS);
+                    break;
+                }
+                
+                Entity lightEntity(entityID, scene.get());
+                LightComponent& light = csmLightView.get<LightComponent>(entityID);
+                TransformComponent& transform = csmLightView.get<TransformComponent>(entityID);
+                CascadedShadowComponent& csmComp = csmLightView.get<CascadedShadowComponent>(entityID);
+                
+                // Skip inactive lights or shadows
+                if (!light.isActive || !light.castsShadow || !csmComp.isActive) {
+                    continue;
+                }
+                
+                // CSM only supports directional lights
+                if (light.type != LightType::Directional) {
+                    GE_RENDER_WARN("Cascaded shadow mapping only supports directional lights");
+                    continue;
+                }
+                
+                // Get the CSM from the component
+                std::shared_ptr<CascadedShadowMapping> csmMap = csmComp.cascadedShadowMapping;
+                if (!csmMap) {
+                    GE_RENDER_ERROR("Failed to get cascaded shadow map for entity {0}", lightEntity.getID());
+                    continue;
+                }
+                
+                // Calculate light direction
+                glm::quat rotationQuat = transform.transforms.getRotationQuat();
+                glm::vec3 lightDir = glm::normalize(rotationQuat * glm::vec3(0, 0, -1)); // Forward vector
+                
+                // Use the CSM's calculateCascades method to compute all cascade matrices
+                auto cascadeData = csmMap->calculateCascades(
+                    lightDir,
+                    cameraViewMatrix,
+                    cameraProjMatrix,
+                    cameraNearPlane,
+                    cameraFarPlane,
+                    ProjectionType::Perspective // Assuming perspective camera
+                );
+                
+                // Store CSM data for the shader
+                ShadowBufferData& shadowData = shadowLayout.shadowData[shadowCount];
+                shadowData.type = static_cast<int>(light.type);
+                shadowData.cascadeCount = 4;
+                
+                // Check if the shadow map uses a texture array
+                if (csmMap->getShadowMap()->hasDepthTextureArray()) {
+                    // For texture arrays, we only need to store the handle once
+                    // All cascades are part of the same texture array
+                    uint64_t depthArrayHandle = csmMap->getShadowMap()->getDepthTextureArrayHandle();
+                    
+                    if (depthArrayHandle == 0) {
+                        GE_RENDER_ERROR("CSM depth texture array handle is invalid");
+                    } else {
+                        // Store the same texture handle for all cascades
+                        // The shader will use gl_Layer or array index to access the right slice
+                        shadowData.textureIDs[0] = depthArrayHandle;
+                        
+                        // Mark this as a texture array by setting a special flag in the last component
+                        // -1.0 in w component of first cascade split indicates texture array
+                        shadowData.cascadeSplitsViewSpace[0].w = -1.0f;
+                        
+                    }
+                } else {
+                    // Legacy mode: Get individual texture handles for each cascade
+                    auto cascadeTextureHandles = csmMap->getCascadeTextureHandles();
+                    
+                    // Store separate texture handles for each cascade
+                    for (uint32_t i = 0; i < shadowData.cascadeCount && i < MAX_CASCADES; i++) {
+                        shadowData.textureIDs[i] = cascadeTextureHandles[i];
+                    }
+                }
+
+                // Store each cascade's data
+                for (uint32_t i = 0; i < shadowData.cascadeCount && i < MAX_CASCADES; i++) {
+                    // Set the view-projection matrix for this cascade
+                    shadowData.cascadeMatrices[i] = cascadeData[i].lightViewProj;
+                    
+                    // Store cascade split depth in view space (xyz components)
+                    shadowData.cascadeSplitsViewSpace[i].x = cascadeData[i].farPlane;
+                }
+                
+                // Store the light index this shadow map belongs to
+                if (lightIndexMap.find(entityID) != lightIndexMap.end()) {
+                    shadowData.lightIndex = lightIndexMap[entityID];
+                } else {
+                    GE_RENDER_WARN("Light entity not found in index map");
+                    shadowData.lightIndex = 0; // Default to first light if not found
+                }
+                
+                shadowCount++;
+            }
+        }
+        
+        shadowLayout.shadowCount = shadowCount;
         
         // Update the shadow storage buffer
         s_shadowSSBO->setData(&shadowLayout, sizeof(ShadowStorageLayout));
@@ -419,6 +562,7 @@ namespace Rapture
             {
                 RAPTURE_PROFILE_SCOPE("Draw Call");
                 RAPTURE_PROFILE_GPU_SCOPE("Draw Call");
+                
                 // Draw shadow map
                 OpenGLRendererAPI::drawIndexed(meshData.indexCount, meshData.indexType, 
                     meshData.indexAllocation->offsetBytes, meshData.vertexOffsetInVertices);
@@ -551,21 +695,37 @@ namespace Rapture
 
             if (cmd.commandType == CommandExectionPhase::BEGIN_PASS) {
                 shadowMap->bind();
-                //shadowMap->getShader()->bind();
                 s_currentShadowMap = shadowMap; // Set the current shadow map for use in the geometry pass
                 s_isShadowPass = true;  
             }
             else if (cmd.commandType == CommandExectionPhase::END_PASS) {
                 shadowMap->unbind();
-                //shadowMap->getShader()->unBind();
                 s_currentShadowMap = nullptr; // Clear the current shadow map reference
                 s_isShadowPass = false;
             }
-
         }
         else if (std::holds_alternative<std::shared_ptr<CascadedShadowMapping>>(shadowMapVariant)) {
             auto shadowMap = std::get<std::shared_ptr<CascadedShadowMapping>>(shadowMapVariant);
-            GE_CORE_ERROR("Cascaded Shadow Mapping not implemented yet");
+            
+            if (!shadowMap) {
+                GE_CORE_ERROR("ShadowPassRender: CascadedShadowMapping pointer is null");
+                return;
+            }
+
+
+            if (cmd.commandType == CommandExectionPhase::BEGIN_PASS) {
+                shadowMap->bind();
+                s_currentShadowMap = shadowMap; // Set the current shadow map for use in the geometry pass
+                s_isShadowPass = true;  
+            }
+            else if (cmd.commandType == CommandExectionPhase::END_PASS) {
+                shadowMap->unbind();
+                s_currentShadowMap = nullptr; // Clear the current shadow map reference
+                s_isShadowPass = false;
+            }        
+        }
+        else {
+            GE_CORE_ERROR("ShadowPassRender: Unhandled shadow map variant type");
         }
     }
     void DeferredRenderer::setupFullscreenQuad()
@@ -613,9 +773,12 @@ namespace Rapture
         modelMatrix = glm::rotate(modelMatrix, glm::radians(s_fullscreenQuad->getRotation().z), glm::vec3(0.0f, 0.0f, 1.0f));
             
         modelMatrix = glm::scale(modelMatrix, s_fullscreenQuad->getScale());
+
+    
             
 
         s_lightingPassShader.lock()->setMat4("u_model", modelMatrix);
+        s_lightingPassShader.lock()->setMat4("u_cameraViewMatrix", s_cameraViewMatrixCache);
 
         {
             RAPTURE_PROFILE_SCOPE("Draw Fullscreen Quad");
@@ -686,8 +849,11 @@ namespace Rapture
 									  glm::rotate(glm::mat4(1.0f), euler.y, glm::vec3(0, 1, 0)) *
 									  glm::rotate(glm::mat4(1.0f), euler.x, glm::vec3(1, 0, 0));
 					
-					glm::vec3 direction = glm::normalize(glm::vec3(rotMat * glm::vec4(0, 0, -1, 0))); // Forward vector
-					lightData.direction = glm::vec4(direction, light.range);
+
+                    glm::quat rotationQuat = transform.transforms.getRotationQuat();
+                    glm::vec3 lightDir = glm::normalize(rotationQuat * glm::vec3(0, 0, -1)); // Forward vector
+
+					lightData.direction = glm::vec4(lightDir, light.range);
                 } else {
                     lightData.direction = glm::vec4(0.0f, 0.0f, 0.0f, light.range); 
                 }

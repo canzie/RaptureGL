@@ -47,7 +47,8 @@ namespace Rapture
 		FramebufferTextureFormat textureFormat = FramebufferTextureFormat::None;
         bool isBindless = false;
         bool isShadowMap = false;
-		// TODO: Add filtering/wrap options if needed
+        bool isTextureArray = false;
+        uint32_t arrayLayers = 1;
 	};
 
 
@@ -104,6 +105,11 @@ namespace Rapture
 		uint64_t getColorAttachmentTextureHandle(uint32_t index = 0) const;
 		uint64_t getDepthAttachmentTextureHandle() const;
 		
+		// Texture array support
+		bool hasDepthTextureArray() const { return m_depthTextureArray != 0; }
+		uint32_t getDepthTextureArrayID() const { return m_depthTextureArray; }
+		uint64_t getDepthTextureArrayHandle() const { return m_depthTextureArrayHandle; }
+		
 		bool makeAllTexturesResident();
 		void makeAllTexturesNonResident();
 
@@ -115,5 +121,9 @@ namespace Rapture
         std::map<uint32_t, uint64_t> m_colorAttachmentsHandlesMap;
 		uint32_t m_depthAttachment = 0;
         uint64_t m_depthAttachmentHandle = 0;
+        
+        // Texture array support
+        uint32_t m_depthTextureArray = 0;
+        uint64_t m_depthTextureArrayHandle = 0;
 	};
 }

@@ -27,6 +27,9 @@ public:
     void render(std::shared_ptr<Rapture::Entity> entity);
     void render();
 
+    // Helper function to display a help marker with tooltip
+    static void HelpMarker(const char* desc);
+
 private:
     // Transform component UI state
     bool positionLocked;
@@ -57,5 +60,8 @@ private:
     
     // Helper method to render shadow component
     void renderShadowComponent(std::shared_ptr<Rapture::Entity> entity);
+    
+    // Helper method to render cascaded shadow component
+    void renderCascadedShadowComponent(std::shared_ptr<Rapture::Entity> entity);
 };
 

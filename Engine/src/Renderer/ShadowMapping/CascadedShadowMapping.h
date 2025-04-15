@@ -4,6 +4,7 @@
 #include "../../Shaders/Shader.h"
 #include <glm/glm.hpp>
 #include <vector>
+#include "ShadowMappingBase.h"
 
 namespace Rapture {
 
@@ -20,14 +21,16 @@ namespace Rapture {
         glm::mat4 lightViewProj;
     };
 
-    class CascadedShadowMapping {
+    class CascadedShadowMapping : public ShadowMapBase {
 
     public:
         CascadedShadowMapping(uint32_t width, uint32_t height, uint8_t numCascades);
         ~CascadedShadowMapping();
 
-        void bind();
-        void unbind();
+        virtual void bind() override;
+        virtual void unbind() override;
+
+        virtual void setShaderUniforms(const glm::mat4& mesh_transform) override;
         
         // Returns the calculated split depths for each cascade using a hybrid approach
         std::vector<float> calculateCascadeSplits(float nearPlane, float farPlane, float lambda = 0.5f);
@@ -44,6 +47,10 @@ namespace Rapture {
         // Accessor methods
         inline uint8_t getNumCascades() const { return m_NumCascades; }
         inline std::shared_ptr<Framebuffer> getShadowMap() const { return m_ShadowMap; }
+
+        std::vector<uint64_t> getCascadeTextureHandles() const;
+        std::vector<uint32_t> getCascadeTextureIDs() const;
+        std::vector<glm::mat4> getViewProjectionMatrices() { return m_ViewProjectionMatrices; }
         
     private:
         // Extracts view frustum corners for a specific cascade depth slice
@@ -58,8 +65,7 @@ namespace Rapture {
         uint32_t m_Width;
         uint32_t m_Height;
         uint8_t m_NumCascades;
-        std::shared_ptr<Framebuffer> m_ShadowMap; // Single framebuffer with multiple attachments
-        std::shared_ptr<Shader> m_Shader;
+        std::vector<glm::mat4> m_ViewProjectionMatrices;
     };
 
 }

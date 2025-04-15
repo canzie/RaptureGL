@@ -79,5 +79,7 @@ namespace Rapture
         static std::shared_ptr<ShadowMapBase> s_currentShadowMap;
 
         static std::shared_ptr<ShaderStorageBuffer> s_shadowSSBO;
+
+        static glm::mat4 s_cameraViewMatrixCache;
     };
 }

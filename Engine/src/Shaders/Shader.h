@@ -15,9 +15,7 @@ namespace Rapture {
         VERTEX,
         FRAGMENT,
         GEOMETRY,
-        COMPUTE,
-        TESS_CONTROL,
-        TESS_EVAL
+        COMPUTE
     };
 
     enum class ShaderStatus {
@@ -116,6 +114,9 @@ namespace Rapture {
 
         static std::shared_ptr<Shader> create(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath);
         static Shader* createRaw(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath);
+
+        static std::shared_ptr<Shader> create(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, const std::filesystem::path& geometryPath);
+        static Shader* createRaw(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, const std::filesystem::path& geometryPath);
 
 	protected:
         std::string m_name;

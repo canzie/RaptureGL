@@ -437,7 +437,8 @@ namespace Rapture {
                 // add regular shadow maps
                 auto& shadowComp = shadowView.get<ShadowComponent>(entityHandle);
                 if (shadowComp.isActive) {
-                    //config.frustum = shadowComp.shadowMap->getFrustum();
+                    // light frustum is bugged for now
+                    config.frustum = shadowComp.frustum;
                     shadowMap = shadowComp.shadowMap;
                     
                 }

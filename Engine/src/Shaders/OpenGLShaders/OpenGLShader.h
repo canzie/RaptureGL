@@ -11,7 +11,8 @@ namespace Rapture {
 	class OpenGLShader : public Shader{
 
 	public:
-		OpenGLShader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath);
+		OpenGLShader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, const std::filesystem::path& geometryPath="");
+
 		virtual ~OpenGLShader() override;
 
 		virtual void bind() override;
