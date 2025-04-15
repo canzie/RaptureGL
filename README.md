@@ -32,7 +32,7 @@ Created for learning 3D graphics and game engine architecures from scratch.
 
 ### Cascaded Shadow Mapping (CSM)
 
-I recently finished(mostly) my implementation of CSM, it uses scene independant matrix transformations for the cascade ligthview matrices.
+I recently finished(mostly) my implementation of CSM, it uses scene independent matrix transformations for the cascade ligthview matrices.
 Uses a hybrid approach for spliting the frustum range with a lambda to bias either the logarithmic or linear splits
 
 ![CSM with visible cascades](screenshots/CSM_Example.PNG)
