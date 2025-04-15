@@ -167,19 +167,19 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     light1.addComponent<Rapture::SpriteComponent>();
     
     // Light 2: A blue-tinted light to the left side
-    Rapture::Entity light2 = activeScene->createEntity("Light 2");
-    light2.addComponent<Rapture::TransformComponent>(
+    Rapture::Entity sunLight = activeScene->createEntity("Sun");
+    sunLight.addComponent<Rapture::TransformComponent>(
         glm::vec3(-2.0f, 0.5f, -3.0f), // Position to the left of the sphere, same Z coordinate
-        glm::vec3(0.0f),               // No rotation needed for point light
+        glm::vec3(-1.504f, 0.0f, 0.0f),               // No rotation needed for point light
         glm::vec3(0.2f)                // Small scale to make the cube compact
     );
-    light2.addComponent<Rapture::CascadedShadowComponent>(2048, 2048, 4 );
-    light2.addComponent<Rapture::LightComponent>(
+    sunLight.addComponent<Rapture::CascadedShadowComponent>(2048, 2048, 4 );
+    sunLight.addComponent<Rapture::LightComponent>(
         glm::vec3(1.0f, 1.0f, 1.0f),  // Pure white color
         1.2f                         // High intensity
     );
-    light2.getComponent<Rapture::LightComponent>().castsShadow = true;
-    light2.addComponent<Rapture::SpriteComponent>();
+    sunLight.getComponent<Rapture::LightComponent>().castsShadow = true;
+    sunLight.addComponent<Rapture::SpriteComponent>();
 
 	// Create camera controller
 	Rapture::Entity camera_controller = activeScene->createEntity("Camera Controller");

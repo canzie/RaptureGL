@@ -639,7 +639,9 @@ namespace Rapture {
         bool isActive = false;
         uint8_t numCascades = 4;
         std::shared_ptr<CascadedShadowMapping> cascadedShadowMapping = nullptr;  // Using ShadowMap for now, will be replaced with CSM later
-        
+
+        std::shared_ptr<Frustum> frustum = nullptr;
+
         // Cache shadow map size
         uint32_t width = 1024;
         uint32_t height = 1024;
@@ -647,8 +649,15 @@ namespace Rapture {
         CascadedShadowComponent(uint32_t width=1024, uint32_t height=1024, uint8_t numCascades=4) 
             : width(width), height(height), numCascades(numCascades) {
                 cascadedShadowMapping = std::make_shared<CascadedShadowMapping>(width, height, numCascades);
+                frustum = std::make_shared<Frustum>();
                 isActive = true;
             }
+
+        void updateFrustum() {
+            if (cascadedShadowMapping) {
+                frustum->update(cascadedShadowMapping->getOverallProjectionMatrix(), cascadedShadowMapping->getOverallViewMatrix());
+            }
+        }
 
     };
 

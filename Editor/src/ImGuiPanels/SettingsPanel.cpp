@@ -257,11 +257,11 @@ void SettingsPanel::renderSceneSettings()
             cameraController.updateProjectionMatrix(fovy, cameraController.aspect_ratio, near_plane, far_plane);
         }
         if (ImGui::DragFloat("Near Plane", &near_plane, 0.5f, 0.1f, 10.0f)) {
-            near_plane = std::min(near_plane, far_plane);
+            near_plane = (std::min)(near_plane, far_plane);
             cameraController.updateProjectionMatrix(fovy, cameraController.aspect_ratio, near_plane, far_plane);
         }
         if (ImGui::DragFloat("Far Plane", &far_plane, 1.0f, 10.0f, 1000.0f)) {
-            far_plane = std::max(far_plane, near_plane + 10.0f);
+            far_plane = (std::max)(far_plane, near_plane + 10.0f);
             cameraController.updateProjectionMatrix(fovy, cameraController.aspect_ratio, near_plane, far_plane);
         }
 

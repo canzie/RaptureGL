@@ -10,7 +10,9 @@
 namespace Rapture {
 
     CascadedShadowMapping::CascadedShadowMapping(uint32_t width, uint32_t height, uint8_t numCascades, float lambda)
-        : m_Width(width), m_Height(height), m_NumCascades(numCascades), m_Lambda(lambda)
+        : m_Width(width), m_Height(height), 
+        m_NumCascades(numCascades), m_Lambda(lambda), 
+        m_overallViewMatrix(glm::mat4(1.0f)), m_overallProjectionMatrix(glm::mat4(1.0f))
     {
        GE_CORE_INFO("CascadedShadowMapping: Creating with {0} cascades at {1}x{2} resolution", 
             m_NumCascades, m_Width, m_Height);

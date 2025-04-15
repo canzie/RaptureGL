@@ -55,6 +55,9 @@ namespace Rapture {
         float getLambda() const { return m_Lambda; }
         void setLambda(float lambda) { m_Lambda = std::clamp(lambda, 0.0f, 1.0f); }
 
+        glm::mat4 getOverallViewMatrix() const { return m_overallViewMatrix; }
+        glm::mat4 getOverallProjectionMatrix() const { return m_overallProjectionMatrix; }
+
     private:
         // Extracts view frustum corners for a specific cascade depth slice
         // All parameters relate to the camera, not the light
@@ -70,6 +73,10 @@ namespace Rapture {
         uint8_t m_NumCascades;
         float m_Lambda;
         std::vector<glm::mat4> m_ViewProjectionMatrices;
+
+        // can be used for creating a frustum to do frustum culling
+        glm::mat4 m_overallViewMatrix = glm::mat4(1.0f);
+        glm::mat4 m_overallProjectionMatrix = glm::mat4(1.0f);
     };
 
 }

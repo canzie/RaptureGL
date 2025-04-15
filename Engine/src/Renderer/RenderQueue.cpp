@@ -432,6 +432,7 @@ namespace Rapture {
                 auto& csmComp = csmView.get<CascadedShadowComponent>(entityHandle);
                 if (csmComp.isActive) {
                     shadowMap = csmComp.cascadedShadowMapping;
+                    //config.frustum = csmComp.frustum;
                 }
             } else if (lightComp.castsShadow && shadowView.contains(entityHandle)) {
                 // add regular shadow maps

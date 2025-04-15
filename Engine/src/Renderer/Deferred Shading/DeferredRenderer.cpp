@@ -435,6 +435,9 @@ namespace Rapture
                     cameraFarPlane,
                     ProjectionType::Perspective // Assuming perspective camera
                 );
+
+                //csmComp.updateFrustum();
+
                 
                 // Store CSM data for the shader
                 ShadowBufferData& shadowData = shadowLayout.shadowData[shadowCount];

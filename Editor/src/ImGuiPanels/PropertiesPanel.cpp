@@ -429,7 +429,7 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
                         
                         // Determine which component changed the most
                         float ratio = 1.0f;
-                        if (abs(ratioX - 1.0f) > abs(ratioY - 1.0f) && abs(ratioX - 1.0f) > abs(ratioZ - 1.0f))
+                        if (std::abs(ratioX - 1.0f) > std::abs(ratioY - 1.0f) && std::abs(ratioX - 1.0f) > std::abs(ratioZ - 1.0f))
                             ratio = ratioX;
                         else if (abs(ratioY - 1.0f) > abs(ratioZ - 1.0f))
                             ratio = ratioY;
@@ -1310,7 +1310,7 @@ void PropertiesPanel::renderShadowComponent(std::shared_ptr<Rapture::Entity> ent
             if (shadowMapID > 0) {
                 // Calculate preview size
                 float availWidth = ImGui::GetContentRegionAvail().x;
-                float previewSize = std::min(availWidth, 312.0f);
+                float previewSize = (std::min)(availWidth, 312.0f);
                 
                 // Shadow maps are typically square, but use 1:1 aspect ratio just in case
                 ImVec2 previewDimensions(previewSize, previewSize);
@@ -1398,7 +1398,7 @@ void PropertiesPanel::renderCascadedShadowComponent(std::shared_ptr<Rapture::Ent
                 
                 // Adjust preview size based on available width
                 float padding = 10.0f;
-                float previewSize = std::min((availWidth - (cascadesPerRow - 1) * padding) / cascadesPerRow, 312.0f);
+                float previewSize = (std::min)((availWidth - (cascadesPerRow - 1) * padding) / cascadesPerRow, 312.0f);
                 
                 // Display each cascade shadow map
                 for (int i = 0; i < numCascades; ++i) {

@@ -9,7 +9,7 @@
 #define DEBUG_SPOTLIGHTS 0
 #define MAX_CASCADES 4
 #define MAX_SHADOW_CASTERS 4
-#define DEBUG_CASCADES 1
+#define DEBUG_CASCADES 0
 
 // Define the relative width of the blend zone at the end of each cascade
 #define CASCADE_BLEND_WIDTH_PERCENT 0.15 // 10% blend width
