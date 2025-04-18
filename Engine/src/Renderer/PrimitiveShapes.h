@@ -22,6 +22,8 @@ namespace Rapture {
         bool isFilled = true; // Used by Cube
         bool useTexCoords = false;
         std::optional<std::string> texturePath = std::nullopt;
+        AssetHandle textureHandle = 0;
+        std::shared_ptr<Texture2D> texture = nullptr;
         bool createDefaultMaterial = true;
     };
 

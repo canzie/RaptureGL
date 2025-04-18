@@ -12,11 +12,14 @@ namespace Rapture {
 
 	public:
 		OpenGLShader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, const std::filesystem::path& geometryPath="");
+		OpenGLShader(const std::filesystem::path& computePath);
 
 		virtual ~OpenGLShader() override;
 
 		virtual void bind() override;
 		virtual void unBind() override;
+
+        virtual void dispatchCompute(uint32_t x, uint32_t y, uint32_t z) override;
 
 		virtual void setUniformMat4f(const std::string& name, glm::mat4& matrix) override;
 		virtual void setUniform1f(const std::string& name, float val) override;

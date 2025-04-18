@@ -589,6 +589,40 @@ namespace Rapture {
         
     };
 
+    struct ComputeTextureComponent
+    {
+        std::shared_ptr<Shader> shader = nullptr;
+        std::shared_ptr<Texture2D> texture = nullptr;
+
+        const unsigned int localSizeX = 32;
+        const unsigned int localSizeY = 32;
+        unsigned int numGroupsX = 0;
+        unsigned int numGroupsY = 0;
+
+        ComputeTextureComponent() = default;
+
+        ComputeTextureComponent(std::shared_ptr<Shader> shader, std::shared_ptr<Texture2D> texture)
+        {
+            this->shader = shader;
+            this->texture = texture;
+
+            numGroupsX = (texture->getWidth() + localSizeX - 1) / localSizeX;  // Ceiling division
+            numGroupsY = (texture->getHeight() + localSizeY - 1) / localSizeY; // Ceiling division
+        }
+
+        void compute() {
+            if (shader && texture) {
+
+                shader->bind();
+                texture->bindCompute(0);
+                // Dispatch the calculated number of work groups
+                shader->dispatchCompute(numGroupsX, numGroupsY, 1);
+                shader->unBind();
+            }
+        }
+        
+    };
+
     struct TagComponent
     {
         std::string tag;

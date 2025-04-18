@@ -7,6 +7,54 @@
 
 namespace Rapture {
 
+	static GLenum TextureFormatToGL(TextureFormat format)
+	{
+		switch (format)
+		{
+			case TextureFormat::RGBA8:       return GL_RGBA8;
+			case TextureFormat::RGB8:        return GL_RGB8;
+			case TextureFormat::RGB16F:      return GL_RGB16F;
+			case TextureFormat::RGB32F:      return GL_RGB32F;
+			case TextureFormat::RGBA16F:     return GL_RGBA16F;
+			case TextureFormat::RGBA32F:     return GL_RGBA32F;
+		}
+
+		GE_CORE_ERROR("Unknown framebuffer texture format!");
+		return 0;
+	}
+	
+	static GLenum TextureFormatToGLDataFormat(TextureFormat format)
+	{
+		switch (format)
+		{
+			case TextureFormat::RGBA8:       return GL_RGBA;
+			case TextureFormat::RGB8:        return GL_RGB;
+			case TextureFormat::RGB16F:      return GL_RGB;
+			case TextureFormat::RGB32F:      return GL_RGB;
+			case TextureFormat::RGBA16F:     return GL_RGBA;
+			case TextureFormat::RGBA32F:     return GL_RGBA;
+		}
+
+		GE_CORE_ERROR("Unknown framebuffer data format!");
+		return 0;
+	}
+	
+	static GLenum TextureFormatToGLDataType(TextureFormat format)
+	{
+		switch (format)
+		{
+			case TextureFormat::RGBA8:       return GL_UNSIGNED_BYTE;
+			case TextureFormat::RGB8:        return GL_UNSIGNED_BYTE;
+			case TextureFormat::RGB16F:      return GL_FLOAT;
+			case TextureFormat::RGB32F:      return GL_FLOAT;
+			case TextureFormat::RGBA16F:     return GL_FLOAT;
+			case TextureFormat::RGBA32F:     return GL_FLOAT;
+		}
+
+		GE_CORE_ERROR("Unknown framebuffer data type!");
+		return GL_UNSIGNED_BYTE;
+	}
+
 OpenGLTexture2D::OpenGLTexture2D(const std::string& path)
     : m_path(path)
 {
@@ -102,6 +150,44 @@ OpenGLTexture2D::OpenGLTexture2D(uint32_t width, uint32_t height, uint32_t chann
     if (GLCapabilities::hasBindlessTextures()) {
         generateTextureHandle();
     }
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    GE_CORE_INFO("Created blank texture ({0}x{1})", m_width, m_height);
+}
+
+OpenGLTexture2D::OpenGLTexture2D(TextureSpecification specification)
+{
+    RAPTURE_PROFILE_FUNCTION();
+
+    m_internalFormat = TextureFormatToGL(specification.format);
+    m_dataFormat = TextureFormatToGLDataFormat(specification.format);
+
+    if(specification.width == 0 || specification.height == 0)
+    {
+        GE_CORE_ERROR("OpenGLTexture2D: Width and height must be greater than 0");
+        return;
+    }
+
+    m_width = specification.width;
+    m_height = specification.height;
+
+    glGenTextures(1, &m_rendererID);
+    glBindTexture(GL_TEXTURE_2D, m_rendererID);
+    
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    
+    glTexImage2D(GL_TEXTURE_2D, 0, m_internalFormat, m_width, m_height, 0, m_dataFormat, TextureFormatToGLDataType(specification.format), nullptr);
+    
+    // Generate handle for bindless textures if supported
+    if (GLCapabilities::hasBindlessTextures()) {
+        generateTextureHandle();
+    }
+
+
     
     GE_CORE_INFO("Created blank texture ({0}x{1})", m_width, m_height);
 }
@@ -126,6 +212,16 @@ void OpenGLTexture2D::bind(uint32_t slot) const
 void OpenGLTexture2D::unbind() const
 {
     glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void OpenGLTexture2D::bindCompute(uint32_t slot) const
+{
+    glBindImageTexture(slot, m_rendererID, 0, GL_FALSE, 0, GL_READ_WRITE, m_internalFormat);
+}
+
+void OpenGLTexture2D::unbindCompute() const
+{
+    glBindImageTexture(0, 0, 0, GL_FALSE, 0, GL_READ_ONLY, 0);
 }
 
 void OpenGLTexture2D::setData(void* data, uint32_t size)
@@ -474,6 +570,11 @@ bool Texture2D::makeTextureResident(uint64_t textureHandle)
 void Texture2D::makeTextureNonResident(uint64_t textureHandle)
 {
     OpenGLTexture2D::makeTextureNonResident(textureHandle);
+}
+
+std::shared_ptr<Texture2D> Texture2D::create(TextureSpecification specification)
+{
+    return std::make_shared<OpenGLTexture2D>(specification);
 }
 
 } // namespace Rapture

@@ -223,7 +223,7 @@ namespace Rapture {
         // Map: Skeleton Ptr -> Vector of RenderCommands associated with that skeleton
         std::unordered_map<std::shared_ptr<Skeleton>, std::vector<RenderCommand>> skeletalMeshCommands;
         // Vector: RenderCommands for non-skeletal meshes
-        std::vector<RenderCommand> nonSkeletalMeshCommands;
+        // std::vector<RenderCommand> nonSkeletalMeshCommands;
         // Map: Skeleton Ptr -> Animation Ptr (for AnimationSetupCommand)
         std::unordered_map<std::shared_ptr<Skeleton>, std::shared_ptr<Animation>> skeletonAnimations;
 
@@ -320,9 +320,9 @@ namespace Rapture {
                      }
                 }
 
-                // If not added to skeletal map, add to non-skeletal list
+                // If not added to skeletal map, add to non-skeletal list -> ADD DIRECTLY TO QUEUE
                 if (!addedToSkeletal) {
-                    nonSkeletalMeshCommands.push_back(command);
+                    queue->add(command); // ADDED: Add non-skeletal commands directly
                 }
             }
         }
@@ -356,13 +356,6 @@ namespace Rapture {
                      if (s_shuttingDown) { queue->markAsDone(); return; }
                      queue->add(renderCmd);
                 }
-            }
-
-            // Add all non-skeletal commands
-            for (const auto& renderCmd : nonSkeletalMeshCommands) {
-                 // Check for shutdown condition periodically
-                 if (s_shuttingDown) { queue->markAsDone(); return; }
-                queue->add(renderCmd);
             }
         }
 

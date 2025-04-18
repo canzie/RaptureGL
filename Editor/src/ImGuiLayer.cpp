@@ -74,7 +74,30 @@ void ImGuiLayer::onAttach()
 
     ImGuiPanelStyle::InitializeStyle();
 
+    // Initialize TextureViewPanel with validation
+    try {
+        m_TextureViewPanel.setPanelName("Texture Viewer");
+        Rapture::GE_INFO("ImGuiLayer: TextureViewPanel initialized successfully");
+    } catch (const std::exception& e) {
+        Rapture::GE_ERROR("ImGuiLayer: Failed to initialize TextureViewPanel: {}", e.what());
+    } catch (...) {
+        Rapture::GE_ERROR("ImGuiLayer: Unknown error initializing TextureViewPanel");
+    }
     
+    // Connect TextureViewPanel to PropertiesPanel via callback with validation
+    try {
+        auto callback = getTextureViewCallback();
+        if (callback) {
+            m_PropertiesPanel.setTextureViewCallback(callback);
+            Rapture::GE_INFO("ImGuiLayer: Texture view callback set successfully");
+        } else {
+            Rapture::GE_ERROR("ImGuiLayer: Failed to create texture view callback");
+        }
+    } catch (const std::exception& e) {
+        Rapture::GE_ERROR("ImGuiLayer: Failed to set texture view callback: {}", e.what());
+    } catch (...) {
+        Rapture::GE_ERROR("ImGuiLayer: Unknown error setting texture view callback");
+    }
 }
 
 void ImGuiLayer::onDetach()
@@ -262,6 +285,12 @@ void ImGuiLayer::onUpdate(float ts)
             if (ImGui::MenuItem("GBuffer Debug View", nullptr, &m_showGBufferDebug)) {
                 m_DebugViewPanel.setEnabled(m_showGBufferDebug);
             }
+            
+            // Simple state sync for texture viewer
+            bool textureViewerEnabled = m_TextureViewPanel.isEnabled();
+            if (ImGui::MenuItem("Texture Viewer", nullptr, &textureViewerEnabled)) {
+                m_TextureViewPanel.setEnabled(textureViewerEnabled);
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -300,6 +329,11 @@ void ImGuiLayer::onUpdate(float ts)
         m_DebugViewPanel.render();
     }
     
+    // Render texture viewer if enabled
+    if (m_TextureViewPanel.isEnabled()) {
+        m_TextureViewPanel.render();
+    }
+    
     // Render the settings panel
     if (m_SettingsPanel) {
         m_SettingsPanel->setActiveScene(activeScene);
@@ -316,5 +350,79 @@ void ImGuiLayer::onUpdate(float ts)
 void ImGuiLayer::onEvent(Rapture::Event& event)
 {
     // ImGui handles events through GLFW callbacks set up in ImGui_ImplGlfw_InitForOpenGL
+}
+
+// Update the showTexture method with better validation and error logging
+void ImGuiLayer::showTexture(std::shared_ptr<Rapture::Texture2D> texture)
+{
+    // Detailed validation with specific error messages
+    if (!texture) {
+        Rapture::GE_ERROR("ImGuiLayer: Attempt to show null texture");
+        return;
+    }
+    
+    try {
+        // Validate texture properties before setting
+        uint32_t rendererID = 0;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        
+        try {
+            rendererID = texture->getRendererID();
+            width = texture->getWidth();
+            height = texture->getHeight();
+        } catch (const std::exception& e) {
+            Rapture::GE_ERROR("ImGuiLayer: Failed to get texture properties: {}", e.what());
+            return;
+        } catch (...) {
+            Rapture::GE_ERROR("ImGuiLayer: Unknown error getting texture properties");
+            return;
+        }
+        
+        if (rendererID == 0) {
+            Rapture::GE_ERROR("ImGuiLayer: Cannot show texture with invalid ID (0)");
+            return;
+        }
+        
+        if (width == 0 || height == 0) {
+            Rapture::GE_WARN("ImGuiLayer: Texture has suspicious dimensions ({}x{})", width, height);
+        }
+        
+        // Log successful validation
+        Rapture::GE_INFO("ImGuiLayer: Texture validated (ID: {}, Size: {}x{})", rendererID, width, height);
+        
+        // Set the texture in the viewer
+        try {
+            m_TextureViewPanel.setTexture(texture);
+            Rapture::GE_INFO("ImGuiLayer: Texture set in viewer");
+        } catch (const std::exception& e) {
+            Rapture::GE_ERROR("ImGuiLayer: Exception while setting texture in viewer: {}", e.what());
+            return;
+        } catch (...) {
+            Rapture::GE_ERROR("ImGuiLayer: Unknown exception while setting texture in viewer");
+            return;
+        }
+        
+        // Ensure panel is enabled/visible
+        try {
+            bool wasEnabled = m_TextureViewPanel.isEnabled();
+            m_TextureViewPanel.setEnabled(true);
+            
+            if (!wasEnabled) {
+                Rapture::GE_INFO("ImGuiLayer: Texture viewer panel was not enabled, enabling now");
+            }
+        } catch (...) {
+            Rapture::GE_ERROR("ImGuiLayer: Failed to enable texture viewer panel");
+            return;
+        }
+        
+        Rapture::GE_INFO("ImGuiLayer: Successfully prepared texture for viewing (ID: {})", rendererID);
+    }
+    catch (const std::exception& e) {
+        Rapture::GE_ERROR("ImGuiLayer: Exception in showTexture: {}", e.what());
+    }
+    catch (...) {
+        Rapture::GE_ERROR("ImGuiLayer: Unknown exception in showTexture");
+    }
 }
 

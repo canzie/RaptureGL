@@ -174,6 +174,42 @@ OpenGLShader::OpenGLShader(const std::filesystem::path& vertexPath, const std::f
     GE_CORE_INFO("OpenGLShader: Successfully created Shader: {} (Program ID: {})", m_name, m_programID);
 }
 
+OpenGLShader::OpenGLShader(const std::filesystem::path &computePath)
+    : Shader(computePath.stem().string())
+{
+
+
+    if (!computePath.empty()) {
+        std::string computeShaderSource = readShaderSource(computePath);
+        if (computeShaderSource.empty()) {
+            m_status = ShaderStatus::SHADER_ERROR;
+            GE_CORE_CRITICAL("OpenGLShader: Compute shader source failed to read: {}", computePath.string());
+            return;
+        }
+        m_sources[ShaderType::COMPUTE] = computeShaderSource;
+    }
+
+     if (!compile()) {
+        GE_CORE_ERROR("OpenGLShader: Failed to compile/link shader program derived from {}", computePath.string());
+        return;
+     }
+
+
+    if (m_status == ShaderStatus::SHADER_ERROR) {
+        GE_CORE_ERROR("OpenGLShader: Failed to compile/link shader program derived from {}", computePath.string());
+        // Cleanup potentially created program ID if linking failed after compilation succeeded partially
+        if (m_programID != 0) {
+            glDeleteProgram(m_programID);
+            m_programID = 0;
+        }
+        return; 
+    }
+
+
+
+    GE_CORE_INFO("OpenGLShader: Compute Shader successfully created Shader: {} (Program ID: {})", m_name, m_programID);
+
+}
 
 OpenGLShader::~OpenGLShader()
 	{
@@ -239,6 +275,17 @@ void OpenGLShader::unBind()
 {
     RAPTURE_PROFILE_SCOPE("Shader Unbind");
     glUseProgram(0);
+}
+
+void OpenGLShader::dispatchCompute(uint32_t x, uint32_t y, uint32_t z)
+{
+    auto type = m_sources.find(ShaderType::COMPUTE);
+    if (type == m_sources.end()) {
+        GE_CORE_ERROR("OpenGLShader::dispatchCompute: Shader is not a compute shader");
+        return;
+    }
+
+    glDispatchCompute(x, y, z);
 }
 
 // deprecated
@@ -627,6 +674,16 @@ std::shared_ptr<Shader> Shader::create(const std::filesystem::path& vertexPath, 
 Shader* Shader::createRaw(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, const std::filesystem::path& geometryPath)
 {
     return new OpenGLShader(vertexPath, fragmentPath, geometryPath);
+}
+
+std::shared_ptr<Shader> Shader::createCompute(const std::filesystem::path& computePath)
+{
+    return std::make_shared<OpenGLShader>(computePath);
+}
+
+Shader* Shader::createComputeRaw(const std::filesystem::path& computePath)
+{
+    return new OpenGLShader(computePath);
 }
 
 

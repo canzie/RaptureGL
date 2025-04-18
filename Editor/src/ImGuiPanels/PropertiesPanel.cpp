@@ -3,7 +3,7 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialParameter.h"
 #include "Textures/Texture.h"
-
+#include "PanelComponents.h"
 
 #include "Scenes/Components/Transforms.h"
 
@@ -29,7 +29,8 @@ void PropertiesPanel::HelpMarker(const char* desc)
     }
 }
 
-void PropertiesPanel::render(std::shared_ptr<Rapture::Entity> entity) {
+void PropertiesPanel::render(std::shared_ptr<Rapture::Entity> entity)
+{
     try {
         ImGui::Begin("Properties");
         
@@ -187,35 +188,29 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
                 std::shared_ptr<Rapture::Texture2D> texture = spriteComponent.texture;
                 
                 // Show texture preview if available
-                if (texture && texture) {
-                    ImGui::BeginGroup();
-                    
-                    // Calculate preview size
-                    float availWidth = ImGui::GetContentRegionAvail().x;
-                    float previewSize = (std::min)(availWidth, 150.0f);
-                    
-                    // Get aspect ratio from texture
-                    float aspectRatio = static_cast<float>(texture->getWidth()) / static_cast<float>(texture->getHeight());
-                    ImVec2 previewDimensions;
-                    
-                    if (aspectRatio > 1.0f) {
-                        previewDimensions = ImVec2(previewSize, previewSize / aspectRatio);
-                    } else {
-                        previewDimensions = ImVec2(previewSize * aspectRatio, previewSize);
-                    }
-                    
-                    // Display texture as image
-                    ImGui::Image((ImTextureID)(uint64_t)texture->getRendererID(), previewDimensions);
-                    
-                    std::string filename = std::filesystem::path(spriteComponent.texturePath).filename().string();
+                if (texture) {
+                    try {
+                        // Use drawTextureGrid for preview
+                        std::vector<TextureDisplayData> texVec;
+                        TextureDisplayData texData;
+                        texData.textureID = static_cast<uint64_t>(texture->getRendererID());
+                        texData.label = std::filesystem::path(spriteComponent.texturePath).filename().string();
+                        texData.width = static_cast<float>(texture->getWidth());
+                        texData.height = static_cast<float>(texture->getHeight());
+                        texVec.push_back(texData);
 
-                    // Display texture info
-                    ImGui::Text("Size: %ux%u", texture->getWidth(), texture->getHeight());
-                    ImGui::Text("Path: %s", filename.c_str());
-                    
-                    ImGui::EndGroup();
+                        drawTextureGrid(texVec, 1, 150.0f);
+
+                        // Display texture info (optional, can be removed if label is sufficient)
+                        ImGui::Text("Size: %ux%u", texture->getWidth(), texture->getHeight());
+                        // ImGui::Text("Path: %s", texData.label.c_str()); // Label already shown by drawTextureGrid
+
+                    } catch (const std::exception& e) {
+                         Rapture::GE_CORE_ERROR("Error displaying sprite texture: {}", e.what());
+                         ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Error displaying texture");
+                    }
                 } else {
-                    ImGui::Text("No texture assigned");
+                    ImGui::Text("No texture assigned or texture invalid");
                 }
                 
                 // Button to select texture
@@ -680,6 +675,13 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
         catch (const std::exception& e) {
             Rapture::GE_CORE_ERROR("Error rendering light component: {}", e.what());
         }
+
+        // Add renderComputeTextureComponent to the list of components being rendered
+        if (entity->hasComponent<Rapture::ComputeTextureComponent>()) {
+            if (ImGui::CollapsingHeader("Compute Texture Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                renderComputeTextureComponent(entity);
+            }
+        }
     }
     catch (const std::exception& e) {
         Rapture::GE_CORE_ERROR("Critical error rendering entity properties: {}", e.what());
@@ -937,7 +939,7 @@ void PropertiesPanel::drawMaterialTextures(std::shared_ptr<Rapture::Entity> enti
                         }
                     }
                 }
-            }
+            } 
             catch (const std::exception& e) {
                 // Simplify format string
                 Rapture::GE_CORE_ERROR("Error accessing parameter '{0}': {1}", paramName, e.what());
@@ -955,7 +957,7 @@ void PropertiesPanel::drawMaterialTextures(std::shared_ptr<Rapture::Entity> enti
             const float itemHeight = ImGui::GetTextLineHeightWithSpacing();
             
             if (ImGui::BeginListBox("##TexturesList", ImVec2(-FLT_MIN, 
-                                    (std::min)(textures.size() * itemHeight + 10, 200.0f)))) {
+                                    (std::min)(static_cast<float>(textures.size()) * itemHeight + 10.0f, 200.0f)))) {
                 for (const auto& [name, texture] : textures) {
                     bool isSelected = (selectedTextureName == name);
                     if (ImGui::Selectable(name.c_str(), isSelected)) {
@@ -969,7 +971,7 @@ void PropertiesPanel::drawMaterialTextures(std::shared_ptr<Rapture::Entity> enti
                 ImGui::EndListBox();
             }
             
-            // Show texture preview
+            // Show texture preview using drawTextureGrid
             if (!selectedTextureName.empty()) {
                 try {
                     if (materialComp.material->hasParameter(selectedTextureName)) {
@@ -977,54 +979,26 @@ void PropertiesPanel::drawMaterialTextures(std::shared_ptr<Rapture::Entity> enti
                         if (param.getType() == Rapture::MaterialParameterType::TEXTURE2D) {
                             auto texture = param.asTexture().lock();
                             if (texture) {
-                                ImGui::Text("Preview: %s", selectedTextureName.c_str());
-                                
-                                // Calculate preview size
-                                float availWidth = ImGui::GetContentRegionAvail().x;
-                                float previewSize = (std::min)(availWidth, 200.0f);
-                                
-                                // Get aspect ratio from texture
-                                float aspectRatio = 1.0f; // Default to 1:1 if we can't get dimensions
+                                ImGui::Text("Preview:");
+
+                                // Use drawTextureGrid
+                                std::vector<TextureDisplayData> texVec;
+                                TextureDisplayData texData;
+                                texData.textureID = static_cast<uint64_t>(texture->getRendererID());
+                                texData.label = selectedTextureName;
                                 try {
-                                    aspectRatio = static_cast<float>(texture->getWidth()) / 
-                                                static_cast<float>(texture->getHeight());
-                                }
-                                catch (const std::exception& e) {
+                                    texData.width = static_cast<float>(texture->getWidth());
+                                    texData.height = static_cast<float>(texture->getHeight());
+                                } catch (const std::exception& e) {
                                     Rapture::GE_CORE_ERROR("Error getting texture dimensions: {0}", e.what());
+                                    // Set width/height to 0 to fallback to square preview
+                                    texData.width = 0.0f;
+                                    texData.height = 0.0f;
                                 }
-                                
-                                ImVec2 previewDimensions;
-                                
-                                if (aspectRatio > 1.0f) {
-                                    previewDimensions = ImVec2(previewSize, previewSize / aspectRatio);
-                                } else {
-                                    previewDimensions = ImVec2(previewSize * aspectRatio, previewSize);
-                                }
-                                
-                                // Display texture as image
-                                try {
-                                    uint64_t textureID = texture->getRendererID();
-                                    if (textureID != 0) {
-                                        ImGui::Image((ImTextureID)textureID, previewDimensions);
-                                    } else {
-                                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), 
-                                                          "Invalid texture ID (0)");
-                                    }
-                                }
-                                catch (const std::exception& e) {
-                                    Rapture::GE_CORE_ERROR("Error displaying texture: {0}", e.what());
-                                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), 
-                                                      "Failed to display texture");
-                                }
-                                
-                                // Display texture info
-                                try {
-                                    ImGui::Text("Size: %ux%u", texture->getWidth(), texture->getHeight());
-                                }
-                                catch (const std::exception& e) {
-                                    Rapture::GE_CORE_ERROR("Error getting texture info: {0}", e.what());
-                                    ImGui::Text("Size: Unknown");
-                                }
+                                texVec.push_back(texData);
+
+                                drawTextureGrid(texVec, 1, 200.0f);
+
                             } else {
                                 ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), 
                                                   "Texture reference is expired or invalid");
@@ -1272,9 +1246,8 @@ void PropertiesPanel::renderShadowComponent(std::shared_ptr<Rapture::Entity> ent
         shadowComp.isActive = isActive;
     }
     
-    // Display and edit shadow map resolution
-    ImGui::Text("Shadow Map Resolution:");
-    
+    // Display shadow map resolution
+    ImGui::Text("Shadow Map Resolution: %ux%u", shadowComp.width, shadowComp.height);
     
     // Add control for shadow map size (for directional lights)
     // This controls the orthographic projection size
@@ -1296,9 +1269,10 @@ void PropertiesPanel::renderShadowComponent(std::shared_ptr<Rapture::Entity> ent
         }
         ImGui::SameLine();
         HelpMarker("Controls how much area the directional light shadow covers. Higher values show more of the scene but with less detail.");
+        ImGui::Text("Coverage: %.1f units", shadowComp.shadowMapSize);
     }
     
-    // Shadow map preview
+    // Shadow map preview using drawTextureGrid
     ImGui::Separator();
     ImGui::Text("Shadow Map Preview:");
     
@@ -1308,33 +1282,27 @@ void PropertiesPanel::renderShadowComponent(std::shared_ptr<Rapture::Entity> ent
             uint32_t shadowMapID = shadowComp.shadowMap->getShadowMapID();
             
             if (shadowMapID > 0) {
-                // Calculate preview size
-                float availWidth = ImGui::GetContentRegionAvail().x;
-                float previewSize = (std::min)(availWidth, 312.0f);
-                
-                // Shadow maps are typically square, but use 1:1 aspect ratio just in case
-                ImVec2 previewDimensions(previewSize, previewSize);
-                
-                // Display the depth texture with zoom controls
+                // Keep zoom controls
                 static float zoomLevel = 1.0f;
                 if (ImGui::SliderFloat("Zoom", &zoomLevel, 0.5f, 3.0f, "%.1fx")) {
                     // Zoom level changed
                 }
+
+                // Use drawTextureGrid
+                std::vector<TextureDisplayData> texVec;
+                TextureDisplayData texData;
+                texData.textureID = static_cast<uint64_t>(shadowMapID);
+                texData.label = "Depth Map"; // Simple label
+                texData.width = static_cast<float>(shadowComp.width);
+                texData.height = static_cast<float>(shadowComp.height);
+                // Apply zoom via UV coordinates
+                texData.uv0 = ImVec2(0.5f - 0.5f / zoomLevel, 0.5f - 0.5f / zoomLevel);
+                texData.uv1 = ImVec2(0.5f + 0.5f / zoomLevel, 0.5f + 0.5f / zoomLevel);
+                texVec.push_back(texData);
+
+                // Draw the grid (single item)
+                drawTextureGrid(texVec, 1, 312.0f, ImVec4(1, 1, 1, 1), ImVec4(1, 1, 1, 0.5f)); // Use previous border color
                 
-                // Display zoomed image
-                ImVec2 uv0 = ImVec2(0.5f - 0.5f/zoomLevel, 0.5f - 0.5f/zoomLevel);
-                ImVec2 uv1 = ImVec2(0.5f + 0.5f/zoomLevel, 0.5f + 0.5f/zoomLevel);
-                
-                ImGui::Image((ImTextureID)(uint64_t)shadowMapID, previewDimensions, 
-                             uv0, uv1, 
-                             ImVec4(1, 1, 1, 1), ImVec4(1, 1, 1, 0.5f));
-                
-                // Display texture info
-                ImGui::Text("Shadow Map ID: %u", shadowMapID);
-                ImGui::Text("Resolution: %ux%u", shadowComp.width, shadowComp.height);
-                if (isDirectionalLight) {
-                    ImGui::Text("Coverage: %.1f units", shadowComp.shadowMapSize);
-                }
             } else {
                 ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Invalid shadow map texture ID");
             }
@@ -1345,8 +1313,6 @@ void PropertiesPanel::renderShadowComponent(std::shared_ptr<Rapture::Entity> ent
         }
     } else {
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Shadow map not initialized");
-        
-
     }
 }
 
@@ -1379,60 +1345,41 @@ void PropertiesPanel::renderCascadedShadowComponent(std::shared_ptr<Rapture::Ent
     }
     ImGui::SameLine();
     HelpMarker("Controls how much the cascade splits are spread out. Lower values mean more logarithmic spread, higher values mean more linear spread.");
-    // Shadow map preview
+    
+    // Shadow map preview using drawTextureGrid
     ImGui::Separator();
     ImGui::Text("Cascade Shadow Map Previews:");
     
     if (csmComp.cascadedShadowMapping) {
         try {
             // Get the shadow map texture IDs for all cascades
-            std::vector<uint32_t> textureIDs = csmComp.cascadedShadowMapping->getCascadeTextureIDs();
+            std::vector<uint64_t> textureIDs = csmComp.cascadedShadowMapping->getCascadeTextureHandles();
             
             if (!textureIDs.empty()) {
-                // Calculate preview size and layout
-                float availWidth = ImGui::GetContentRegionAvail().x;
-                
-                // Number of cascades per row (2 for 4 cascades, 2 for 3 cascades, etc.)
-                int cascadesPerRow = 2;
-                int numCascades = textureIDs.size();
-                
-                // Adjust preview size based on available width
-                float padding = 10.0f;
-                float previewSize = (std::min)((availWidth - (cascadesPerRow - 1) * padding) / cascadesPerRow, 312.0f);
-                
-                // Display each cascade shadow map
-                for (int i = 0; i < numCascades; ++i) {
-                    // Start a new row if needed
-                    if (i > 0 && i % cascadesPerRow == 0) {
-                        ImGui::NewLine();
-                    } else if (i > 0) {
-                        ImGui::SameLine(i % cascadesPerRow * (previewSize + padding));
-                    }
-                    
-                    // Create a group for each cascade
-                    ImGui::BeginGroup();
-                    
-                    // Display the cascade number
-                    ImGui::Text("Cascade %d", i + 1);
-                    
-                    // Create preview dimensions (shadow maps are typically square)
-                    ImVec2 previewDimensions(previewSize, previewSize);
-                    
-                    // Display the depth texture
-                    uint32_t textureID = textureIDs[i];
-                    if (textureID > 0) {
-                        ImGui::Image(
-                            (ImTextureID)(uint64_t)textureID, 
-                            previewDimensions, 
-                            ImVec2(0, 0), ImVec2(1, 1), 
-                            ImVec4(1, 1, 1, 1), ImVec4(1, 1, 1, 0.5f)
-                        );
+                // Prepare data for drawTextureGrid
+                std::vector<TextureDisplayData> texVec;
+                for (size_t i = 0; i < textureIDs.size(); ++i) {
+                    if (textureIDs[i] > 0) {
+                        TextureDisplayData texData;
+                        texData.textureID = textureIDs[i];
+                        texData.label = "Cascade " + std::to_string(i + 1);
+                        texData.width = static_cast<float>(csmComp.width);
+                        texData.height = static_cast<float>(csmComp.height);
+                        texVec.push_back(texData);
                     } else {
-                        ImGui::Text("Invalid texture ID");
+                        // Optionally handle invalid IDs here, maybe add a placeholder?
+                        Rapture::GE_CORE_WARN("Invalid texture ID for cascade {}", i + 1);
                     }
-                    
-                    ImGui::EndGroup();
                 }
+
+                // Draw the grid, aiming for 2 columns
+                if (!texVec.empty()) {
+                     drawTextureGrid(texVec, 2, 312.0f); // Max item width 312, 2 columns
+                }
+                 else {
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "No valid cascade textures to display");
+                }
+
             } else {
                 ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "No cascade textures available");
             }
@@ -1457,5 +1404,141 @@ void PropertiesPanel::renderCascadedShadowComponent(std::shared_ptr<Rapture::Ent
                 Rapture::GE_CORE_ERROR("Failed to create cascaded shadow maps: {}", e.what());
             }
         }
+    }
+}
+
+void PropertiesPanel::renderComputeTextureComponent(std::shared_ptr<Rapture::Entity> entity) {
+    if (!entity || !entity->hasComponent<Rapture::ComputeTextureComponent>()) {
+        Rapture::GE_WARN("PropertiesPanel: Attempted to render compute texture component on invalid entity");
+        return;
+    }
+
+    try {
+        auto& computeTextureComp = entity->getComponent<Rapture::ComputeTextureComponent>();
+        
+        // Display shader info
+        if (computeTextureComp.shader) {
+            try {
+                ImGui::Text("Shader: %s", computeTextureComp.shader->getName().c_str());
+            } catch (...) {
+                Rapture::GE_ERROR("PropertiesPanel: Failed to display shader name");
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Error displaying shader info");
+            }
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "No shader assigned");
+        }
+        
+        // Display texture info and preview
+        if (computeTextureComp.texture) {
+            try {
+                // Pre-validate the texture before using it
+                if (!computeTextureComp.texture) {
+                    Rapture::GE_ERROR("PropertiesPanel: Texture is null despite earlier check");
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Texture is invalid (null)");
+                    return;
+                }
+                
+                uint32_t rendererID = 0;
+                uint32_t width = 0;
+                uint32_t height = 0;
+                
+                try {
+                    rendererID = computeTextureComp.texture->getRendererID();
+                    width = computeTextureComp.texture->getWidth();
+                    height = computeTextureComp.texture->getHeight();
+                } catch (...) {
+                    Rapture::GE_ERROR("PropertiesPanel: Failed to get texture properties");
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Error reading texture properties");
+                    return;
+                }
+                
+                if (rendererID == 0) {
+                    Rapture::GE_ERROR("PropertiesPanel: Invalid texture (ID is 0)");
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Invalid texture (ID is 0)");
+                    return;
+                }
+                
+                if (width == 0 || height == 0) {
+                    Rapture::GE_WARN("PropertiesPanel: Texture has invalid dimensions ({}x{})", width, height);
+                    ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.4f, 1.0f), "Texture has invalid dimensions: {}x{}", width, height);
+                }
+                
+                ImGui::Text("Texture ID: %u", rendererID);
+                ImGui::Text("Dimensions: %dx%d", width, height);
+                
+                // Show a small preview with inverted UVs
+                ImGui::Text("Preview:");
+                try {
+                    TextureDisplayData texData;
+                    texData.textureID = (ImTextureID)rendererID;
+                    texData.label = "Preview";
+                    texData.width = static_cast<float>(width);
+                    texData.height = static_cast<float>(height);
+
+                    drawTextureGrid({texData}, 1, 100.0f, ImVec4(1, 1, 1, 1), ImVec4(1, 1, 1, 0.5f));
+
+                } catch (...) {
+                    Rapture::GE_ERROR("PropertiesPanel: Failed to render texture preview");
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Error displaying preview");
+                }
+                
+                // View in Texture Viewer button - now using callback with validation
+                if (ImGui::Button("View in Texture Viewer")) {
+                    if (m_TextureViewCallback) {
+                        try {
+                            // Confirm texture is still valid before passing to callback
+                            if (computeTextureComp.texture && computeTextureComp.texture->getRendererID() != 0) {
+                                // Call the callback with the texture
+                                Rapture::GE_INFO("PropertiesPanel: Requesting to view texture with ID {}", rendererID);
+                                m_TextureViewCallback(computeTextureComp.texture);
+                            } else {
+                                Rapture::GE_ERROR("PropertiesPanel: Texture became invalid before viewing");
+                                ImGui::SameLine();
+                                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Error: Texture is invalid");
+                            }
+                        } catch (...) {
+                            Rapture::GE_ERROR("PropertiesPanel: Exception during texture view callback");
+                            ImGui::SameLine();
+                            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Error viewing texture");
+                        }
+                    } else {
+                        Rapture::GE_ERROR("PropertiesPanel: Texture view callback is not set");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Texture viewer not available");
+                    }
+                }
+                
+                // Compute button with better error handling
+                if (computeTextureComp.shader) {
+                    ImGui::SameLine();
+                    if (ImGui::Button("Compute")) {
+                        try {
+                            computeTextureComp.compute();
+                            Rapture::GE_INFO("PropertiesPanel: Compute shader executed for texture ID {}", rendererID);
+                        } catch (const std::exception& e) {
+                            Rapture::GE_ERROR("PropertiesPanel: Failed to execute compute shader: {}", e.what());
+                            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Compute failed: %s", e.what());
+                        } catch (...) {
+                            Rapture::GE_ERROR("PropertiesPanel: Unknown error during compute shader execution");
+                            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Compute failed with unknown error");
+                        }
+                    }
+                }
+            } catch (const std::exception& e) {
+                Rapture::GE_ERROR("PropertiesPanel: Error displaying compute texture info: {}", e.what());
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Error displaying texture info: {}", e.what());
+            } catch (...) {
+                Rapture::GE_ERROR("PropertiesPanel: Unknown error displaying compute texture info");
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Error displaying texture info");
+            }
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "No texture assigned");
+        }
+    } catch (const std::exception& e) {
+        Rapture::GE_ERROR("PropertiesPanel: Failed to render ComputeTextureComponent: {}", e.what());
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Error rendering component: {}", e.what());
+    } catch (...) {
+        Rapture::GE_ERROR("PropertiesPanel: Unknown error rendering ComputeTextureComponent");
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Error rendering component");
     }
 }

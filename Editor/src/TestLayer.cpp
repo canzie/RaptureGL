@@ -17,7 +17,8 @@
 #include "File Loaders/glTF/glTF2Loader.h"
 #include "Textures/Texture.h"
 #include "Debug/Profiler.h"
-
+#include "Textures/Texture.h"
+#include "Timestep/Timestep.h"
 
 // Vendor includes
 #include <imgui.h>
@@ -30,6 +31,7 @@
 #include <filesystem>
 
 #include "Debug/TracyProfiler.h"
+
 
 void TestLayer::setSelectedEntity(std::shared_ptr<Rapture::Entity> entity)
 {
@@ -193,6 +195,20 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
 	// Initialize with current mouse position
 	auto pos = Rapture::Input::getMousePos();
 	CameraController::setMousePosition(pos.first, pos.second);
+
+    Rapture::Entity testEntity = activeScene->createEntity("ComputeTest");
+
+    std::filesystem::path shaderPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL/pathtracingtest.cs.glsl";
+    auto [shader, handle] = Rapture::AssetManager::importAsset<Rapture::Shader>(shaderPath);
+
+    Rapture::TextureSpecification textureSpec;
+    textureSpec.width = 1024;
+    textureSpec.height = 1024;
+    textureSpec.format = Rapture::TextureFormat::RGBA32F;
+    auto texture = Rapture::Texture2D::create(textureSpec);
+
+    testEntity.addComponent<Rapture::ComputeTextureComponent>(shader, texture);
+
     
 }
 
@@ -236,17 +252,12 @@ void TestLayer::onUpdate(float ts)
     auto activeScene = Rapture::SceneManager::getInstance().getActiveScene();
     if (!activeScene) return;
     
-    // Ensure time is in seconds
-    float timeInSeconds = ts;
+
     
-    // Convert milliseconds to seconds if needed
-    if (timeInSeconds > 0.1f) { // Likely in milliseconds
-        timeInSeconds *= 0.001f;
-    }
     
     // Update FPS counter
     m_fpsCounter++;
-    m_fpsTimer += timeInSeconds;
+    m_fpsTimer += ts;
     
     // Log FPS approximately once per second
     if (m_fpsTimer >= 1.0f) {
@@ -258,6 +269,24 @@ void TestLayer::onUpdate(float ts)
         m_fpsTimer = 0.0f;
     }
 
+    auto& registry = activeScene->getRegistry();
+
+    auto view = registry.view<Rapture::ComputeTextureComponent>();
+
+    // Get time with decimal precision
+    // Use time since launch instead of time since epoch
+    long long timeRawMs = Rapture::Timestep::getTimeSinceLaunchMs().count(); 
+    // Convert milliseconds since launch to seconds for the shader
+    float time = static_cast<float>(timeRawMs) / 1000.0f;
+
+
+    for (auto entity : view) {
+        auto& computeTexture = view.get<Rapture::ComputeTextureComponent>(entity);
+        computeTexture.shader->bind();
+        computeTexture.shader->setFloat("time", time);
+        computeTexture.compute();
+    }
+
 	// Update the camera controller
 	CameraController::update(ts);
     
@@ -265,7 +294,7 @@ void TestLayer::onUpdate(float ts)
     notifyCameraChange();
     
     // Update animations in the scene
-    Rapture::AnimationSystem::updateAnimations(*activeScene, timeInSeconds);
+    Rapture::AnimationSystem::updateAnimations(*activeScene, ts);
 
     if (Rapture::Input::isMouseBtnPressed(0))
     {
@@ -390,6 +419,7 @@ void TestLayer::onUpdate(float ts)
     if (m_showDebugRay && m_debugRayLine) {
         Rapture::Renderer::drawLine(*m_debugRayLine);
     }
+
 
 	// Unbind the framebuffer to return to the default framebuffer
 	//m_framebuffer->unBind();

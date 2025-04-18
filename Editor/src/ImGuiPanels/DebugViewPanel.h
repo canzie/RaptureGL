@@ -25,7 +25,5 @@ public:
 private:
     bool m_enabled = true;
     ImVec2 m_lastSize = ImVec2(0, 0);
-    
-    // Helper method to display a texture with label
-    void displayTexture(const char* label, uint32_t textureID, ImVec2 size);
+
 };

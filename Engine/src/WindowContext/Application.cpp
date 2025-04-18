@@ -103,14 +103,14 @@ namespace Rapture {
                 for (auto layer : m_layerStack)
                 {
                     RAPTURE_PROFILE_SCOPE("Layer Update");
-                    layer->onUpdate((float)Timestep::deltaTimeMs().count());
+                    layer->onUpdate(Timestep::deltaTime());
                 }
                 
                 // Update active world
                 auto activeWorld = SceneManager::getInstance().getActiveWorld();
                 if (activeWorld && activeWorld->isActive()) {
                     RAPTURE_PROFILE_SCOPE("World Update");
-                    activeWorld->update((float)Timestep::deltaTimeMs().count());
+                    activeWorld->update(Timestep::deltaTime());
                 }
                 
                 // Update timestep

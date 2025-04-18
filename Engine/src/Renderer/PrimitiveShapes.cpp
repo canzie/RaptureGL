@@ -456,7 +456,7 @@ namespace Rapture {
             2, 3, 0
         };
 
-        if (config.useTexCoords || config.texturePath.has_value()) {
+        if (config.useTexCoords || config.texturePath.has_value() || config.textureHandle || config.texture) {
              // Full Attributes (Position, Normal, TexCoord)
              // Normals for quad (all facing positive Z)
             std::vector<float> normals = {
@@ -497,7 +497,14 @@ namespace Rapture {
                 m_material->setTexture(ParameterID::TEXTURE_ALBEDO, texture, textureHandle);
                 
 
-            } 
+            } else if (config.textureHandle) {
+                auto texture = AssetManager::getAsset<Texture2D>(config.textureHandle);
+                if (texture) {
+                    m_material->setTexture(ParameterID::TEXTURE_ALBEDO, texture, config.textureHandle);
+                }
+            } else if (config.texture) {
+                m_material->setTexture(ParameterID::TEXTURE_ALBEDO, config.texture, 0);
+            }
         } else {
             m_material = nullptr; // No default material requested
         }

@@ -25,7 +25,7 @@ out vec3 v_Normal;
 out vec2 v_TexCoord;
 
 uniform mat4 u_model;
-uniform int u_DebugMode = 0; // 0=Normal, 1=BaseColor, 2=Normals, 3=ID-based
+
 
 void main()
 {
@@ -33,26 +33,9 @@ void main()
 	v_Position = vec3(u_model * vec4(aPos, 1.0));
 	v_Normal = mat3(u_model) * aNormal;
 	
-	// Set color based on debug mode
-	if (u_DebugMode == 0) {
-		// Normal rendering - use material color
-		v_Albedo = color;
-	}
-	else if (u_DebugMode == 1) {
-		// Show material color without shading
-		v_Albedo = color;
-	}
-	else if (u_DebugMode == 2) {
-		// Show normals as colors
-		v_Albedo = vec4(aNormal * 0.5 + 0.5, 1.0);
-	}
-	else if (u_DebugMode == 3) {
-		// Show unique object color
-		float r = fract(sin(gl_VertexID * 0.1) * 43758.5453);
-		float g = fract(sin(gl_VertexID * 0.2) * 22578.1459);
-		float b = fract(sin(gl_VertexID * 0.3) * 19642.3571);
-		v_Albedo = vec4(r, g, b, 1.0);
-	}
+
+	v_Albedo = color;
+
 	v_TexCoord = aTexCoord0;
 	gl_Position = u_proj * u_view * u_model * vec4(aPos, 1.0);
 }

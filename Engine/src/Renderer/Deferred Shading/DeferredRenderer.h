@@ -41,6 +41,7 @@ namespace Rapture
         static std::shared_ptr<ShadowMap> getShadowMap() { return nullptr; }
 
 
+
     private:
         // Helper method for light setup
         static void setupLightsUniforms(const std::shared_ptr<Scene> s);
@@ -81,5 +82,6 @@ namespace Rapture
         static std::shared_ptr<ShaderStorageBuffer> s_shadowSSBO;
 
         static glm::mat4 s_cameraViewMatrixCache;
+
     };
 }

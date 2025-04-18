@@ -72,6 +72,11 @@ namespace Rapture {
         virtual bool reload() = 0;
         virtual void addVariant(const ShaderVariant& variant) = 0;
         virtual void removeVariant(const std::string& name) = 0;
+
+
+        // Compute shader stuff
+        // the implementation should check if the shader is a compute shader
+        virtual void dispatchCompute(uint32_t x, uint32_t y, uint32_t z) = 0;
         
 
         // Shader introspection
@@ -117,6 +122,9 @@ namespace Rapture {
 
         static std::shared_ptr<Shader> create(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, const std::filesystem::path& geometryPath);
         static Shader* createRaw(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, const std::filesystem::path& geometryPath);
+
+        static std::shared_ptr<Shader> createCompute(const std::filesystem::path& computePath);
+        static Shader* createComputeRaw(const std::filesystem::path& computePath);
 
 	protected:
         std::string m_name;

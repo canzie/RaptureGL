@@ -13,9 +13,12 @@
 #include "ImGuiPanels/SettingsPanel.h"
 #include "ImGuiPanels/MaterialViewerPanel.h"
 #include "ImGuiPanels/DebugViewPanel.h"
+#include "ImGuiPanels/TextureViewPanel.h"
 #include "Scenes/Entity.h"
 #include "vendor/ImGuizmo/ImGuizmo.h"
+#include "Textures/Texture.h"
 
+#include <functional>
 
 class ImGuiLayer : public Rapture::Layer
 {
@@ -34,6 +37,13 @@ public:
     // Getter/setter for the GBuffer debug view panel
     bool isGBufferDebugEnabled() const { return m_showGBufferDebug; }
     void setGBufferDebugEnabled(bool enabled) { m_showGBufferDebug = enabled; }
+    
+    // Texture view callback - for other panels to request showing a texture
+    using TextureViewCallback = std::function<void(std::shared_ptr<Rapture::Texture2D>)>;
+    TextureViewCallback getTextureViewCallback() { return [this](std::shared_ptr<Rapture::Texture2D> texture) { showTexture(texture); }; }
+    
+    // Show a texture in the texture viewer
+    void showTexture(std::shared_ptr<Rapture::Texture2D> texture);
 
 private:
     float m_Time = 0.0f;
@@ -51,6 +61,7 @@ private:
     AssetsPanel m_AssetsPanel; // Using global namespace for AssetsPanel
     MaterialViewerPanel m_MaterialViewerPanel; // Material viewer panel
     DebugViewPanel m_DebugViewPanel; // GBuffer debug view panel
+    TextureViewPanel m_TextureViewPanel; // Single texture viewer panel
     SettingsPanel* m_SettingsPanel = nullptr; // Created after Window context is available
     
     // Currently selected entity (shared between panels through callbacks)

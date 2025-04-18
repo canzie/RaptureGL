@@ -81,6 +81,9 @@ namespace Rapture
 
         setupFullscreenQuad();
 
+
+
+
         GE_CORE_INFO("Deferred rendering initialized");
     }
 

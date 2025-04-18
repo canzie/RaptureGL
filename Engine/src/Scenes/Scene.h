@@ -9,6 +9,8 @@
 #include "../Materials/Material.h"
 #include "../AssetsManager/AssetManager.h"
 
+#include "../Logger/Log.h"
+
 namespace Rapture
 {
 

@@ -59,6 +59,24 @@ enum class TextureWrap {
     Repeat                  // GL_REPEAT
 };
 
+enum class TextureFormat : uint16_t {
+    RGBA8,
+    RGB8,
+    RGBA16F,
+    RGB16F,
+    RGBA32F,
+    RGB32F
+};
+
+struct TextureSpecification {
+    TextureFormat format = TextureFormat::RGB8;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t channels = 0;
+};
+
+
+
 
 class Texture {
 public:
@@ -70,6 +88,9 @@ public:
     
     virtual void bind(uint32_t slot = 0) const = 0;
     virtual void unbind() const = 0;
+
+    virtual void bindCompute(uint32_t slot = 0) const = 0;
+    virtual void unbindCompute() const = 0;
     
     // Texture parameter setters
     virtual void setMinFilter(TextureFilter filter) = 0;
@@ -95,10 +116,13 @@ public:
     static bool makeTextureResident(uint64_t textureHandle);
     static void makeTextureNonResident(uint64_t textureHandle);
 
+    static std::shared_ptr<Texture2D> create(uint32_t width, uint32_t height, uint32_t channels);
+    static std::shared_ptr<Texture2D> create(TextureSpecification specification);
+
+
 protected:
     // Static factory methods
     static std::shared_ptr<Texture2D> create(const std::string& path);
-    static std::shared_ptr<Texture2D> create(uint32_t width, uint32_t height, uint32_t channels);
     static std::shared_ptr<Texture2D> createCubemap(const std::vector<std::string>& filepaths);
 
     // Give TextureLibrary access to protected create methods

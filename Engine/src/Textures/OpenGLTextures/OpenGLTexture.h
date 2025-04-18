@@ -10,6 +10,7 @@ public:
     OpenGLTexture2D(const std::string& path);
     OpenGLTexture2D(const std::vector<std::string>& filepaths);
     OpenGLTexture2D(uint32_t width, uint32_t height, uint32_t channels);
+    OpenGLTexture2D(TextureSpecification specification);
 
 
     virtual ~OpenGLTexture2D() override;
@@ -20,6 +21,9 @@ public:
 
     virtual void bind(uint32_t slot = 0) const override;
     virtual void unbind() const override;
+
+    virtual void bindCompute(uint32_t slot = 0) const override;
+    virtual void unbindCompute() const override;
 
     virtual void setData(void* data, uint32_t size) override;
     

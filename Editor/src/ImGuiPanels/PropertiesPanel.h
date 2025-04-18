@@ -5,10 +5,12 @@
 #include "Scenes/Components/Components.h"
 #include "Scenes/Components/BoundingBox.h"
 #include "ImGuiPanels/EntityBrowserPanel.h"
+#include "Textures/Texture.h"
 #include <glm/gtc/type_ptr.hpp>
 
 #include "imgui.h"
 #include <string>
+#include <functional>
 
 // Forward declarations
 namespace Rapture {
@@ -29,6 +31,10 @@ public:
 
     // Helper function to display a help marker with tooltip
     static void HelpMarker(const char* desc);
+    
+    // Callback for texture viewing - replaces direct panel reference
+    using TextureViewCallback = std::function<void(std::shared_ptr<Rapture::Texture2D>)>;
+    void setTextureViewCallback(TextureViewCallback callback) { m_TextureViewCallback = callback; }
 
 private:
     // Transform component UI state
@@ -42,6 +48,9 @@ private:
     
     // Material UI state
     std::string selectedTextureName;
+    
+    // Callback for texture viewing
+    TextureViewCallback m_TextureViewCallback;
     
     // Helper method to render entity properties
     void renderEntityProperties(std::shared_ptr<Rapture::Entity> entity);
@@ -63,5 +72,8 @@ private:
     
     // Helper method to render cascaded shadow component
     void renderCascadedShadowComponent(std::shared_ptr<Rapture::Entity> entity);
+    
+    // Helper method to render compute texture component
+    void renderComputeTextureComponent(std::shared_ptr<Rapture::Entity> entity);
 };
 
