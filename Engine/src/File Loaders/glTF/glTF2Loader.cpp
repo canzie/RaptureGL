@@ -446,8 +446,6 @@ namespace Rapture {
 
             }
 
-            GE_CORE_TRACE("Inverse Bind Matrices Size: {0}", inverseBindMatrices.size());
-
             // apply the inverse bind matrices to the bones
             skeletonComp->skeleton->applyInverseBinds(inverseBindMatrices);
         }
@@ -689,7 +687,6 @@ namespace Rapture {
             );
             
             if (localBoundingBox.isValid()) {
-                GE_CORE_INFO("Calculated bounding box during mesh loading");
                 localBoundingBox.logBounds();
             }
         }

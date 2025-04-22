@@ -1,7 +1,7 @@
 #include "TextureViewPanel.h"
 #include "Logger/Log.h"
 
-// Simple, stable implementation of TextureViewPanel
+#include "Renderer/RadianceCascades/RadianceCascades.h"
 
 TextureViewPanel::TextureViewPanel(std::shared_ptr<Rapture::Texture2D> texture) 
     : m_enabled(true)

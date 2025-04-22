@@ -77,6 +77,9 @@ namespace Rapture
 		void bind(bool clear = true);
 		void unbind();
 
+        void bindTexturesCompute(uint32_t startSlot);
+        void bindTextures(uint32_t startSlot);
+
         void disableDepthTesting();
 
         bool isValid() const { return m_framebufferID != 0; }

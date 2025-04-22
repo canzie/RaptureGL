@@ -68,7 +68,7 @@ namespace Rapture {
         glBindTexture(GL_TEXTURE_2D, getPositionTextureID());
 
         // Optionally bind depth if needed by the shader, choosing an unused slot
-        glActiveTexture(GL_TEXTURE0 + static_cast<uint32_t>(TextureActiveSlot::DEPTH)); // Example: Slot 4
+        glActiveTexture(GL_TEXTURE0 + static_cast<uint32_t>(TextureActiveSlot::DEPTH)); 
         glBindTexture(GL_TEXTURE_2D, getDepthTextureID());
     }
 
@@ -93,6 +93,15 @@ namespace Rapture {
 
         // Reset active texture unit to default
         glActiveTexture(GL_TEXTURE0);
+    }
+
+    void GBuffer::bindTexturesCompute()
+    {
+        // Bind GBuffer textures to specific slots defined in TextureActiveSlot
+        glBindImageTexture(static_cast<uint32_t>(TextureActiveSlot::ALBEDO), getAlbedoTextureID(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA8);
+        glBindImageTexture(static_cast<uint32_t>(TextureActiveSlot::NORMAL), getNormalTextureID(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
+        glBindImageTexture(static_cast<uint32_t>(TextureActiveSlot::MATERIAL), getMaterialTextureID(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
+        glBindImageTexture(static_cast<uint32_t>(TextureActiveSlot::POSTITION), getPositionTextureID(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
     }
 
     void GBuffer::setClearMode(bool clearColor, bool clearDepth)

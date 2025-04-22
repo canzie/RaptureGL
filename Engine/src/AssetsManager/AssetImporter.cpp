@@ -55,12 +55,11 @@ std::optional<std::filesystem::path> getRelatedShaderPath(
     for (const auto& ext : stageExtensions.at(targetStage)) {
         std::filesystem::path potentialPath = baseName + ext + finalExt;
         if (std::filesystem::exists(potentialPath)) {
-            GE_CORE_TRACE("AssetImporter::getRelatedShaderPath - Found related {} shader: {}", targetStage, potentialPath.string());
             return potentialPath;
         }
     }
 
-    GE_CORE_TRACE("AssetImporter::getRelatedShaderPath - Could not find related {} shader for base path: {}", targetStage, basePath.string());
+    GE_CORE_WARN("AssetImporter::getRelatedShaderPath - Could not find related {} shader for base path: {}", targetStage, basePath.string());
     return std::nullopt;
 }
 
@@ -107,7 +106,6 @@ std::optional<std::filesystem::path> getRelatedShaderPath(
 
 
     std::shared_ptr<Asset> AssetImporter::loadShader(const AssetHandle& handle, const AssetMetadata& metadata){
-        GE_CORE_TRACE("AssetImporter::loadShader - Loading shader from: {}", metadata.m_filePath.string());
 
         const auto& initialPath = metadata.m_filePath;
         if (!std::filesystem::exists(initialPath)) {
@@ -133,8 +131,6 @@ std::optional<std::filesystem::path> getRelatedShaderPath(
             GE_CORE_ERROR("AssetImporter::loadShader - Could not determine shader stage from file name: {}", initialPath.string());
             return nullptr;
         }
-
-        GE_CORE_TRACE("AssetImporter::loadShader - Initial shader type detected as: {}", initialStageType);
 
         std::shared_ptr<Shader> shader;
 

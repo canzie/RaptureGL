@@ -23,7 +23,10 @@ namespace Rapture {
         DEFERRED,
         FORWARD,
         POSTPROCESS,
-        SHADOWMAP
+        SHADOWMAP,
+        RADIANCE_CASCADES,
+        INDIRECT_LIGHTING,
+        DIRECT_LIGHTING
     };
 
 
@@ -35,7 +38,7 @@ namespace Rapture {
     //using CommandVariant = std::variant<RenderCommand, PostProcessCommand>;
     using CommandVariant = std::variant<std::monostate, RenderCommand, PostProcessCommand, 
                                             AnimationSetupCommand, GeometryPassCommand, LightingPassCommand, 
-                                            SSRCommand, ShadowPassCommand>;
+                                            SSRCommand, ShadowPassCommand, RadianceCascadesCommand, IndirectLightingPassCommand>;
 
     class RenderQueue {
     public:
@@ -215,6 +218,8 @@ namespace Rapture {
         static void buildForwardQueue(const QueueBuildRequest& request);
         static void buildDeferredQueue(const QueueBuildRequest& request);
         static void buildShadowPassQueue(const QueueBuildRequest& request);
+        static void buildRadianceCascadesQueue(const QueueBuildRequest& request);
+
     };
 
 }

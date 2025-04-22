@@ -3,6 +3,8 @@
 #include <unordered_set>
 #include <unordered_map> // Needed for grouping
 
+#include "RadianceCascades/RadianceCascades.h"
+
 namespace Rapture {
 
     // Initialize static members
@@ -170,6 +172,9 @@ namespace Rapture {
                              GE_RENDER_WARN("Async build requested for PostProcess queue, not fully supported yet.");
                              request.resultQueue->markAsDone(); // Mark done immediately if not handled
                              break;
+                        case RenderQueueType::RADIANCE_CASCADES:
+                            buildRadianceCascadesQueue(request);
+                            break;
                          default:
                               GE_RENDER_ERROR("Unknown RenderQueueType requested for async build.");
                               request.resultQueue->markAsDone();
@@ -465,7 +470,41 @@ namespace Rapture {
         request.resultQueue->markAsDone();
     }
 
+    void CommandQueueBuilder::buildRadianceCascadesQueue(const QueueBuildRequest &request)
+    {
+        RAPTURE_PROFILE_FUNCTION();
 
+        // Get the scene and registry
+        //auto& scene = request.scene;
+        //auto& reg = scene->getRegistry();
+
+
+        RadianceCascadesCommand radianceCascadesCmd;
+        radianceCascadesCmd.cascadeSSBO = RadianceCascadesManager::getSSBO();
+        radianceCascadesCmd.radianceCascadesShader = RadianceCascadesManager::getComputeShader();
+        radianceCascadesCmd.cascadeHierarchy = RadianceCascadesManager::getHierarchy();
+
+
+
+        if (!radianceCascadesCmd.cascadeSSBO || !radianceCascadesCmd.radianceCascadesShader) {
+            GE_RENDER_ERROR("RadianceCascades: Error retrieving cascadeSSBO or radianceCascadesShader, Probably not initialized");
+            request.resultQueue->markAsDone();
+            return;
+        }
+
+        request.resultQueue->add(radianceCascadesCmd);
+
+
+        // Indirect Lighting Pass Command
+        IndirectLightingPassCommand indirectLightingPassCmd;
+        indirectLightingPassCmd.cascadeSSBO = RadianceCascadesManager::getSSBO();
+        indirectLightingPassCmd.cascadeHierarchy = RadianceCascadesManager::getHierarchy();
+        //request.resultQueue->add(indirectLightingPassCmd);
+
+
+        request.resultQueue->markAsDone();
+
+    }
 
     std::shared_ptr<RenderQueue> CommandQueueBuilder::buildGeometryCommandQueueAsync(const std::shared_ptr<Scene>& scene, RenderQueueType type) 
     {

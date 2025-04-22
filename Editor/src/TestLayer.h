@@ -9,6 +9,9 @@
 #include "Mesh/Mesh.h"
 #include "Renderer/PrimitiveShapes.h"
 #include "Renderer/Deferred Shading/DeferredRenderer.h"
+#include "Textures/Texture.h"
+#include "Shaders/Shader.h"
+#include <vector>
 
 // Forward declarations
 class ViewportPanel;
@@ -102,4 +105,6 @@ private:
     
     // Event listener IDs for cleanup
     size_t m_sceneActivatedListenerId = 0;
+
+
 };

@@ -1,6 +1,5 @@
 #version 450 core
 #extension GL_ARB_shader_storage_buffer_object : require
-#extension GL_ARB_gpu_shader_int64 : require // Needed for uint64_t
 
 // Work group size - Adjust based on angular resolution and performance.
 // Aim for local_size_x * local_size_y to roughly match angularResolution * angularResolution if possible,
@@ -45,8 +44,6 @@ struct RadianceCascadeShaderData {
     int numRayDirections; // Total directions = angularResolution * angularResolution
     int numStepsPerRay;
     float jitterStrength;
-
-    //uint64_t atlasHandle;
 };
 
 
@@ -80,34 +77,6 @@ vec3 octDecode(vec2 f) {
     n.x += (n.x >= 0.0 ? -t : t);
     n.y += (n.y >= 0.0 ? -t : t);
     return normalize(n);
-}
-
-// based on angular resolution we calculate the current probe index, given the pixel coordinate of the atlas
-// the pixels should for each probe, be layed out next to each other, so not in a grid form
-// this helps reduce the minimum atlas texture resolution needed
-// OUT: index of the probe e.g. (1, 1, 0), (12, 7, 5)
-//      this will help us identify the probes origin
-ivec2 PixelToProbeIndex(ivec2 pixelCoord, int resolution, ivec2 screenDimensions) {
-    // angular resolution squared is amount of pixels per probe
-    // to get the start we do
-
-    int globalLinearIndex = pixelCoord.y * screenDimensions.x + pixelCoord.x;
-
-    float probeSize = resolution * resolution;
-    float probeIndex = globalLinearIndex / probeSize;
-    int relativeProbeIndex = int(floor(probeIndex));
-    float fractionalPart = probeIndex - float(relativeProbeIndex);
-    int pixelIndexInProbe = int(floor(fractionalPart * probeSize));
-
-    return ivec2(relativeProbeIndex, pixelIndexInProbe);
-}
-
-// goes from the relative 1d index to a relative 2d index in the probe
-vec2 pixelIndexToOctCoordNorm(int index, int resolution) {
-    ivec2 coord2D;
-    coord2D.x = index % resolution;
-    coord2D.y = index / resolution;
-    return (vec2(coord2D) + 0.5) / float(resolution);
 }
 
 // Projects world space position to screen UV coordinates [0, 1]
@@ -158,73 +127,79 @@ void main() {
         return;
     }
 
-    ivec2 indices = PixelToProbeIndex(globalPixelCoord, cascade.angularResolution, screenDimensions);
-    int probeIdx1D = indices.x;
-    int pixelIdxInProbe = indices.y;
+    // Calculate the 2D grid coordinates of the probe this pixel belongs to
+    ivec2 probeGridCoord2D = globalPixelCoord / cascade.angularResolution;
 
-    vec2 octCoordNorm = pixelIndexToOctCoordNorm(pixelIdxInProbe, cascade.angularResolution);
+    // Calculate the 1D index of this probe
+    int probeIdx1D = probeGridCoord2D.y * cascade.atlasProbeGridDim.x + probeGridCoord2D.x;
+
+    // Calculate the 2D pixel coordinates within this probe's local NxN map
+    ivec2 pixelCoordInProbe = globalPixelCoord % cascade.angularResolution;
+
+    // Convert the local pixel coordinates to normalized octahedral coordinates [0, 1]
+    vec2 octCoordNorm = (vec2(pixelCoordInProbe) + 0.5) / float(cascade.angularResolution);
+
+    // Decode the octahedral coordinates to get the ray direction for this pixel
     vec3 rayDirection = octDecode(octCoordNorm);
 
-    // calculate the probe world position
+    // Calculate the probe world position using the 1D index
     ivec3 probeGridCoords = probeIndexToGridCoords(probeIdx1D, cascade.gridDimensions);
     vec3 probeWorldPos = getProbeWorldPosition(probeGridCoords, cascade);
 
-
+    // --- 2. Ray Marching Setup ---
     vec3 radiance = vec3(0.0);
-    float transparency = 1.0;
-    // ray loop
+    float transparency = 1.0; // Start fully transparent
     float totalRange = cascade.rangeEnd - cascade.rangeStart;
     float stepSize = totalRange / float(max(1, cascade.numStepsPerRay));
-    float startDist = cascade.rangeStart;
+    float startDist = cascade.rangeStart; // Use start range for SSR
 
+    // --- 3. Screen-Space Ray Marching Loop ---
     for (int i = 0; i < cascade.numStepsPerRay; i++) {
         float currentRayDist = startDist + float(i) * stepSize;
-        
         vec3 currentWorldPos = probeWorldPos + rayDirection * currentRayDist;
 
-
+        // Project current point to screen space
         vec3 screenPos = worldToScreenUV(currentWorldPos, cascade.viewMatrix, cascade.projectionMatrix);
         vec2 screenUV = screenPos.xy;
         float clipW = screenPos.z; // If <= 0, the point is behind or on the camera's near plane
 
+        // Check if the point is outside the view frustum (clip space W <= 0)
+        // or outside the screen boundaries [0, 1]
+        if (clipW <= 0.0 || screenUV.x < 0.0 || screenUV.x > 1.0 || screenUV.y < 0.0 || screenUV.y > 1.0) {
+           continue; // Continue marching if out of view, maybe it comes back in? Or break? Let's continue for now.
+           // break; // Alternative: Stop marching if the ray goes off-screen
+        }
 
-        if (clipW <= 0.0 ) {
+        // Sample depth from the G-buffer (linear camera-space depth)
+        float gBufferDepth = texture(gPositionDepth, screenUV).a;
+
+        // Calculate the current point's view-space depth (distance from camera plane)
+        vec4 viewPos = cascade.viewMatrix * vec4(currentWorldPos, 1.0);
+        float currentViewDepth = -viewPos.z; // Negate because Z is negative in front of camera in OpenGL convention
+
+        // Check for intersection: current point is farther than or very close to the G-buffer surface
+        if (currentViewDepth >= gBufferDepth - EPSILON) {
+            // We hit a surface visible in the G-Buffer
+
+            // Sample direct lighting and albedo from the G-buffer at the hit UV
+            vec3 directLighting = texture(gDirectLighting, screenUV).rgb;
+            vec3 albedo = texture(gAlbedoSpec, screenUV).rgb; // Assuming albedo is in RGB
+
+            // Accumulate reflected radiance (simple multiplication for now)
+            // TODO: Implement more sophisticated BRDF if needed
+            radiance += directLighting * albedo * transparency; // Modulate by current transparency
+
+            // For basic SSR, we often stop at the first hit
+            transparency = 0.0; // Mark as opaque hit
+
+            // Exit the ray marching loop
             break;
         }
-
-
-        float gBufferDepth = texture(gPositionDepth, screenUV).a;
-        vec4 viewPos = cascade.viewMatrix * vec4(currentWorldPos, 1.0);
-        float currentViewDepth = -viewPos.z;
-
-        if (currentViewDepth >= gBufferDepth - EPSILON) {
-                // Sample direct lighting from the G-buffer surface we hit
-                vec3 directLighting = texture(gDirectLighting, screenUV).rgb;
-                vec3 albedoSpec = texture(gAlbedoSpec, screenUV).rgb;
-                radiance = directLighting * albedoSpec;
-                //radiance = texture(gAlbedoSpec, screenUV).rgb;
-                // Set transparency to indicate an opaque hit
-                transparency = 0.0;
-
-                // Exit the ray marching loop as we found the first intersection
-                break;
-        }
-        
-        
+        // Optional: Add volumetric lighting contribution here if needed
     }
-    //radiance = texture(gAlbedoSpec, globalPixelCoord).rgb;
-
-
-
-    //vec4 debugColor = vec4(1.0, 0.0, 0.0, 1.0);
-    //imageStore(cascadeAtlas, globalPixelCoord, debugColor);
-
-
-
-
-
 
     // --- 5. Write Output ---
+    // Store the calculated radiance and final transparency in the atlas
+    // globalPixelCoord is the correct coordinate for the final atlas write
     imageStore(cascadeAtlas, globalPixelCoord, vec4(radiance, transparency));
-    
 }

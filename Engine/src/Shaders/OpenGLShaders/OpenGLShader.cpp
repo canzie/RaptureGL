@@ -100,7 +100,7 @@ OpenGLShader::OpenGLShader(const std::filesystem::path& vertexPath, const std::f
     GLsizei length; // name length
 
     glGetProgramiv(m_programID, GL_ACTIVE_UNIFORM_BLOCKS, &count);
-    GE_CORE_TRACE("OpenGLShader: Found {} active uniform blocks.", count);
+   // GE_CORE_TRACE("OpenGLShader: Found {} active uniform blocks.", count);
 
     for (i = 0; i < count; i++)
     {
@@ -158,7 +158,7 @@ OpenGLShader::OpenGLShader(const std::filesystem::path& vertexPath, const std::f
         // Set the binding point if it's different from current
         if (currentBinding != bindingPoint) {
             glUniformBlockBinding(m_programID, blockIndex, bindingPoint);
-            GE_CORE_TRACE("OpenGLShader: Binding uniform block '{}' to point {}", blockName, bindingPoint);
+            //GE_CORE_TRACE("OpenGLShader: Binding uniform block '{}' to point {}", blockName, bindingPoint);
 
             // Validate that binding worked
             glGetActiveUniformBlockiv(m_programID, blockIndex, GL_UNIFORM_BLOCK_BINDING, &currentBinding);
@@ -167,7 +167,7 @@ OpenGLShader::OpenGLShader(const std::filesystem::path& vertexPath, const std::f
                     blockName, bindingPoint, currentBinding);
             }
         } else {
-             GE_CORE_TRACE("OpenGLShader: Uniform block '{}' already bound to point {}", blockName, bindingPoint);
+            //GE_CORE_TRACE("OpenGLShader: Uniform block '{}' already bound to point {}", blockName, bindingPoint);
         }
     }
 

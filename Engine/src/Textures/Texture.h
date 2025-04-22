@@ -72,6 +72,7 @@ struct TextureSpecification {
     TextureFormat format = TextureFormat::RGB8;
     uint32_t width = 0;
     uint32_t height = 0;
+    uint32_t depth = 0;
     uint32_t channels = 0;
 };
 
@@ -90,8 +91,7 @@ public:
     virtual void unbind() const = 0;
 
     virtual void bindCompute(uint32_t slot = 0) const = 0;
-    virtual void unbindCompute() const = 0;
-    
+    virtual void barrier() const = 0;
     // Texture parameter setters
     virtual void setMinFilter(TextureFilter filter) = 0;
     virtual void setMagFilter(TextureFilter filter) = 0;
@@ -111,6 +111,11 @@ class Texture2D : public Texture {
 public:
     virtual void setData(void* data, uint32_t size) = 0;
 
+    // TODO: remove this if not needed
+    // it is not in texture, because i dont want texture3d to implement it if it is not needed
+    virtual void unbindCompute() const = 0;
+
+
     // Static bindless texture methods
     static uint64_t generateTextureHandleFromID(uint32_t textureID);
     static bool makeTextureResident(uint64_t textureHandle);
@@ -127,6 +132,19 @@ protected:
 
     // Give TextureLibrary access to protected create methods
     friend class TextureLibrary;
+};
+
+
+
+class Texture3D : public Texture {
+public:   
+    virtual uint32_t getDepth() const = 0;
+
+    virtual void setWrapR(TextureWrap wrap) = 0;
+
+    static std::shared_ptr<Texture3D> create(uint32_t width, uint32_t height, uint32_t depth, uint32_t channels);
+    static std::shared_ptr<Texture3D> create(TextureSpecification specification);
+
 };
 
 struct TextureLoadRequest {

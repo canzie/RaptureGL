@@ -78,7 +78,13 @@ namespace Rapture
 
         std::string getSceneName() { return m_config.sceneName; }
 
-        std::shared_ptr<Entity> getMainCamera() { return mainCameraEntity.lock(); }
+        std::shared_ptr<Entity> getMainCamera() { 
+            if (auto camera = mainCameraEntity.lock()) {
+                return camera;
+            }
+            GE_CORE_ERROR("Scene - No main camera found");
+            return nullptr;
+        }
         void setMainCamera(std::shared_ptr<Entity> camera) { mainCameraEntity = camera; }
         //void setMainCamera(Entity camera) { mainCameraEntity = std::make_shared<Entity>(camera); }
 

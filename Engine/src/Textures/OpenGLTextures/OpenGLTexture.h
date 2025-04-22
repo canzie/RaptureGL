@@ -23,9 +23,14 @@ public:
     virtual void unbind() const override;
 
     virtual void bindCompute(uint32_t slot = 0) const override;
+
+    // NOTE: dont know if this is needed so it is not a virtual function
+    // might remove it later when i've used it more and know more about it
     virtual void unbindCompute() const override;
 
     virtual void setData(void* data, uint32_t size) override;
+
+    virtual void barrier() const override;
     
     // Implement texture parameter setters
     virtual void setMinFilter(TextureFilter filter) override;
@@ -50,10 +55,7 @@ public:
     static std::shared_ptr<OpenGLTexture2D> createCubemap(const std::vector<std::string>& filepaths);
 
 private:
-    // Helper to convert enum to GL constant
-    GLenum convertFilterToGL(TextureFilter filter);
-    GLenum convertWrapToGL(TextureWrap wrap);
-    
+
     // Helper to generate texture handle
     void generateTextureHandle();
 

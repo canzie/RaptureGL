@@ -9,6 +9,10 @@
 #include "ShadowMapping/ShadowMapping.h"
 #include "ShadowMapping/CascadedShadowMapping.h"
 #include "../Scenes/Components/Components.h"
+#include "../Textures/Texture.h"
+#include "../Buffers/OpenGLBuffers/StorageBuffers/OpenGLStorageBuffer.h"
+#include "RadianceCascades/RadianceCascades.h"
+#include "RadianceCascades/RadianceCascadesManager.h"
 
 #include <glm/glm.hpp>
 
@@ -73,9 +77,19 @@ namespace Rapture {
 
     };
 
+    struct RadianceCascadesCommand : Command {
+        std::shared_ptr<Shader> radianceCascadesShader = nullptr;
+        std::shared_ptr<ShaderStorageBuffer> cascadeSSBO = nullptr;
+        std::shared_ptr<RadianceCascadeHierarchy> cascadeHierarchy = nullptr;
+    };
+
+    struct IndirectLightingPassCommand : Command {
+        std::shared_ptr<ShaderStorageBuffer> cascadeSSBO = nullptr;
+        std::shared_ptr<RadianceCascadeHierarchy> cascadeHierarchy = nullptr;
+    };
+
     struct SSRCommand : Command {
         std::shared_ptr<Shader> ssrShader = nullptr; 
-        // Add any SSR-specific parameters here later if needed
     };
 
     using ShadowVariant = std::variant<std::monostate, std::shared_ptr<ShadowMap>, std::shared_ptr<CascadedShadowMapping>>;

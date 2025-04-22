@@ -51,7 +51,6 @@ namespace Rapture {
             // Cache the loaded asset
             if (asset) {
                 m_loadedAssets.insert_or_assign(handle, asset);
-                GE_CORE_INFO("AssetManagerEditor::getAsset - Asset loaded: {}", metadata.m_filePath.string());
             } else {
                 GE_CORE_ERROR("AssetManagerEditor::getAsset - Failed to load asset: {}", metadata.m_filePath.string());
             }

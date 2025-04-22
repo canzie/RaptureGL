@@ -55,6 +55,8 @@ namespace Rapture {
 			
 			// Initialize project - this will setup default world and scene
 			m_project = std::make_shared<Project>();
+
+
 		}
 	}
 

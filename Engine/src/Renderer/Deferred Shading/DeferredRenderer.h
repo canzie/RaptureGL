@@ -14,6 +14,15 @@
 
 namespace Rapture
 {
+
+    enum class BoundFramebufferType {
+        NONE,
+        GBUFFER,
+        LIGHTING_BUFFER,
+        INDIRECT_LIGHTING_BUFFER
+    };
+
+
     class DeferredRenderer
     {
     public:
@@ -34,9 +43,12 @@ namespace Rapture
         static void geometryPassRender(const RenderCommand& cmd);
         static inline void lightingPassRender(const LightingPassCommand& cmd);
         static inline void shadowPassRender(const ShadowPassCommand& cmd);
+        static inline void radianceCascadesCompute(const RadianceCascadesCommand& cmd);
+        static inline void indirectLightingPassRender(const IndirectLightingPassCommand& cmd);
 
         static std::shared_ptr<GBuffer> getGBuffer() { return s_gBuffer; }
         static std::shared_ptr<Framebuffer> getLightingBuffer() { return s_lightingBuffer; }
+        static std::shared_ptr<Framebuffer> getIndirectLightingBuffer() { return s_indirectLightingBuffer; }
 
         static std::shared_ptr<ShadowMap> getShadowMap() { return nullptr; }
 
@@ -57,11 +69,14 @@ namespace Rapture
         // deferred shading
         static std::shared_ptr<GBuffer> s_gBuffer;
         static std::shared_ptr<Framebuffer> s_lightingBuffer;
+        static std::shared_ptr<Framebuffer> s_indirectLightingBuffer;
         static std::shared_ptr<UniformBuffer> s_cameraUBO;
         static std::shared_ptr<UniformBuffer> s_lightsUBO;
 
         static std::weak_ptr<Shader> s_lightingPassShader;
+        static std::weak_ptr<Shader> s_indirectLightingPassShader;
         static AssetHandle s_lightingPassShaderHandle;
+        static AssetHandle s_indirectLightingPassShaderHandle;
 
         // fullscreen quad for lighting pass
         static std::shared_ptr<Quad> s_fullscreenQuad;
@@ -82,6 +97,8 @@ namespace Rapture
         static std::shared_ptr<ShaderStorageBuffer> s_shadowSSBO;
 
         static glm::mat4 s_cameraViewMatrixCache;
+
+        static BoundFramebufferType s_currentFramebufferType;
 
     };
 }

@@ -5,55 +5,11 @@
 
 #include "../../Utils/GLCapabilities.h"
 
+#include "OpenGLFormatConverters.h"
+
 namespace Rapture {
 
-	static GLenum TextureFormatToGL(TextureFormat format)
-	{
-		switch (format)
-		{
-			case TextureFormat::RGBA8:       return GL_RGBA8;
-			case TextureFormat::RGB8:        return GL_RGB8;
-			case TextureFormat::RGB16F:      return GL_RGB16F;
-			case TextureFormat::RGB32F:      return GL_RGB32F;
-			case TextureFormat::RGBA16F:     return GL_RGBA16F;
-			case TextureFormat::RGBA32F:     return GL_RGBA32F;
-		}
 
-		GE_CORE_ERROR("Unknown framebuffer texture format!");
-		return 0;
-	}
-	
-	static GLenum TextureFormatToGLDataFormat(TextureFormat format)
-	{
-		switch (format)
-		{
-			case TextureFormat::RGBA8:       return GL_RGBA;
-			case TextureFormat::RGB8:        return GL_RGB;
-			case TextureFormat::RGB16F:      return GL_RGB;
-			case TextureFormat::RGB32F:      return GL_RGB;
-			case TextureFormat::RGBA16F:     return GL_RGBA;
-			case TextureFormat::RGBA32F:     return GL_RGBA;
-		}
-
-		GE_CORE_ERROR("Unknown framebuffer data format!");
-		return 0;
-	}
-	
-	static GLenum TextureFormatToGLDataType(TextureFormat format)
-	{
-		switch (format)
-		{
-			case TextureFormat::RGBA8:       return GL_UNSIGNED_BYTE;
-			case TextureFormat::RGB8:        return GL_UNSIGNED_BYTE;
-			case TextureFormat::RGB16F:      return GL_FLOAT;
-			case TextureFormat::RGB32F:      return GL_FLOAT;
-			case TextureFormat::RGBA16F:     return GL_FLOAT;
-			case TextureFormat::RGBA32F:     return GL_FLOAT;
-		}
-
-		GE_CORE_ERROR("Unknown framebuffer data type!");
-		return GL_UNSIGNED_BYTE;
-	}
 
 OpenGLTexture2D::OpenGLTexture2D(const std::string& path)
     : m_path(path)
@@ -255,6 +211,11 @@ void OpenGLTexture2D::setData(void* data, uint32_t size)
     }
 }
 
+void OpenGLTexture2D::barrier() const
+{
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+}
+
 void OpenGLTexture2D::setMinFilter(TextureFilter filter)
 {
     glBindTexture(GL_TEXTURE_2D, m_rendererID);
@@ -272,13 +233,14 @@ void OpenGLTexture2D::setMinFilter(TextureFilter filter)
 
 void OpenGLTexture2D::setMagFilter(TextureFilter filter)
 {
-    glBindTexture(GL_TEXTURE_2D, m_rendererID);
     // Note: Mag filter can only be GL_NEAREST or GL_LINEAR
     GLenum glFilter = convertFilterToGL(filter);
     if (glFilter != GL_NEAREST && glFilter != GL_LINEAR) {
         GE_CORE_WARN("OpenGLTexture2D: Mag filter can only be Nearest or Linear. Using Linear instead.");
         glFilter = GL_LINEAR;
     }
+    
+    glBindTexture(GL_TEXTURE_2D, m_rendererID);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
     glBindTexture(GL_TEXTURE_2D, 0);
     
@@ -377,32 +339,7 @@ void OpenGLTexture2D::generateTextureHandle()
     }
 }
 
-GLenum OpenGLTexture2D::convertFilterToGL(TextureFilter filter)
-{
-    switch (filter) {
-        case TextureFilter::Nearest:              return GL_NEAREST;
-        case TextureFilter::Linear:               return GL_LINEAR;
-        case TextureFilter::NearestMipmapNearest: return GL_NEAREST_MIPMAP_NEAREST;
-        case TextureFilter::LinearMipmapNearest:  return GL_LINEAR_MIPMAP_NEAREST;
-        case TextureFilter::NearestMipmapLinear:  return GL_NEAREST_MIPMAP_LINEAR;
-        case TextureFilter::LinearMipmapLinear:   return GL_LINEAR_MIPMAP_LINEAR;
-        default:
-            GE_CORE_WARN("OpenGLTexture2D: Unknown filter type, defaulting to Linear");
-            return GL_LINEAR;
-    }
-}
 
-GLenum OpenGLTexture2D::convertWrapToGL(TextureWrap wrap)
-{
-    switch (wrap) {
-        case TextureWrap::ClampToEdge:    return GL_CLAMP_TO_EDGE;
-        case TextureWrap::MirroredRepeat: return GL_MIRRORED_REPEAT;
-        case TextureWrap::Repeat:         return GL_REPEAT;
-        default:
-            GE_CORE_WARN("OpenGLTexture2D: Unknown wrap type, defaulting to Repeat");
-            return GL_REPEAT;
-    }
-}
 
 OpenGLTexture2D::OpenGLTexture2D(const std::vector<std::string>& filepaths)
 {

@@ -435,7 +435,7 @@ namespace Rapture
 		
 		invalidate();
 		
-		GE_CORE_INFO("Framebuffer resized to ({0}, {1})", width, height);
+		GE_CORE_INFO("Framebuffer::resize - Framebuffer resized to ({0}, {1})", width, height);
 	}
 
 	void Framebuffer::bind(bool clear)
@@ -485,6 +485,29 @@ namespace Rapture
 		// glEnable(GL_BLEND);
 		// glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	}
+
+    void Framebuffer::bindTexturesCompute(uint32_t startSlot)
+    {
+        for (size_t i = 0; i < m_colorAttachments.size(); i++)
+        {
+            auto& format = m_specification.attachments[i].textureFormat;
+            GLenum glFormat = TextureFormatToGL(format);
+            glBindImageTexture(startSlot + i, m_colorAttachments[i], 0, GL_FALSE, 0, GL_READ_ONLY, glFormat);
+        }
+        
+        
+    }
+
+    void Framebuffer::bindTextures(uint32_t startSlot)
+    {        
+        for (size_t i = 0; i < m_colorAttachments.size(); i++)
+        {
+
+            glActiveTexture(GL_TEXTURE0 + startSlot + i);
+            glBindTexture(GL_TEXTURE_2D, m_colorAttachments[i]);
+        }
+        
+    }
 
     void Framebuffer::disableDepthTesting()
     {

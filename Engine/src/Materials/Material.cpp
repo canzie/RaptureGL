@@ -316,8 +316,7 @@ namespace Rapture
 	PBRMaterial::PBRMaterial(glm::vec3 base_color, float roughness, float metallic, float specular)
 		: Material(MaterialType::PBR, "PBR_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
 	{
-		GE_CORE_INFO("Creating PBR Material: {0} (Color: {1},{2},{3})", 
-			m_name, base_color.x, base_color.y, base_color.z);
+
 		
 		if (!s_defaultShaderHandle) {
 			GE_CORE_ERROR("Metal shader not initialized! Use MaterialLibrary::init() first.");
@@ -334,10 +333,6 @@ namespace Rapture
             &m_uniformData,
             PBR_BINDING_POINT_IDX);
 		
-        GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
-			m_uniformBuffer->getID(), 
-			sizeof(m_uniformData), 
-			PBR_BINDING_POINT_IDX);
 		
 		m_uniformData.baseColorFactor = glm::vec4(base_color, 1.0f);
 		m_uniformData.metallicFactor = metallic;
@@ -523,7 +518,6 @@ namespace Rapture
 	PhongMaterial::PhongMaterial(float flux, glm::vec4 diffuseColor, glm::vec4 specularColor, glm::vec4 ambientLight, float shininess)
 		: Material(MaterialType::PHONG, "Phong_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
 	{
-		GE_CORE_INFO("Creating Phong Material: {0}", m_name);
 		
 		if (!s_defaultShaderHandle) {
 			GE_CORE_ERROR("Phong shader not initialized! Use MaterialLibrary::init() first.");
@@ -539,10 +533,6 @@ namespace Rapture
             &m_uniformData, 
             PHONG_BINDING_POINT_IDX);
 		
-		GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
-			m_uniformBuffer->getID(), 
-			sizeof(m_uniformData), 
-			PHONG_BINDING_POINT_IDX);
 		
 		m_uniformData.flux = flux;
 		m_uniformData.diffuseColor = diffuseColor;
@@ -600,8 +590,7 @@ namespace Rapture
 	SolidMaterial::SolidMaterial(glm::vec3 base_color)
 		: Material(MaterialType::SOLID, "Solid_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
 	{
-		GE_CORE_INFO("Creating Solid Material: {0} (Color: {1},{2},{3})", 
-			m_name, base_color.x, base_color.y, base_color.z);
+
 		
 		if (!s_defaultShaderHandle) {
 			GE_CORE_ERROR("Solid shader not initialized! Use MaterialLibrary::init() first.");
@@ -617,10 +606,7 @@ namespace Rapture
             &m_uniformData, 
             SOLID_BINDING_POINT_IDX);
 		
-		GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
-			m_uniformBuffer->getID(), 
-			sizeof(m_uniformData), 
-			SOLID_BINDING_POINT_IDX);
+
 		
 		m_uniformData.baseColorFactor = glm::vec4(base_color, 1.0f);
 		
@@ -685,10 +671,7 @@ namespace Rapture
     SpecularGlossinessMaterial::SpecularGlossinessMaterial(glm::vec3 diffuseColor, glm::vec3 specularColor, float glossiness)
         : Material(MaterialType::KHR_SPECULAR_GLOSSINESS, "SpecGloss_" + std::to_string(reinterpret_cast<uintptr_t>(this)))
     {
-        GE_CORE_INFO("Creating Specular-Glossiness Material: {0} (Diffuse: {1},{2},{3}, Specular: {4},{5},{6}, Glossiness: {7})", 
-            m_name, diffuseColor.x, diffuseColor.y, diffuseColor.z, 
-            specularColor.x, specularColor.y, specularColor.z, glossiness);
-        
+
         if (!s_defaultShaderHandle) {
             GE_CORE_ERROR("Specular-Glossiness shader not initialized! Use MaterialLibrary::init() first.");
             return;
@@ -703,10 +686,7 @@ namespace Rapture
             &m_uniformData, 
             SPECULAR_GLOSSINESS_BINDING_POINT_IDX);
         
-        GE_CORE_INFO("  Created UBO: ID={0}, Size={1}, BindingPoint={2}", 
-            m_uniformBuffer->getID(), 
-            sizeof(m_uniformData), 
-            SPECULAR_GLOSSINESS_BINDING_POINT_IDX);
+
         
         m_uniformData.diffuseFactor = glm::vec4(diffuseColor, 1.0f);
         m_uniformData.glossinessFactor = glossiness;

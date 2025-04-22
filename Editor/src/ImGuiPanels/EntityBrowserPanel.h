@@ -49,21 +49,11 @@ public:
     void refreshHierarchyCache() { m_needsHierarchyRebuild = true; }
 
 private:
-    // Helper method to find the root entity by traversing up the hierarchy
-    std::shared_ptr<Rapture::Entity> findRootEntity(std::shared_ptr<Rapture::Entity> entity, Rapture::Scene* scene);
-    
-    // Helper function to display an entity and its children recursively
-    void displayEntityHierarchy(std::shared_ptr<Rapture::Entity> entity, int depth, Rapture::Scene* scene, 
-                              std::unordered_set<uint32_t>& displayedEntities);
-    
     // Builds the cached hierarchy from scratch
     void buildHierarchyCache(Rapture::Scene* scene);
-    
-    // Display entities from the cached hierarchy
-    void displayCachedHierarchy(const std::shared_ptr<HierarchyNode>& node, int depth, Rapture::Scene* scene);
-    
-    // Helper function that returns the node rectangle for line drawing
-    ImRect displayCachedHierarchyWithRect(const std::shared_ptr<HierarchyNode>& node, int depth, Rapture::Scene* scene);
+
+    // Recursively renders a row in the hierarchy table
+    void renderHierarchyRow(const std::shared_ptr<HierarchyNode>& node, int depth, int& rowIndex);
     
     // Currently selected entity
     std::shared_ptr<Rapture::Entity> m_selectedEntity;
@@ -71,9 +61,8 @@ private:
     // Callback for entity selection
     EntitySelectionCallback m_entitySelectionCallback;
     
-    // Cached hierarchy data
-    std::vector<std::shared_ptr<HierarchyNode>> m_independentEntities;
-    std::vector<std::shared_ptr<HierarchyNode>> m_rootEntities;
+    // Combined list of root nodes for the hierarchy (includes previously independent entities)
+    std::vector<std::shared_ptr<HierarchyNode>> m_hierarchyRoots;
     
     // Scene handle for comparison to detect scene changes
     Rapture::Scene* m_cachedScene = nullptr;
@@ -83,9 +72,5 @@ private:
     
     // Entity count for scene modification detection
     uint32_t m_lastEntityCount = 0;
-    
-    // Frame counter for periodic updates (in case entities are added/removed)
-    uint32_t m_frameCounter = 0;
-    const uint32_t CACHE_UPDATE_INTERVAL = 60; // Update every 60 frames
 };
 

@@ -1,6 +1,7 @@
 #include "PanelComponents.h"
 #include <algorithm> // For std::min/max
 #include <vector>
+#include "Logger/Log.h"
 
 // Implementation of drawTextureGrid
 void drawTextureGrid(

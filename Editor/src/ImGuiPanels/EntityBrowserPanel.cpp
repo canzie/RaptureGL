@@ -3,10 +3,11 @@
 #include "Debug/TracyProfiler.h"
 #include "ImGuiPanels/imGuiPanelStyle.h"
 
+#include "imgui_internal.h" // Required for TableSetBgColor
+
 void EntityBrowserPanel::render(Rapture::Scene* scene, EntitySelectionCallback callback) {
     RAPTURE_PROFILE_FUNCTION();
     
-    // Push bold font for the title
     ImGui::PushFont(ImGuiPanelStyle::GetBoldFont());
     ImGui::Begin("Entity Browser");
     ImGui::PopFont();
@@ -16,38 +17,21 @@ void EntityBrowserPanel::render(Rapture::Scene* scene, EntitySelectionCallback c
     if (scene) {
         auto& registry = scene->getRegistry();
         
-        // Get count of entities with tag components
         auto view = registry.view<Rapture::TagComponent>();
         uint32_t entityCount = static_cast<uint32_t>(view.size());
         
-        // Count total entities
+        // Display total entities
         ImGui::Text("Total Entities: %d", entityCount);
         
-        // Refresh button
-        if (ImGui::Button("Refresh Hierarchy")) {
-            m_needsHierarchyRebuild = true;
-        }
-        
-        ImGui::SameLine();
-        
-        // Add entity button
-        if (ImGui::Button("Create Entity")) {
-            // Create a new entity in the scene
-            Rapture::Entity newEntity = scene->createEntity("New Entity");
-            
-            // Select the newly created entity
-            m_selectedEntity = std::make_shared<Rapture::Entity>(newEntity);
-            if (m_entitySelectionCallback) {
-                m_entitySelectionCallback(m_selectedEntity);
-            }
-            
-            // Rebuild hierarchy to include the new entity
+        // Refresh button on the right
+        ImGui::SameLine(ImGui::GetWindowWidth() - 80.0f); // Adjust position as needed
+        if (ImGui::Button("Refresh")) { // TODO: Replace with icon button if FontAwesome is integrated
             m_needsHierarchyRebuild = true;
         }
         
         ImGui::Separator();
         
-        // Check if we need to rebuild hierarchy cache
+        // Check if hierarchy cache needs rebuilding
         bool sceneChanged = (m_cachedScene != scene);
         bool entityCountChanged = (m_lastEntityCount != entityCount);
         
@@ -59,77 +43,27 @@ void EntityBrowserPanel::render(Rapture::Scene* scene, EntitySelectionCallback c
             m_needsHierarchyRebuild = false;
         }
         
-        // Increment frame counter
-        m_frameCounter++;
+        // Define table structure
+        const int columnCount = 3;
+        ImGuiTableFlags tableFlags = ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable 
+                                   | ImGuiTableFlags_RowBg; // Enable RowBg for alternating colors
         
-        // Display hierarchy from cache
-        // Section 1: Independent Entities (no relationships)
-        if (!m_independentEntities.empty()) {
-            // Push bold font for the header
-            ImGui::PushFont(ImGuiPanelStyle::GetBoldFont());
-            bool headerOpen = ImGui::CollapsingHeader("Independent Entities", ImGuiTreeNodeFlags_DefaultOpen);
-            ImGui::PopFont();
+        if (ImGui::BeginTable("EntityHierarchyTable", columnCount, tableFlags)) {
+            // Setup columns
+            ImGui::TableSetupColumn("Item Label", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 80.0f); // Fixed width for type
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 100.0f); // Fixed width for actions
+            ImGui::TableHeadersRow();
             
-            if (headerOpen) {
-                ImGui::Indent(5.0f);
-                
-                for (auto& node : m_independentEntities) {
-                    if (!node->entity || !node->entity->isValid()) {
-                        continue; // Skip invalid entities
-                    }
-                    
-                    // Set up flags for selectable with consistent style
-                    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_SpanAvailWidth;
-                    
-                    // Set selected flag if this is the current entity
-                    bool isSelected = (m_selectedEntity && node->entity && m_selectedEntity->getID() == node->entity->getID());
-                    if (isSelected) {
-                        flags |= ImGuiTreeNodeFlags_Selected;
-                    }
-                    
-                    // Use TreeNodeEx instead of Selectable for consistent styling
-                    bool nodeOpen = ImGui::TreeNodeEx((void*)(intptr_t)node->entity->getID(), flags, "%s", node->entityName.c_str());
-                    
-                    // Handle selection when clicked
-                    if (ImGui::IsItemClicked()) {
-                        m_selectedEntity = node->entity;
-                        if (m_entitySelectionCallback) {
-                            m_entitySelectionCallback(m_selectedEntity);
-                        }
-                    }
-                    
-                    // Context menu for actions
-                    if (ImGui::BeginPopupContextItem()) {
-                        if (ImGui::MenuItem("Properties")) {
-                            m_selectedEntity = node->entity;
-                            if (m_entitySelectionCallback) {
-                                m_entitySelectionCallback(m_selectedEntity);
-                            }
-                        }
-                        ImGui::EndPopup();
-                    }
-                    
-                    if (nodeOpen) {
-                        ImGui::TreePop();
-                    }
-                }
-                
-                ImGui::Unindent(5.0f);
-            }
-        }
-        
-        // Section 2: Entity Hierarchies
-        if (!m_rootEntities.empty()) {
-            // Push bold font for the header
-            ImGui::PushFont(ImGuiPanelStyle::GetBoldFont());
-            bool headerOpen = ImGui::CollapsingHeader("Entity Hierarchies", ImGuiTreeNodeFlags_DefaultOpen);
-            ImGui::PopFont();
-            
-            if (headerOpen) {
-                for (auto& root : m_rootEntities) {
-                    displayCachedHierarchy(root, 0, scene);
+            // Render hierarchy rows
+            int rowIndex = 0;
+            for (const auto& rootNode : m_hierarchyRoots) {
+                if (rootNode && rootNode->entity && rootNode->entity->isValid()) {
+                    renderHierarchyRow(rootNode, 0, rowIndex);
                 }
             }
+            
+            ImGui::EndTable();
         }
     } else {
         ImGui::Text("No active scene available");
@@ -138,523 +72,155 @@ void EntityBrowserPanel::render(Rapture::Scene* scene, EntitySelectionCallback c
     ImGui::End();
 }
 
-// Helper method to find the root entity by traversing up the hierarchy
-std::shared_ptr<Rapture::Entity> EntityBrowserPanel::findRootEntity(std::shared_ptr<Rapture::Entity> entity, Rapture::Scene* scene) {
-    RAPTURE_PROFILE_FUNCTION();
-    
-    // If entity is invalid or doesn't have a node component, it's not part of a hierarchy
-    if (!entity || !entity->isValid() || !entity->hasComponent<Rapture::EntityNodeComponent>()) {
-        return nullptr;
-    }
-    
-    // Get the entity node component
-    auto& nodeComp = entity->getComponent<Rapture::EntityNodeComponent>();
-    
-    // If no parent, this is a root
-    if (!nodeComp.entity_node->getParent()) {
-        return entity;
-    }
-    
-    // Otherwise, recursively find the parent's root
-    auto parentNode = nodeComp.entity_node->getParent();
-    if (!parentNode) {
-        return entity; // Safeguard against inconsistent state
-    }
-    
-    auto parentEntity = parentNode->getEntity();
-    if (!parentEntity) {
-        return entity; // Another safeguard against corrupted hierarchy
-    }
-    
-    // Create a shared_ptr to the parent entity
-    std::shared_ptr<Rapture::Entity> parentPtr = std::make_shared<Rapture::Entity>(*parentEntity);
-    
-    // Recursive call to find the ultimate root
-    return findRootEntity(parentPtr, scene);
-}
-
-// Builds the cached hierarchy from scratch
+// Builds the cached hierarchy from scratch, populating a single root list
 void EntityBrowserPanel::buildHierarchyCache(Rapture::Scene* scene) {
     RAPTURE_PROFILE_FUNCTION();
     
-    // Clear existing cache
-    m_independentEntities.clear();
-    m_rootEntities.clear();
+    m_hierarchyRoots.clear();
     
-    // Skip if scene is null
     if (!scene) {
         return;
     }
     
     auto& registry = scene->getRegistry();
-    
-    // Get all entities with tag components
     auto view = registry.view<Rapture::TagComponent>();
     
-    // Set to keep track of processed entities to avoid duplicates
-    std::unordered_set<uint32_t> processedEntities;
-    
-    // Map of entity ID to hierarchy node
+    // Map to store all nodes temporarily
     std::unordered_map<uint32_t, std::shared_ptr<HierarchyNode>> entityNodeMap;
+    // Set to keep track of entities that have been added as children
+    std::unordered_set<uint32_t> childrenEntities;
     
-    // First pass: create nodes for all entities
+    // First pass: Create nodes for all entities
     for (auto entityHandle : view) {
         Rapture::Entity entity(entityHandle, scene);
+        if (!entity.isValid()) continue;
         
         std::string entityName = entity.hasComponent<Rapture::TagComponent>() ? 
             entity.getComponent<Rapture::TagComponent>().tag : 
-            std::to_string(entity.getID());
+            ("Entity " + std::to_string(entity.getID())); // Default name
         
         std::shared_ptr<Rapture::Entity> entityPtr = std::make_shared<Rapture::Entity>(entity);
         entityNodeMap[entity.getID()] = std::make_shared<HierarchyNode>(entityPtr, entityName);
     }
     
-    // Second pass: build hierarchies
+    // Second pass: Build parent-child relationships
     for (auto entityHandle : view) {
         Rapture::Entity entity(entityHandle, scene);
-        std::shared_ptr<Rapture::Entity> entityPtr = std::make_shared<Rapture::Entity>(entity);
+        if (!entity.isValid()) continue;
         
+        uint32_t entityID = entity.getID();
         if (entity.hasComponent<Rapture::EntityNodeComponent>()) {
-            // For entities with EntityNodeComponent, trace up to find the root
-            std::shared_ptr<Rapture::Entity> rootEntity = findRootEntity(entityPtr, scene);
-            
-            // Add root to our list if not already added and it's valid
-            if (rootEntity && rootEntity->isValid() && 
-                processedEntities.find(rootEntity->getID()) == processedEntities.end()) {
-                
-                // Find the root node in our map
-                auto rootNodeIt = entityNodeMap.find(rootEntity->getID());
-                if (rootNodeIt != entityNodeMap.end()) {
-                    m_rootEntities.push_back(rootNodeIt->second);
-                    processedEntities.insert(rootEntity->getID());
-                }
-            }
-            
-            // If this entity has a parent, add it as a child
-            if (entity.hasComponent<Rapture::EntityNodeComponent>()) {
-                auto& nodeComp = entity.getComponent<Rapture::EntityNodeComponent>();
-                
-                if (nodeComp.entity_node && nodeComp.entity_node->getParent()) {
-                    auto parentNode = nodeComp.entity_node->getParent();
-                    if (parentNode && parentNode->getEntity()) {
-                        uint32_t parentID = parentNode->getEntity()->getID();
-                        
-                        // Find parent in map
-                        auto parentNodeIt = entityNodeMap.find(parentID);
-                        auto childNodeIt = entityNodeMap.find(entity.getID());
-                        
-                        if (parentNodeIt != entityNodeMap.end() && 
-                            childNodeIt != entityNodeMap.end()) {
-                            parentNodeIt->second->children.push_back(childNodeIt->second);
-                            processedEntities.insert(entity.getID()); // Mark as processed
-                        }
+            auto& nodeComp = entity.getComponent<Rapture::EntityNodeComponent>();
+            if (nodeComp.entity_node && nodeComp.entity_node->getParent()) {
+                auto parentNode = nodeComp.entity_node->getParent();
+                if (parentNode && parentNode->getEntity()) {
+                    uint32_t parentID = parentNode->getEntity()->getID();
+                    
+                    // Find parent and child in map
+                    auto parentNodeIt = entityNodeMap.find(parentID);
+                    auto childNodeIt = entityNodeMap.find(entityID);
+                    
+                    if (parentNodeIt != entityNodeMap.end() && childNodeIt != entityNodeMap.end()) {
+                        parentNodeIt->second->children.push_back(childNodeIt->second);
+                        childrenEntities.insert(entityID); // Mark this entity as a child
                     }
                 }
             }
-        } else {
-            // Entities without EntityNodeComponent are independent
-            if (processedEntities.find(entity.getID()) == processedEntities.end()) {
-                auto nodeIt = entityNodeMap.find(entity.getID());
-                if (nodeIt != entityNodeMap.end()) {
-                    m_independentEntities.push_back(nodeIt->second);
-                    processedEntities.insert(entity.getID());
-                }
-            }
+        }
+    }
+    
+    // Third pass: Add root nodes (entities that are not children of anyone)
+    for (auto const& [id, node] : entityNodeMap) {
+        if (childrenEntities.find(id) == childrenEntities.end()) {
+            m_hierarchyRoots.push_back(node);
         }
     }
 }
 
-// Display entities from the cached hierarchy
-void EntityBrowserPanel::displayCachedHierarchy(const std::shared_ptr<HierarchyNode>& node, int depth, Rapture::Scene* scene) {
+// Recursively renders a row in the hierarchy table
+void EntityBrowserPanel::renderHierarchyRow(const std::shared_ptr<HierarchyNode>& node, int depth, int& rowIndex) {
     RAPTURE_PROFILE_FUNCTION();
     
     if (!node || !node->entity || !node->entity->isValid()) {
         return;
     }
     
-    // Base indentation for all entities - reduced to bring text closer to tree lines
-    ImGui::Indent(5.0f);
+    ImGui::TableNextRow();
+    rowIndex++; // Increment row index for striping
     
-    // Additional indentation based on depth - reduced spacing
-    if (depth > 0) {
-        ImGui::Indent(depth * 15.0f);
+    // --- Name Column ---    
+    ImGui::TableSetColumnIndex(0);
+    
+    // Setup flags for the tree node
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow 
+                             | ImGuiTreeNodeFlags_SpanAllColumns; // Make the node span all columns
+    
+    if (node->children.empty()) {
+        flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen; // Leaf node specifics
     }
     
-    // Tree node flags
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
-    
-    if (node->children.empty())
-        flags |= ImGuiTreeNodeFlags_Leaf; // No arrow for leaf nodes
-    
-    // Add selected flag if this entity is currently selected
-    bool isSelected = m_selectedEntity && node->entity && 
-                      m_selectedEntity->isValid() && node->entity->isValid() && 
-                      m_selectedEntity->getID() == node->entity->getID();
-    
-    if (isSelected)
+    // Selection state
+    bool isSelected = m_selectedEntity && m_selectedEntity->isValid() && (m_selectedEntity->getID() == node->entity->getID());
+    if (isSelected) {
         flags |= ImGuiTreeNodeFlags_Selected;
+    }
     
-    // Display tree node for this entity
+    // Indentation
+    float indentSize = depth * 20.0f; // Adjust indentation size as needed
+    ImGui::Indent(indentSize);
+    
+    // Alternating row background color
+    ImU32 rowBgColor = ImGui::ColorConvertFloat4ToU32(
+        (rowIndex % 2 == 0) ? ImGuiPanelStyle::BACKGROUND_SECONDARY : ImGuiPanelStyle::BACKGROUND_PRIMARY
+    );
+    ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0 + (rowIndex % 2), rowBgColor);
+    
+    // Render the tree node itself
     bool nodeOpen = ImGui::TreeNodeEx((void*)(intptr_t)node->entity->getID(), flags, "%s", node->entityName.c_str());
     
-    // Get node rectangle for line drawing
-    ImRect nodeRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
-    
-    // Handle selection when clicked
+    // Handle click for selection (only if not toggling open/close)
     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-        // Create entity wrapper
-        if (node->entity && node->entity->isValid()) {
-            m_selectedEntity = node->entity;
+        m_selectedEntity = node->entity;
+        if (m_entitySelectionCallback) {
+            m_entitySelectionCallback(m_selectedEntity);
+        }
+    }
+    
+    // Context Menu (Example)
+    if (ImGui::BeginPopupContextItem()) {
+        if (ImGui::MenuItem("Properties")) {
+             m_selectedEntity = node->entity;
             if (m_entitySelectionCallback) {
                 m_entitySelectionCallback(m_selectedEntity);
             }
         }
-    }
-    
-    // Handle right-click menu
-    if (ImGui::BeginPopupContextItem()) {
-        if (ImGui::MenuItem("Properties")) {
-            if (node->entity && node->entity->isValid()) {
-                m_selectedEntity = node->entity;
-                if (m_entitySelectionCallback) {
-                    m_entitySelectionCallback(m_selectedEntity);
-                }
-            }
+        // Add other actions like Delete, Duplicate, Add Child etc.
+        if (ImGui::MenuItem("Delete Entity")) {
+             // TODO: Implement entity deletion logic 
+             Rapture::GE_CORE_WARN("Delete entity requested but not implemented yet.");
         }
         ImGui::EndPopup();
     }
     
-    // Display children if node is open
-    if (nodeOpen) {
-        if (!node->children.empty()) {
-            // Set up for drawing lines
-            const ImColor treeLineColor = ImGui::GetColorU32(ImGuiCol_Text);
-            const float smallOffsetX = 9.0f; // Adjusted to align better with the arrow symbol
-            const float horizontalLineSize = 7.0f; // Increased from 5.0f to make lines slightly longer
-            ImDrawList* drawList = ImGui::GetWindowDrawList();
-            
-            // Start position for the vertical line
-            ImVec2 verticalLineStart = ImGui::GetCursorScreenPos();
-            verticalLineStart.x += smallOffsetX;
-            ImVec2 verticalLineEnd = verticalLineStart;
-            
-            // Store child rectangles for line drawing
-            std::vector<ImRect> childRects;
-            
-            // Process and display all children first to collect their rectangles
-            for (auto& child : node->children) {
-                if (child && child->entity && child->entity->isValid()) {
-                    ImGui::PushID((void*)(intptr_t)child->entity->getID());
-                    ImRect childRect = displayCachedHierarchyWithRect(child, depth + 1, scene);
-                    childRects.push_back(childRect);
-                    ImGui::PopID();
-                }
-            }
-            
-            // Now draw lines to connect all children
-            for (const auto& childRect : childRects) {
-                // Calculate the vertical midpoint of the child node
-                float midpoint = (childRect.Min.y + childRect.Max.y) / 2.0f;
-                
-                // Draw horizontal line from vertical line to child node
-                drawList->AddLine(
-                    ImVec2(verticalLineStart.x, midpoint), 
-                    ImVec2(verticalLineStart.x + horizontalLineSize, midpoint), 
-                    treeLineColor
-                );
-                
-                // Update the end point of the vertical line
-                verticalLineEnd.y = midpoint;
-            }
-            
-            // Draw the vertical line connecting all children
-            if (!childRects.empty()) {
-                drawList->AddLine(
-                    ImVec2(verticalLineStart.x, verticalLineStart.y), 
-                    ImVec2(verticalLineEnd.x, verticalLineEnd.y), 
-                    treeLineColor
-                );
-            }
-        } else {
-            // Process children normally if not drawing lines
-            for (auto& child : node->children) {
-                if (child && child->entity && child->entity->isValid()) {
-                    displayCachedHierarchy(child, depth + 1, scene);
-                }
-            }
+    ImGui::Unindent(indentSize);
+    
+    // --- Type Column ---    
+    ImGui::TableSetColumnIndex(1);
+    ImGui::TextUnformatted("Entity"); // Simple type for now
+    
+    // --- Actions Column ---    
+    ImGui::TableSetColumnIndex(2);
+    // Add buttons here later, e.g., visibility toggle
+    // ImGui::PushID((void*)(intptr_t)node->entity->getID()); // Ensure unique IDs for buttons
+    // if (ImGui::Button("...")) {} 
+    // ImGui::PopID();
+    ImGui::TextUnformatted(""); // Placeholder
+    
+    // Recurse for children if the node is open and it's not a leaf
+    if (!(flags & ImGuiTreeNodeFlags_Leaf) && nodeOpen) {
+        for (const auto& childNode : node->children) {
+            renderHierarchyRow(childNode, depth + 1, rowIndex);
         }
-        
-        ImGui::TreePop();
+        ImGui::TreePop(); // Pop the node if it was opened and not a leaf
     }
-    
-    // Reset indentation
-    if (depth > 0) {
-        ImGui::Unindent(depth * 15.0f);
-    }
-    ImGui::Unindent(5.0f);
-}
-
-// Helper function that returns the node rectangle for line drawing
-ImRect EntityBrowserPanel::displayCachedHierarchyWithRect(const std::shared_ptr<HierarchyNode>& node, int depth, Rapture::Scene* scene) {
-    RAPTURE_PROFILE_FUNCTION();
-    
-    if (!node || !node->entity || !node->entity->isValid()) {
-        return ImRect();
-    }
-    
-    // Base indentation for all entities - reduced to bring text closer to tree lines
-    ImGui::Indent(5.0f);
-    
-    // Additional indentation based on depth - reduced spacing
-    if (depth > 0) {
-        ImGui::Indent(depth * 15.0f);
-    }
-    
-    // Tree node flags
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
-    
-    if (node->children.empty())
-        flags |= ImGuiTreeNodeFlags_Leaf; // No arrow for leaf nodes
-    
-    // Add selected flag if this entity is currently selected
-    bool isSelected = m_selectedEntity && node->entity && 
-                      m_selectedEntity->isValid() && node->entity->isValid() && 
-                      m_selectedEntity->getID() == node->entity->getID();
-                      
-    if (isSelected)
-        flags |= ImGuiTreeNodeFlags_Selected;
-    
-    // Display tree node for this entity
-    bool nodeOpen = ImGui::TreeNodeEx((void*)(intptr_t)node->entity->getID(), flags, "%s", node->entityName.c_str());
-    
-    // Get node rectangle for line drawing
-    ImRect nodeRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
-    
-    // Handle selection when clicked
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-        // Create entity wrapper
-        if (node->entity && node->entity->isValid()) {
-            m_selectedEntity = node->entity;
-            if (m_entitySelectionCallback) {
-                m_entitySelectionCallback(m_selectedEntity);
-            }
-        }
-    }
-    
-    // Handle right-click menu
-    if (ImGui::BeginPopupContextItem()) {
-        if (ImGui::MenuItem("Properties")) {
-            if (node->entity && node->entity->isValid()) {
-                m_selectedEntity = node->entity;
-                if (m_entitySelectionCallback) {
-                    m_entitySelectionCallback(m_selectedEntity);
-                }
-            }
-        }
-        ImGui::EndPopup();
-    }
-    
-    // Display children if node is open
-    if (nodeOpen) {
-        if (!node->children.empty()) {
-            // Set up for drawing lines
-            const ImColor treeLineColor = ImGui::GetColorU32(ImGuiCol_Text);
-            const float smallOffsetX = 9.0f; // Adjusted to align better with the arrow symbol
-            const float horizontalLineSize = 7.0f; // Increased from 5.0f to make lines slightly longer
-            ImDrawList* drawList = ImGui::GetWindowDrawList();
-            
-            // Start position for the vertical line
-            ImVec2 verticalLineStart = ImGui::GetCursorScreenPos();
-            verticalLineStart.x += smallOffsetX;
-            ImVec2 verticalLineEnd = verticalLineStart;
-            
-            // Store child rectangles for line drawing
-            std::vector<ImRect> childRects;
-            
-            // Process and display all children first to collect their rectangles
-            for (auto& child : node->children) {
-                if (child && child->entity && child->entity->isValid()) {
-                    ImGui::PushID((void*)(intptr_t)child->entity->getID());
-                    ImRect childRect = displayCachedHierarchyWithRect(child, depth + 1, scene);
-                    childRects.push_back(childRect);
-                    ImGui::PopID();
-                }
-            }
-            
-            // Now draw lines to connect all children
-            for (const auto& childRect : childRects) {
-                // Calculate the vertical midpoint of the child node
-                float midpoint = (childRect.Min.y + childRect.Max.y) / 2.0f;
-                
-                // Draw horizontal line from vertical line to child node
-                drawList->AddLine(
-                    ImVec2(verticalLineStart.x, midpoint), 
-                    ImVec2(verticalLineStart.x + horizontalLineSize, midpoint), 
-                    treeLineColor
-                );
-                
-                // Update the end point of the vertical line
-                verticalLineEnd.y = midpoint;
-            }
-            
-            // Draw the vertical line connecting all children
-            if (!childRects.empty()) {
-                drawList->AddLine(
-                    ImVec2(verticalLineStart.x, verticalLineStart.y), 
-                    ImVec2(verticalLineEnd.x, verticalLineEnd.y), 
-                    treeLineColor
-                );
-            }
-        } else {
-            // Process children normally if not drawing lines
-            for (auto& child : node->children) {
-                if (child && child->entity && child->entity->isValid()) {
-                    displayCachedHierarchyWithRect(child, depth + 1, scene);
-                }
-            }
-        }
-        
-        ImGui::TreePop();
-    }
-    
-    // Reset indentation
-    if (depth > 0) {
-        ImGui::Unindent(depth * 15.0f);
-    }
-    ImGui::Unindent(5.0f);
-    
-    return nodeRect;
-}
-
-// This method is kept for compatibility, but we're now using the cached version
-void EntityBrowserPanel::displayEntityHierarchy(std::shared_ptr<Rapture::Entity> entity, int depth, Rapture::Scene* scene, 
-                                              std::unordered_set<uint32_t>& displayedEntities) {
-    RAPTURE_PROFILE_FUNCTION();
-    
-    // Skip if entity is invalid
-    if (!entity || !entity->isValid()) {
-        return;
-    }
-    
-    // Skip if already displayed to avoid cycles and duplicates
-    uint32_t entityId = entity->getID();
-    if (displayedEntities.find(entityId) != displayedEntities.end()) {
-        return;
-    }
-    
-    // Mark as displayed
-    displayedEntities.insert(entityId);
-    
-    // Validate entity has required components
-    if (!entity->hasComponent<Rapture::TagComponent>()) {
-        Rapture::GE_WARN("Entity missing TagComponent: {}", entityId);
-        return;
-    }
-    
-    // Get the entity's name from TagComponent
-    std::string entityName = entity->getComponent<Rapture::TagComponent>().tag;
-    
-    // Base indentation for all entities (including root)
-    ImGui::Indent(10.0f);
-    
-    // Additional indentation based on depth for non-root entities
-    if (depth > 0) {
-        ImGui::Indent(depth * 20.0f);
-    }
-    
-    // Check if entity has children for tree node display
-    bool hasChildren = false;
-    std::vector<std::shared_ptr<Rapture::Entity>> childrenEntities;
-    
-    if (entity->hasComponent<Rapture::EntityNodeComponent>()) {
-        auto& nodeComp = entity->getComponent<Rapture::EntityNodeComponent>();
-        
-        // Validate node component
-        if (!nodeComp.entity_node) {
-            Rapture::GE_WARN("Invalid EntityNodeComponent for entity: {}", entityName);
-            return;
-        }
-        
-        auto children = nodeComp.entity_node->getChildren();
-        hasChildren = !children.empty();
-        
-        // Collect child entity handles with validation
-        for (auto& child : children) {
-            if (!child) {
-                Rapture::GE_WARN("Invalid child node in entity: {}", entityName);
-                continue;
-            }
-            
-            if (auto childEntity = child->getEntity()) {
-                if (childEntity->isValid()) {
-                    childrenEntities.push_back(std::make_shared<Rapture::Entity>(*childEntity));
-                } else {
-                    Rapture::GE_WARN("Invalid child entity in entity: {}", entityName);
-                }
-            }
-        }
-    }
-    
-    // Tree node flags
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
-    
-    // Add connecting lines for better visualization of hierarchy
-    flags |= ImGuiTreeNodeFlags_SpanFullWidth;
-    
-    if (!hasChildren)
-        flags |= ImGuiTreeNodeFlags_Leaf; // No arrow for leaf nodes
-    
-    // Add selected flag if this entity is currently selected
-    if (m_selectedEntity && m_selectedEntity->getID() == entity->getID())
-        flags |= ImGuiTreeNodeFlags_Selected;
-    
-    // Display tree node for this entity
-    bool nodeOpen = ImGui::TreeNodeEx((void*)(intptr_t)entity->getID(), flags, "%s", entityName.c_str());
-    
-    // Handle selection when clicked
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-        // Validate entity before selection
-        if (entity->isValid() && 
-            entity->hasComponent<Rapture::TagComponent>()) {
-            m_selectedEntity = entity;
-            if (m_entitySelectionCallback) {
-                m_entitySelectionCallback(m_selectedEntity);
-            }
-        } else {
-            Rapture::GE_WARN("Attempted to select invalid entity: {}", entityName);
-        }
-    }
-    
-    // Handle right-click menu
-    if (ImGui::BeginPopupContextItem()) {
-        if (ImGui::MenuItem("Properties")) {
-            // Validate entity before selection
-            if (entity->isValid() && 
-                entity->hasComponent<Rapture::TagComponent>()) {
-                m_selectedEntity = entity;
-                if (m_entitySelectionCallback) {
-                    m_entitySelectionCallback(m_selectedEntity);
-                }
-            } else {
-                Rapture::GE_WARN("Attempted to show properties for invalid entity: {}", entityName);
-            }
-        }
-        ImGui::EndPopup();
-    }
-    
-    // Display children if node is open
-    if (nodeOpen) {
-        // Process and display children recursively
-        for (auto& childEntity : childrenEntities) {
-            displayEntityHierarchy(childEntity, depth + 1, scene, displayedEntities);
-        }
-        
-        ImGui::TreePop();
-    }
-    
-    // Reset indentation
-    if (depth > 0) {
-        ImGui::Unindent(depth * 20.0f);
-    }
-    ImGui::Unindent(10.0f);
 }

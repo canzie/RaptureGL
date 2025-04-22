@@ -27,6 +27,8 @@ namespace Rapture {
         // Bind the textures to the correct texture unit
         void bindTextures();
         void unbindTextures();
+
+        void bindTexturesCompute();
         
         // Set which buffers to clear on bind
         void setClearMode(bool clearColor, bool clearDepth);

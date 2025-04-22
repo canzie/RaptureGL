@@ -15,10 +15,11 @@
 #include "Scenes/Systems/AnimationSystem.h"
 #include "Scenes/Systems/BoundingBoxSystem.h"
 #include "File Loaders/glTF/glTF2Loader.h"
-#include "Textures/Texture.h"
 #include "Debug/Profiler.h"
 #include "Textures/Texture.h"
 #include "Timestep/Timestep.h"
+#include "Renderer/RadianceCascades/RadianceCascades.h"
+#include "Renderer/RadianceCascades/RadianceCascadesManager.h"
 
 // Vendor includes
 #include <imgui.h>
@@ -111,9 +112,9 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     }
     
 	//Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
-	auto loader = Rapture::ModelLoadersCache::getLoader("E:/Dev/Games/LiDAR Game v1/LiDAR-Game/build/bin/Debug/assets/models/Sponza/glTF/Sponza.gltf", activeScene);
+	auto loader = Rapture::ModelLoadersCache::getLoader("E:/Dev/Games/LiDAR Game v1/LiDAR-Game/build/bin/Debug/assets/models/Sponza/Sponza.gltf", activeScene);
     if (loader){
-        loader->loadModel("Sponza/glTF/Sponza.gltf");
+        loader->loadModel("Sponza/Sponza.gltf");
         loader->loadModel("sphere.gltf");
         //loader->loadModel("sphere.gltf");
         //loader->loadModel("main1_sponza/NewSponza_Main_glTF_003.gltf");
@@ -196,20 +197,34 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
 	auto pos = Rapture::Input::getMousePos();
 	CameraController::setMousePosition(pos.first, pos.second);
 
-    Rapture::Entity testEntity = activeScene->createEntity("ComputeTest");
+    /*
+    Rapture::Entity testEntity = activeScene->createEntity("RadianceCascade_DEBUG_Output");
 
-    std::filesystem::path shaderPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL/pathtracingtest.cs.glsl";
-    auto [shader, handle] = Rapture::AssetManager::importAsset<Rapture::Shader>(shaderPath);
+    // Ensure RadianceCascades is initialized
+    if (!Rapture::RadianceCascades::isInitialized()) {
+        Rapture::RadianceCascades::init();
+    }
+    auto rcDebugTex = Rapture::RadianceCascades::getDEBUGTexture(); // Get the 2D debug texture from RC
+    if (rcDebugTex) {
+         // Using a placeholder shader here, as ComputeTextureComponent needs one, but we might not execute it.
+         // The important part is the texture for viewing in ImGui panels.
+        auto placeholderShader = Rapture::RadianceCascades::getComputeShader(); // Reuse the RC compute shader as placeholder
+        testEntity.addComponent<Rapture::ComputeTextureComponent>(placeholderShader, rcDebugTex);
+    } else {
+        Rapture::GE_CORE_WARN("Could not get Radiance Cascades DEBUG texture.");
+    }*/
 
-    Rapture::TextureSpecification textureSpec;
-    textureSpec.width = 1024;
-    textureSpec.height = 1024;
-    textureSpec.format = Rapture::TextureFormat::RGBA32F;
-    auto texture = Rapture::Texture2D::create(textureSpec);
 
-    testEntity.addComponent<Rapture::ComputeTextureComponent>(shader, texture);
+   auto hierarchy = Rapture::RadianceCascadesManager::getHierarchy();
+   auto cascades = hierarchy->getCascades();
+   int i = 0;
+   for (auto& cascade : cascades) {
+    auto atlasTexture = cascade.getAtlasTexture();
+    auto testEntity = activeScene->createEntity("RadianceCascade_DEBUG_" + std::to_string(i));
+    testEntity.addComponent<Rapture::ComputeTextureComponent>(nullptr, atlasTexture);
+    i++;
+   }
 
-    
 }
 
 
@@ -282,9 +297,9 @@ void TestLayer::onUpdate(float ts)
 
     for (auto entity : view) {
         auto& computeTexture = view.get<Rapture::ComputeTextureComponent>(entity);
-        computeTexture.shader->bind();
-        computeTexture.shader->setFloat("time", time);
-        computeTexture.compute();
+        //computeTexture.shader->bind();
+        //computeTexture.shader->setFloat("time", time);
+        //computeTexture.compute();
     }
 
 	// Update the camera controller
@@ -295,6 +310,7 @@ void TestLayer::onUpdate(float ts)
     
     // Update animations in the scene
     Rapture::AnimationSystem::updateAnimations(*activeScene, ts);
+
 
     if (Rapture::Input::isMouseBtnPressed(0))
     {
