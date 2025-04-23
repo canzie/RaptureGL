@@ -255,7 +255,7 @@ namespace Rapture
         // the 2 queues should be made at the same time, this only happens when they are called after each other,
         // the other methods are no async so they would be blocking the main thread, so it cannot ask for the other queue
         auto geometryQueue = CommandQueueBuilder::buildGeometryCommandQueueAsync(s, RenderQueueType::DEFERRED);
-        //auto radianceCascadesQueue = CommandQueueBuilder::buildGeometryCommandQueueAsync(s, RenderQueueType::RADIANCE_CASCADES);
+        auto radianceCascadesQueue = CommandQueueBuilder::buildGeometryCommandQueueAsync(s, RenderQueueType::RADIANCE_CASCADES);
 
         std::shared_ptr<RenderQueue> shadowQueue = nullptr;
         if (s_shadowMapDirty) {
@@ -267,7 +267,7 @@ namespace Rapture
 
         renderQueueAsync(geometryQueue);
 
-       //renderQueueAsync(radianceCascadesQueue);
+       renderQueueAsync(radianceCascadesQueue);
     }
 
     // TODO: Dogshit, needs to be giga optimized
@@ -847,8 +847,8 @@ namespace Rapture
                 continue;
             }
 
-            const uint32_t localSizeX = 8; // Must match shader
-            const uint32_t localSizeY = 8; // Must match shader
+            const uint32_t localSizeX = 16; // Must match shader
+            const uint32_t localSizeY = 16; // Must match shader
             const uint32_t localSizeZ = 1; // Must match shader
             uint32_t numGroupsX = (atlasPixelDim.x + localSizeX - 1) / localSizeX;
             uint32_t numGroupsY = (atlasPixelDim.y + localSizeY - 1) / localSizeY;

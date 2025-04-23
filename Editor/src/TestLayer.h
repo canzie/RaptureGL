@@ -42,7 +42,7 @@ public:
     
     // Getter for the framebuffer to use in ImGui viewport
     std::shared_ptr<Rapture::Framebuffer> getFramebuffer() const { 
-        return Rapture::DeferredRenderer::getLightingBuffer();
+        return Rapture::DeferredRenderer::getIndirectLightingBuffer();
     }
     std::shared_ptr<Rapture::Framebuffer> getMaterialFramebuffer() const { return m_materialViewerFramebuffer; }
     

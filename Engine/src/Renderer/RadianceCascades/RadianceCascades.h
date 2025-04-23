@@ -26,7 +26,7 @@ struct BuildParams {
     /**
      * @brief The number of cascade levels in the hierarchy.
      */
-    int numCascades = 6;
+    int numCascades = 8;
 
     /**
      * @brief The range extent of the first cascade (t_1, since t_0 is 0)
@@ -49,7 +49,7 @@ struct BuildParams {
     /**
      * @brief The spatial grid resolution of the first cascade (P_0)
      */
-    glm::ivec3 baseGridDimensions = glm::ivec3(32, 16, 32); // Example dimensions
+    glm::ivec3 baseGridDimensions = glm::ivec3(128, 16, 72); // Example dimensions
 
     /**
      * @brief The angular resolution 'dimension' of the first cascade (Q_0).
@@ -101,6 +101,7 @@ public:
     float getIntervalStart() const { return m_intervalStart; }
     float getIntervalEnd() const { return m_intervalEnd; }
     const glm::ivec3& getGridDimensions() const { return m_gridDimensions; }
+    const glm::ivec2& getGridDimensions2D() const { return m_gridDimensions2D; }
     const glm::vec3& getGridOrigin() const { return m_gridOrigin; }
     const glm::vec3& getProbeSpacing() const { return m_probeSpacing; }
     int getAngularResolution() const { return m_angularResolution; }
@@ -124,6 +125,7 @@ private:
     float m_intervalStart; // ti
     float m_intervalEnd; // ti+1
     glm::ivec3 m_gridDimensions; // number of probes in each dimension (Px, Py, Pz)
+    glm::ivec2 m_gridDimensions2D; // gridDimensions in screen space (Px, Pz)
     int m_angularResolution; // N 
     int m_probeAngularDataSize; // Total number of RadianceIntervalData per probe (e.g., N*N)
 
@@ -183,6 +185,8 @@ struct RadianceCascadeShaderData {
     alignas(4)  float rangeStart;             // Near plane distance (t_i) for this cascade
     alignas(4)  float rangeEnd;               // Far plane distance (t_{i+1}) for this cascade
     alignas(4)  int angularResolution;        // Resolution N for the NxN octahedral map per probe
+
+    alignas(8) glm::ivec2 gridDimensions2D;  // gridDimensions in screen space
 
     // --- Atlas Information ---
     alignas(8) glm::ivec2 atlasProbeGridDim;

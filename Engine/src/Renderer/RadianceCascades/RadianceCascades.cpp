@@ -38,7 +38,45 @@ RadianceCascade::RadianceCascade(float start, float end, glm::ivec3 dimensions, 
          m_probeAngularDataSize = 1; // Ensure at least 1 element
     }
 
+    m_gridDimensions2D = {m_gridDimensions.x, m_gridDimensions.z};
+
+
+    uint32_t totalProbes = m_gridDimensions2D.x * m_gridDimensions2D.y;
+
+    m_probes.reserve(totalProbes);
+    for (int y = 0; y < m_gridDimensions2D.y; ++y) {
+        for (int x = 0; x < m_gridDimensions2D.x; ++x) {
+                // Calculate world position of the probe center
+                glm::vec3 probeCenterPos = glm::vec3(1.0f);
+                m_probes.emplace_back(probeCenterPos, m_probeAngularDataSize);
+            }
+    }
+
+    glm::ivec2 res;
+    res.x = m_gridDimensions2D.x * m_angularResolution;
+    res.y = m_gridDimensions2D.y * m_angularResolution;
+
+
+    TextureSpecification spec;
+    spec.width = res.x;
+    spec.height = res.y;
+    spec.format = TextureFormat::RGBA16F;
+    m_CascadeAtlasTexture = Texture2D::create(spec);
+
+    m_CascadeAtlasTexture->setMinFilter(TextureFilter::Linear); // Linear interpolation within a cascade is valid
+    m_CascadeAtlasTexture->setMagFilter(TextureFilter::Linear);
+    m_CascadeAtlasTexture->setWrapS(TextureWrap::ClampToEdge);
+    m_CascadeAtlasTexture->setWrapT(TextureWrap::ClampToEdge);
+
+    m_CascadeAtlasTexture->makeResident();
+
+     GE_CORE_TRACE("RadianceCascade: Created cascade interval [{}, {}], dimensions ({}, {}), angular res {}, {} probes | Atlas Texture: ({}, {})",
+                  m_intervalStart, m_intervalEnd, m_gridDimensions2D.x, m_gridDimensions2D.y, m_angularResolution, totalProbes, res.x, res.y);
+
+
+    /*
     uint32_t totalProbes = static_cast<uint32_t>(m_gridDimensions.x) * static_cast<uint32_t>(m_gridDimensions.y) * static_cast<uint32_t>(m_gridDimensions.z);
+
 
     // Pre-allocate and initialize probes
     m_probes.reserve(totalProbes);
@@ -72,6 +110,7 @@ RadianceCascade::RadianceCascade(float start, float end, glm::ivec3 dimensions, 
          GE_CORE_WARN("RadianceCascade: Cannot create atlas with zero probes ({}) or zero angular resolution ({}). Creating 1x1 atlas.", totalProbes, probeDim);
     }
 
+
     TextureSpecification spec;
     spec.width = res.x;
     spec.height = res.y;
@@ -88,6 +127,8 @@ RadianceCascade::RadianceCascade(float start, float end, glm::ivec3 dimensions, 
      GE_CORE_TRACE("RadianceCascade: Created cascade interval [{}, {}], dimensions ({}, {}, {}), angular res {}, {} probes | Atlas Texture: ({}, {})",
                   m_intervalStart, m_intervalEnd, m_gridDimensions.x, m_gridDimensions.y, m_gridDimensions.z, m_angularResolution, totalProbes, res.x, res.y);
 
+
+*/
 }
 
 

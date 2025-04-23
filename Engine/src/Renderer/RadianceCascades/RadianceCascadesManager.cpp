@@ -17,7 +17,7 @@ std::shared_ptr<RadianceCascadeHierarchy> RadianceCascadesManager::m_hierarchy =
 std::shared_ptr<Shader> RadianceCascadesManager::m_computeShader = nullptr;
 std::shared_ptr<ShaderStorageBuffer> RadianceCascadesManager::m_cascadeInfoSSBO = nullptr;
 std::filesystem::path RadianceCascadesManager::_shaderPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL"; // TODO: Make this configurable
-std::string RadianceCascadesManager::_populateShaderName = "RadianceCascadingCS/PopulateCascade_Hybrid.cs.glsl";
+std::string RadianceCascadesManager::_populateShaderName = "RadianceCascadingCS/PopulateCascade_SSR.cs.glsl";
 std::string RadianceCascadesManager::_testShaderName = "RadianceCascadingCS/test.cs.glsl"; // Placeholder shader
 bool RadianceCascadesManager::m_initialized = false;
 
@@ -189,27 +189,26 @@ void RadianceCascadesManager::calculateCascadeTransforms(std::vector<RadianceCas
 
         // --- Calculate Grid Cell Size ---
         glm::ivec3 gridDimensions = cascade.getGridDimensions();
+        glm::ivec2 gridDimensions2D = cascade.getGridDimensions2D();
         glm::vec3 gridSizeF = glm::vec3(glm::max(glm::ivec3(1), gridDimensions)); // Ensure dimensions are at least 1
         glm::vec3 gridCellSizeWorld = cascadeWorldSize / gridSizeF;
 
         // --- Calculate Atlas Information ---
         // This logic needs to match the RadianceCascade constructor's atlas calculation
-        uint32_t totalProbes = static_cast<uint32_t>(gridDimensions.x) * static_cast<uint32_t>(gridDimensions.y) * static_cast<uint32_t>(gridDimensions.z);
+        uint32_t totalProbes = static_cast<uint32_t>(gridDimensions2D.x) * static_cast<uint32_t>(gridDimensions2D.y);
         int angularResolution = cascade.getAngularResolution();
         glm::ivec2 atlasProbeGridDim = {0, 0};
         glm::ivec2 atlasPixelDim = {0, 0};
         if (totalProbes > 0 && angularResolution > 0) {
              uint32_t probesPerRow = static_cast<uint32_t>(std::ceil(std::sqrt(static_cast<float>(totalProbes))));
-             probesPerRow = std::max(1u, probesPerRow);
-             uint32_t numRows = static_cast<uint32_t>(std::ceil(static_cast<float>(totalProbes) / probesPerRow));
-             numRows = std::max(1u, numRows);
 
-             atlasProbeGridDim = { probesPerRow, numRows };
+             atlasProbeGridDim = gridDimensions2D;
              atlasPixelDim = { cascade.getAtlasTexture()->getWidth(), cascade.getAtlasTexture()->getHeight() };
         } else {
              GE_CORE_WARN("Cascade {}: Zero probes ({}) or angular resolution ({}), atlas dims set to 0.", i, totalProbes, angularResolution);
         }
 
+       //GE_CORE_INFO("  Cascade {}: Atlas dimensions: ({}, {}, {})", i, cascadeMinWorldPos.x, cascadeMaxWorldPos.y, cascadeWorldSize.z);
 
         // --- Fill the ShaderData struct ---
         data.gridMinWorldPos = cascadeMinWorldPos;
@@ -219,6 +218,8 @@ void RadianceCascadesManager::calculateCascadeTransforms(std::vector<RadianceCas
         data.gridDimensions = gridDimensions;
         data.angularResolution = angularResolution;
         data.worldToGridTransform = worldToGridTransform; // Optional for SSR, but calculated
+
+        data.gridDimensions2D = gridDimensions2D;
 
         data.atlasProbeGridDim = atlasProbeGridDim;
         data.atlasPixelDim = atlasPixelDim;
