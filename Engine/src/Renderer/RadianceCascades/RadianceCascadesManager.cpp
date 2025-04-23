@@ -13,11 +13,11 @@ namespace Rapture {
     
 
 
-RadianceCascadeHierarchy RadianceCascadesManager::m_hierarchy;
+std::shared_ptr<RadianceCascadeHierarchy> RadianceCascadesManager::m_hierarchy = nullptr;
 std::shared_ptr<Shader> RadianceCascadesManager::m_computeShader = nullptr;
 std::shared_ptr<ShaderStorageBuffer> RadianceCascadesManager::m_cascadeInfoSSBO = nullptr;
 std::filesystem::path RadianceCascadesManager::_shaderPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL"; // TODO: Make this configurable
-std::string RadianceCascadesManager::_populateShaderName = "RadianceCascadingCS/PopulateCascade_SSR.cs.glsl";
+std::string RadianceCascadesManager::_populateShaderName = "RadianceCascadingCS/PopulateCascade_Hybrid.cs.glsl";
 std::string RadianceCascadesManager::_testShaderName = "RadianceCascadingCS/test.cs.glsl"; // Placeholder shader
 bool RadianceCascadesManager::m_initialized = false;
 
@@ -29,23 +29,23 @@ void RadianceCascadesManager::init(BuildParams params)
     }
 
 
-    m_hierarchy = RadianceCascadeHierarchy();
+    m_hierarchy = std::make_shared<RadianceCascadeHierarchy>();
 
-    m_hierarchy.buildCascades(params);
+    m_hierarchy->buildCascades(params);
 
     auto [shader, handle] = AssetManager::importAsset<Shader>(_shaderPath / _populateShaderName);
     m_computeShader = shader;
 
 
     // 2. Create SSBO for cascade shader data
-    size_t bufferSize = sizeof(RadianceCascadeShaderData) * m_hierarchy.getNumCascades();
-    if (bufferSize == 0 || m_hierarchy.getNumCascades() == 0) {
+    size_t bufferSize = sizeof(RadianceCascadeShaderData) * m_hierarchy->getNumCascades();
+    if (bufferSize == 0 || m_hierarchy->getNumCascades() == 0) {
         GE_CORE_WARN("RadianceCascadesManager - No cascades built. Skipping SSBO creation.");
         return;
     }
 
     m_cascadeInfoSSBO = std::make_shared<ShaderStorageBuffer>(bufferSize, BufferUsage::Stream); // Stream for frame updates
-    GE_CORE_INFO("RadianceCascadesManager - Created CascadeInfo SSBO for {} cascades ({} bytes)", m_hierarchy.getNumCascades(), bufferSize);
+    GE_CORE_INFO("RadianceCascadesManager - Created CascadeInfo SSBO for {} cascades ({} bytes)", m_hierarchy->getNumCascades(), bufferSize);
 
     m_initialized = true;
 
@@ -121,8 +121,8 @@ void RadianceCascadesManager::calculateCascadeTransforms(std::vector<RadianceCas
             { 1.0f,  1.0f,  1.0f, 1.0f}, {-1.0f,  1.0f,  1.0f, 1.0f}
     };
 
-    auto& cascades = m_hierarchy.getCascades(); // Get mutable reference if needed later
-    const BuildParams& buildParams = m_hierarchy.getBuildParams(); // Get build params
+    auto& cascades = m_hierarchy->getCascades(); // Get mutable reference if needed later
+    const BuildParams& buildParams = m_hierarchy->getBuildParams(); // Get build params
 
     // --- Populate Shader Data for Each Cascade ---
     for (size_t i = 0; i < cascades.size(); ++i) {
@@ -205,7 +205,7 @@ void RadianceCascadesManager::calculateCascadeTransforms(std::vector<RadianceCas
              numRows = std::max(1u, numRows);
 
              atlasProbeGridDim = { probesPerRow, numRows };
-             atlasPixelDim = { probesPerRow * angularResolution, numRows * angularResolution };
+             atlasPixelDim = { cascade.getAtlasTexture()->getWidth(), cascade.getAtlasTexture()->getHeight() };
         } else {
              GE_CORE_WARN("Cascade {}: Zero probes ({}) or angular resolution ({}), atlas dims set to 0.", i, totalProbes, angularResolution);
         }
@@ -233,7 +233,7 @@ void RadianceCascadesManager::calculateCascadeTransforms(std::vector<RadianceCas
         data.numStepsPerRay = buildParams.numStepsPerRay;
         data.jitterStrength = buildParams.jitterStrength;
 
-        //data.atlasTextureHandle = cascade.getAtlasTexture()->getTextureHandle();
+        data.atlasTextureHandle = cascade.getAtlasTexture()->getTextureHandle();
     }
 }
 
@@ -241,7 +241,7 @@ void RadianceCascadesManager::calculateCascadeTransforms(std::vector<RadianceCas
 void RadianceCascadesManager::updateGpuBuffers() {
     RAPTURE_PROFILE_FUNCTION();
 
-    size_t numCascades = m_hierarchy.getNumCascades();
+    size_t numCascades = m_hierarchy->getNumCascades();
     if (numCascades == 0) {
         GE_CORE_WARN("RadianceCascadesManager::updateGpuBuffers - No cascades to update.");
         return;
@@ -272,7 +272,7 @@ std::shared_ptr<Shader> RadianceCascadesManager::getComputeShader()
 
 std::shared_ptr<RadianceCascadeHierarchy> RadianceCascadesManager::getHierarchy()
 {
-    return std::make_shared<RadianceCascadeHierarchy>(m_hierarchy);
+    return m_hierarchy;
 }
 
 // Add dispatch function if needed, e.g.:

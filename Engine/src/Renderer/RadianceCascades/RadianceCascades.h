@@ -200,7 +200,7 @@ struct RadianceCascadeShaderData {
     alignas(4) int numStepsPerRay;         // Steps for ray marching
     alignas(4) float jitterStrength;         // Jitter amount for ray marching steps
 
-    //alignas(8) uint64_t atlasTextureHandle;
+    alignas(8) uint64_t atlasTextureHandle;
 
     // --- Manual Padding to match std430 size (480 bytes) ---
     // Struct data SHOULD end at offset 468. Compiler reports sizeof=464. Add 16 bytes padding.

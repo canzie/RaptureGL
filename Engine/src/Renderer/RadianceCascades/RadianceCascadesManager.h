@@ -29,7 +29,7 @@ public:
 private:
     static void calculateCascadeTransforms(std::vector<RadianceCascadeShaderData>& shaderData);
 
-    static RadianceCascadeHierarchy m_hierarchy;
+    static std::shared_ptr<RadianceCascadeHierarchy> m_hierarchy;
     static std::shared_ptr<Shader> m_computeShader;
     static std::shared_ptr<ShaderStorageBuffer> m_cascadeInfoSSBO;
 

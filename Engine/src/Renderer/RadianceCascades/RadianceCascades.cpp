@@ -83,6 +83,8 @@ RadianceCascade::RadianceCascade(float start, float end, glm::ivec3 dimensions, 
     m_CascadeAtlasTexture->setWrapS(TextureWrap::ClampToEdge);
     m_CascadeAtlasTexture->setWrapT(TextureWrap::ClampToEdge);
 
+    m_CascadeAtlasTexture->makeResident();
+
      GE_CORE_TRACE("RadianceCascade: Created cascade interval [{}, {}], dimensions ({}, {}, {}), angular res {}, {} probes | Atlas Texture: ({}, {})",
                   m_intervalStart, m_intervalEnd, m_gridDimensions.x, m_gridDimensions.y, m_gridDimensions.z, m_angularResolution, totalProbes, res.x, res.y);
 

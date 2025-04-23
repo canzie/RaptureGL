@@ -19,7 +19,8 @@ namespace Rapture
         NONE,
         GBUFFER,
         LIGHTING_BUFFER,
-        INDIRECT_LIGHTING_BUFFER
+        INDIRECT_LIGHTING_BUFFER,
+        SHADOW_MAP
     };
 
 
@@ -59,7 +60,7 @@ namespace Rapture
         static void setupLightsUniforms(const std::shared_ptr<Scene> s);
         // Helper methods for lighting pass
         static void setupFullscreenQuad();
-        static void renderFullscreenQuad();
+        static void renderFullscreenQuad(std::shared_ptr<Shader> shader);
         // Helper method for shadow pass
         static void updateShadowMatrix(const std::shared_ptr<Scene>& scene);
 

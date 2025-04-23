@@ -415,7 +415,7 @@ void TestLayer::onUpdate(float ts)
 
 	// Bind the framebuffer to render the scene to a texture
 	//m_framebuffer->bind();
-    getFramebuffer()->bind(false);
+    Rapture::DeferredRenderer::getLightingBuffer()->bind(false);
 
 	activeScene->onUpdate();
 
@@ -439,7 +439,7 @@ void TestLayer::onUpdate(float ts)
 
 	// Unbind the framebuffer to return to the default framebuffer
 	//m_framebuffer->unBind();
-    getFramebuffer()->unBind();
+    Rapture::DeferredRenderer::getLightingBuffer()->unBind();
 
     //m_materialViewerFramebuffer->bind();
     //Rapture::Renderer::drawSphere(m_materialViewerSphere);

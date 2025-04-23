@@ -202,7 +202,7 @@ float calculateShadowForCascade(vec3 fragPosWorld, vec3 normal, vec3 lightDir, S
             distanceScale = mix(1.0, 3.0, clamp(viewDepth / 50.0, 0.0, 1.0));
         }
         
-        bias = max(0.005 * (1.0 - cosTheta) * distanceScale * cascadeBiasMultiplier, 0.0005);
+        bias = max(0.05 * (1.0 - cosTheta) * distanceScale * cascadeBiasMultiplier, 0.005);
         
         // Use a 3x3 kernel for PCF with the texture array
         for(int x = -1; x <= 1; ++x) {
@@ -469,7 +469,7 @@ void main() {
     }
     
     // Add ambient lighting (modulated by AO)
-    vec3 ambient = vec3(0.03) * Albedo.rgb * AO;
+    vec3 ambient = vec3(0.02) * Albedo.rgb * AO;
     vec3 finalColor = ambient + Lo;
 
 #if DEBUG_CASCADES

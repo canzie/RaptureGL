@@ -63,7 +63,7 @@ namespace Rapture
 		Raycast::init();
 		
 		// Initialize the CommandQueueBuilder with a thread pool
-		CommandQueueBuilder::init(2); // Create 2 worker threads by default
+		CommandQueueBuilder::init(4); // Create 2 worker threads by default
 		//RadianceCascades::init();
         auto settings = BuildParams();
         RadianceCascadesManager::init(settings);
@@ -85,14 +85,7 @@ namespace Rapture
         };
         s_lightingBuffer = Framebuffer::create(lightingBufferSpec);
 
-        FramebufferSpecification indirectLightingBufferSpec;
-        indirectLightingBufferSpec.width = width;
-        indirectLightingBufferSpec.height = height;
-        indirectLightingBufferSpec.attachments = {
-            FramebufferTextureFormat::RGBA16F, // Color
-        };
-
-        s_indirectLightingBuffer = Framebuffer::create(indirectLightingBufferSpec);
+        s_indirectLightingBuffer = Framebuffer::create(lightingBufferSpec);
 
         auto [indShader, indHandle] = AssetManager::importAsset<Shader>(s_shaderPath / "RadianceCascadingCS/indirectLightingPass.vs.glsl");
         s_indirectLightingPassShader = indShader;
@@ -262,7 +255,7 @@ namespace Rapture
         // the 2 queues should be made at the same time, this only happens when they are called after each other,
         // the other methods are no async so they would be blocking the main thread, so it cannot ask for the other queue
         auto geometryQueue = CommandQueueBuilder::buildGeometryCommandQueueAsync(s, RenderQueueType::DEFERRED);
-        auto radianceCascadesQueue = CommandQueueBuilder::buildGeometryCommandQueueAsync(s, RenderQueueType::RADIANCE_CASCADES);
+        //auto radianceCascadesQueue = CommandQueueBuilder::buildGeometryCommandQueueAsync(s, RenderQueueType::RADIANCE_CASCADES);
 
         std::shared_ptr<RenderQueue> shadowQueue = nullptr;
         if (s_shadowMapDirty) {
@@ -274,7 +267,7 @@ namespace Rapture
 
         renderQueueAsync(geometryQueue);
 
-        renderQueueAsync(radianceCascadesQueue);
+       //renderQueueAsync(radianceCascadesQueue);
     }
 
     // TODO: Dogshit, needs to be giga optimized
@@ -605,6 +598,8 @@ namespace Rapture
         if (s_isShadowPass) {
             // Use shadow map shader for shadow pass
             
+
+            
             // Calculate and set model-view-projection matrix for this object
             // The light WVP (view and projection) is already set in the shadow map
             
@@ -628,6 +623,7 @@ namespace Rapture
                 OpenGLRendererAPI::drawIndexed(meshData.indexCount, meshData.indexType, 
                     meshData.indexAllocation->offsetBytes, meshData.vertexOffsetInVertices);
             }
+
 
         }
         else {
@@ -716,7 +712,7 @@ namespace Rapture
         {
             RAPTURE_PROFILE_SCOPE("Lighting Pass");
             // TODO: Implement lighting pass specifics (e.g., setting light uniforms)
-            renderFullscreenQuad(); // Render the quad to apply lighting shader
+            renderFullscreenQuad(boundShader); // Render the quad to apply lighting shader
         }
 
 
@@ -759,11 +755,13 @@ namespace Rapture
                 shadowMap->bind();
                 s_currentShadowMap = shadowMap; // Set the current shadow map for use in the geometry pass
                 s_isShadowPass = true;  
+                s_currentFramebufferType = BoundFramebufferType::SHADOW_MAP;
             }
             else if (cmd.commandType == CommandExectionPhase::END_PASS) {
                 shadowMap->unbind();
                 s_currentShadowMap = nullptr; // Clear the current shadow map reference
                 s_isShadowPass = false;
+                s_currentFramebufferType = BoundFramebufferType::NONE;
             }
         }
         else if (std::holds_alternative<std::shared_ptr<CascadedShadowMapping>>(shadowMapVariant)) {
@@ -779,11 +777,13 @@ namespace Rapture
                 shadowMap->bind();
                 s_currentShadowMap = shadowMap; // Set the current shadow map for use in the geometry pass
                 s_isShadowPass = true;  
+                s_currentFramebufferType = BoundFramebufferType::SHADOW_MAP;
             }
             else if (cmd.commandType == CommandExectionPhase::END_PASS) {
                 shadowMap->unbind();
                 s_currentShadowMap = nullptr; // Clear the current shadow map reference
                 s_isShadowPass = false;
+                s_currentFramebufferType = BoundFramebufferType::NONE;
             }        
         }
         else {
@@ -879,33 +879,39 @@ namespace Rapture
         RAPTURE_PROFILE_GPU_SCOPE("IndirectLightingPassRender");
 
 
-        s_indirectLightingBuffer->bind(false);
+        auto shader = s_indirectLightingPassShader.lock();
+
+        if (!shader) {
+            GE_RENDER_ERROR("DeferredRenderer::indirectLightingPassRender - Shader is null");
+            return;
+        }
+
+        shader->bind();
+
+        s_indirectLightingBuffer->bind();
         s_gBuffer->bindTextures();
 
         auto hierarchy = cmd.cascadeHierarchy;
         auto ssbo = cmd.cascadeSSBO;
 
+
         ssbo->bindBase(0);
+        
 
-        auto shader = s_indirectLightingPassShader.lock();
-
-        if (!shader) {
-            GE_RENDER_ERROR("DeferredRenderer::indirectLightingPassRender - Shader is null");
-            s_indirectLightingBuffer->unbind();
-            return;
-        }
-
-        shader->bind();
 
         shader->setInt("u_NumCascades", static_cast<int>(hierarchy->getNumCascades()));
         shader->setInt("u_screenDimensionsX", static_cast<int>(s_gBuffer->getSpecification().width));
         shader->setInt("u_screenDimensionsY", static_cast<int>(s_gBuffer->getSpecification().height));
         shader->setVec3("u_CameraPosition", s_cameraPosition);
 
-        renderFullscreenQuad();
+        ssbo->barrier();
 
+        renderFullscreenQuad(shader);
+
+        s_gBuffer->unbindTextures();
         shader->unBind();
         s_indirectLightingBuffer->unbind();
+        s_currentFramebufferType = BoundFramebufferType::NONE;
     }
 
     void DeferredRenderer::setupFullscreenQuad()
@@ -927,7 +933,7 @@ namespace Rapture
         // For now, we assume the lighting shader handles everything.
     }
 
-    void DeferredRenderer::renderFullscreenQuad(){
+    void DeferredRenderer::renderFullscreenQuad(std::shared_ptr<Shader> shader){
         RAPTURE_PROFILE_FUNCTION();
         RAPTURE_PROFILE_GPU_SCOPE("RenderFullscreenQuad");
 
@@ -957,8 +963,8 @@ namespace Rapture
     
             
 
-        s_lightingPassShader.lock()->setMat4("u_model", modelMatrix);
-        s_lightingPassShader.lock()->setMat4("u_cameraViewMatrix", s_cameraViewMatrixCache);
+        shader->setMat4("u_model", modelMatrix);
+        shader->setMat4("u_cameraViewMatrix", s_cameraViewMatrixCache);
 
         {
             RAPTURE_PROFILE_SCOPE("Draw Fullscreen Quad");

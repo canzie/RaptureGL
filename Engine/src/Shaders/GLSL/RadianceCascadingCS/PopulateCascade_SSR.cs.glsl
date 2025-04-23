@@ -1,12 +1,13 @@
 #version 450 core
 #extension GL_ARB_shader_storage_buffer_object : require
-#extension GL_ARB_gpu_shader_int64 : require // Needed for uint64_t
+#extension GL_ARB_bindless_texture : require
+#extension GL_ARB_gpu_shader_int64 : require
 
 // Work group size - Adjust based on angular resolution and performance.
 // Aim for local_size_x * local_size_y to roughly match angularResolution * angularResolution if possible,
 // but keep total size (x*y*z) reasonable (e.g., 64, 128, 256).
 // Example: For 8x8 angular resolution, could use 8x8x1. For 16x16, maybe 8x8x4 or 16x16x1.
-layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 // --- G-Buffer Textures (Read-Only) ---
 layout (binding = 3) uniform sampler2D gPositionDepth; // World Position (RGB), Camera Distance/Linear Depth (A)
@@ -46,7 +47,8 @@ struct RadianceCascadeShaderData {
     int numStepsPerRay;
     float jitterStrength;
 
-    //uint64_t atlasHandle;
+    uint64_t atlasTextureHandle;
+
 };
 
 
@@ -66,7 +68,7 @@ uniform int u_screenDimensionsY;
 // --- Constants ---
 const float PI = 3.14159265359;
 const float TWO_PI = 2.0 * PI;
-const float EPSILON = 0.05; // Small offset for ray marching depth comparisons, adjust based on scene scale/depth precision
+const float EPSILON = 0.1; // Small offset for ray marching depth comparisons, adjust based on scene scale/depth precision
 
 // --- Helper Functions ---
 
@@ -76,6 +78,7 @@ vec3 octDecode(vec2 f) {
     f = f * 2.0 - 1.0; // Map from [0, 1] to [-1, 1]
     vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
     float t = max(-n.z, 0.0); // Equivalent to saturate(-n.z)
+    // n.xy += (n.xy >= 0.0 ? -t : t); // Invalid GLSL
     // Apply the sign-based offset component-wise
     n.x += (n.x >= 0.0 ? -t : t);
     n.y += (n.y >= 0.0 ? -t : t);
@@ -87,11 +90,11 @@ vec3 octDecode(vec2 f) {
 // this helps reduce the minimum atlas texture resolution needed
 // OUT: index of the probe e.g. (1, 1, 0), (12, 7, 5)
 //      this will help us identify the probes origin
-ivec2 PixelToProbeIndex(ivec2 pixelCoord, int resolution, ivec2 screenDimensions) {
+ivec2 PixelToProbeIndex(ivec2 pixelCoord, int resolution, ivec2 atlasDimensions) {
     // angular resolution squared is amount of pixels per probe
     // to get the start we do
 
-    int globalLinearIndex = pixelCoord.y * screenDimensions.x + pixelCoord.x;
+    int globalLinearIndex = pixelCoord.y * atlasDimensions.x + pixelCoord.x;
 
     float probeSize = resolution * resolution;
     float probeIndex = globalLinearIndex / probeSize;
@@ -144,8 +147,17 @@ float random(vec2 co) {
     return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
+// Function to safely sample G-Buffer textures, returning default values for invalid UVs
+vec4 safeTexture(sampler2D tex, vec2 uv, vec4 defaultValue) {
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+        return defaultValue;
+    }
+    return texture(tex, uv);
+}
+
 void main() {
     // --- 1. Identify Target Probe and Output Pixel ---
+
 
     // Get data for the current cascade
     RadianceCascadeShaderData cascade = cascadeData.cascades[u_CurrentCascadeIndex];
@@ -158,51 +170,105 @@ void main() {
         return;
     }
 
-    ivec2 indices = PixelToProbeIndex(globalPixelCoord, cascade.angularResolution, screenDimensions);
+    ivec2 indices = PixelToProbeIndex(globalPixelCoord, cascade.angularResolution, cascade.atlasPixelDim);
     int probeIdx1D = indices.x;
     int pixelIdxInProbe = indices.y;
 
+    // --- Ray Origin Determination (Screen-Space) ---
+
+    // 1. Find the conceptual center of the probe's world-space grid cell
+    ivec3 probeGridCoords = probeIndexToGridCoords(probeIdx1D, cascade.gridDimensions);
+    vec3 probeCenterWorldPos = getProbeWorldPosition(probeGridCoords, cascade); // Renamed for clarity
+
+    // 2. Project this center point to screen space to find the corresponding screen pixel
+    vec3 probeScreenPos = worldToScreenUV(probeCenterWorldPos, cascade.viewMatrix, cascade.projectionMatrix);
+    vec2 probeScreenUV = probeScreenPos.xy;
+
+    // Default output if probe center is invalid or off-screen
+    vec3 initialRadiance = vec3(0.0);
+    float initialTransparency = 1.0;
+
+    // Check if the probe's conceptual center projects validly onto the screen
+    if (probeScreenPos.z <= 0.0 || probeScreenUV.x < 0.0 || probeScreenUV.x > 1.0 || probeScreenUV.y < 0.0 || probeScreenUV.y > 1.0) {
+        imageStore(cascadeAtlas, globalPixelCoord, vec4(initialRadiance, 1.0 - initialTransparency));
+        return; // Cannot trace from off-screen or behind-camera probe center projection
+    }
+
+    // 3. Sample the G-Buffer at this screen UV to get the actual ray origin on the surface
+    vec4 originPosDepthSample = texture(gPositionDepth, probeScreenUV);
+    vec3 rayOrigin = originPosDepthSample.rgb;
+    float originLinearDepth = originPosDepthSample.a;
+
+    // 4. Get the surface normal at the origin
+    vec3 originNormal = normalize(texture(gNormal, probeScreenUV).rgb);
+
+    // Check for background/sky pixels at the origin (adjust threshold as needed)
+    if (dot(originNormal, originNormal) < 0.1) { // Assuming background normal is zero or near-zero
+        imageStore(cascadeAtlas, globalPixelCoord, vec4(initialRadiance, 1.0 - initialTransparency));
+        return; // Don't trace from background
+    }
+
+    // --- Ray Setup & Marching ---
+
+    // Ray direction remains the same as before (octahedral direction for this probe pixel)
     vec2 octCoordNorm = pixelIndexToOctCoordNorm(pixelIdxInProbe, cascade.angularResolution);
     vec3 rayDirection = octDecode(octCoordNorm);
-
-    // calculate the probe world position
-    ivec3 probeGridCoords = probeIndexToGridCoords(probeIdx1D, cascade.gridDimensions);
-    vec3 probeWorldPos = getProbeWorldPosition(probeGridCoords, cascade);
-
 
     vec3 radiance = vec3(0.0);
     float transparency = 1.0;
     // ray loop
     float totalRange = cascade.rangeEnd - cascade.rangeStart;
-    float stepSize = totalRange / float(max(1, cascade.numStepsPerRay));
+    float stepSize = max(0.01, totalRange / float(max(1, cascade.numStepsPerRay))); // Ensure minimum step size
     float startDist = cascade.rangeStart;
 
-    for (int i = 0; i < cascade.numStepsPerRay; i++) {
-        float currentRayDist = startDist + float(i) * stepSize;
-        
-        vec3 currentWorldPos = probeWorldPos + rayDirection * currentRayDist;
+    // Start ray slightly offset from the origin surface to avoid immediate self-intersection
+    // Using a fraction of the first step size might be more robust than fixed EPSILON
+    float originOffset = stepSize * 0.1; // Or use a small fixed value like EPSILON
+    vec3 displacedOrigin = rayOrigin + originNormal * originOffset;
 
+    for (int i = 0; i < cascade.numStepsPerRay; i++) {
+        // Distance along the ray from the *displaced* origin
+        float currentRayDist = float(i) * stepSize;
+        vec3 currentWorldPos = displacedOrigin + rayDirection * currentRayDist;
 
         vec3 screenPos = worldToScreenUV(currentWorldPos, cascade.viewMatrix, cascade.projectionMatrix);
         vec2 screenUV = screenPos.xy;
         float clipW = screenPos.z; // If <= 0, the point is behind or on the camera's near plane
 
-
-        if (clipW <= 0.0 ) {
+        // Also check if the projected UV is valid screen space
+        if (clipW <= 0.0 || screenUV.x < 0.0 || screenUV.x > 1.0 || screenUV.y < 0.0 || screenUV.y > 1.0) {
             break;
         }
 
+        // Use safe texture access for G-Buffer sampling during march
+        vec4 hitPosDepthSample = safeTexture(gPositionDepth, screenUV, vec4(0.0, 0.0, 0.0, 0.0));
+        float gBufferLinearDepth = hitPosDepthSample.a;
 
-        float gBufferDepth = texture(gPositionDepth, screenUV).a;
+        // If we hit background during the march, stop (or handle differently if needed)
+        if (gBufferLinearDepth == 0.0) {
+            // Optionally, could sample skybox here if ray goes long enough
+            break;
+        }
+
         vec4 viewPos = cascade.viewMatrix * vec4(currentWorldPos, 1.0);
-        float currentViewDepth = -viewPos.z;
 
-        if (currentViewDepth >= gBufferDepth - EPSILON) {
+        // Ensure depth is positive before negating
+        float currentViewLinearDepth = (viewPos.w > 0.0) ? -viewPos.z / viewPos.w : 1e10;
+        // If using Camera Distance in G-Buffer alpha, comparison needs care.
+        // Assuming G-Buffer Depth is Linear View Depth (-viewPos.z)
+        // Revert back to comparing view-space Z directly if needed
+        // float currentViewDepth = -viewPos.z;
+        // if (currentViewDepth >= gBufferDepth - EPSILON) { ... }
+
+        // Compare linear depths
+        if (currentViewLinearDepth >= gBufferLinearDepth - EPSILON) {
                 // Sample direct lighting from the G-buffer surface we hit
                 vec3 directLighting = texture(gDirectLighting, screenUV).rgb;
-                vec3 albedoSpec = texture(gAlbedoSpec, screenUV).rgb;
-                radiance = directLighting * albedoSpec;
-                //radiance = texture(gAlbedoSpec, screenUV).rgb;
+                vec3 hitAlbedo = texture(gAlbedoSpec, screenUV).rgb;
+
+                // Store the reflected direct lighting (Direct Light * Albedo)
+                radiance = directLighting * hitAlbedo;
+
                 // Set transparency to indicate an opaque hit
                 transparency = 0.0;
 
@@ -212,7 +278,6 @@ void main() {
         
         
     }
-    //radiance = texture(gAlbedoSpec, globalPixelCoord).rgb;
 
 
 
@@ -225,6 +290,6 @@ void main() {
 
 
     // --- 5. Write Output ---
-    imageStore(cascadeAtlas, globalPixelCoord, vec4(radiance, transparency));
+    imageStore(cascadeAtlas, globalPixelCoord, vec4(radiance, 1.0-transparency));
     
 }

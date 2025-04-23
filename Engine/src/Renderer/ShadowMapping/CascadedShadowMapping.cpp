@@ -461,78 +461,104 @@ namespace Rapture {
                 cameraProjectionType
             );
 
-            // 2. Calculate Frustum Center
+            // 2. Calculate Frustum Center and Bounding Sphere Radius
             glm::vec3 frustumCenter = glm::vec3(0.0f);
             for (const auto& corner : frustumCorners) {
                 frustumCenter += corner;
             }
             frustumCenter /= 8.0f;
 
+            float sphereRadius = 0.0f;
+            for (const auto& corner : frustumCorners) {
+                float distance = glm::length(corner - frustumCenter);
+                sphereRadius = std::max(sphereRadius, distance);
+            }
+            // Round up the radius to ensure all corners are inside
+            sphereRadius = std::ceil(sphereRadius * 16.0f) / 16.0f; // Optional: snap radius for minor stability
+
+
             // 3. Create Light View Matrix
-            float lightDistance = 100.0f; // Arbitrary distance - may not be strictly needed for ortho Z calc
+            // Move the light's position back along its direction relative to the sphere center
+            // The distance needs to account for the sphere radius to ensure the near plane includes the sphere
+            // We'll calculate the precise near/far later by projecting corners.
+            float lightDistance = sphereRadius; // Use sphereRadius as a base, adjust near/far later
             glm::mat4 lightViewMatrix = glm::lookAt(
-                frustumCenter - lightDirection * lightDistance,
-                frustumCenter,
+                frustumCenter - lightDirection * lightDistance, // Position light relative to sphere center
+                frustumCenter,                                  // Look at sphere center
                 up
             );
 
-            // 4. Transform Corners to Light Space & Find X/Y AABB
-            float minX = std::numeric_limits<float>::max(), maxX = std::numeric_limits<float>::lowest();
-            float minY = std::numeric_limits<float>::max(), maxY = std::numeric_limits<float>::lowest();
-            // We don't need minZ/maxZ from light-space AABB anymore for ortho Z range
+            // 4. Define Orthographic Bounds using Bounding Sphere
+            // The radius directly defines the extents in light space because the view looks at the center
+            float minX = -sphereRadius;
+            float maxX = sphereRadius;
+            float minY = -sphereRadius;
+            float maxY = sphereRadius;
 
-            for (const auto& corner : frustumCorners) {
-                glm::vec4 lightSpaceCorner = lightViewMatrix * glm::vec4(corner, 1.0f);
-                minX = std::min(minX, lightSpaceCorner.x);
-                maxX = std::max(maxX, lightSpaceCorner.x);
-                minY = std::min(minY, lightSpaceCorner.y);
-                maxY = std::max(maxY, lightSpaceCorner.y);
-            }
+            // Declare snappedCenterWorld outside the if block
+            glm::vec4 snappedCenterWorld = glm::vec4(frustumCenter, 1.0f);
 
-            // 5. Calculate Projection Center & Initial Extents
-            float centerX = (maxX + minX) / 2.0f;
-            float centerY = (maxY + minY) / 2.0f;
-            float extentX = maxX - minX;
-            float extentY = maxY - minY;
-
+            // --- Stabilization: Snap Ortho Bounds to Texel Grid ---
             if (m_Width > 0 && m_Height > 0) {
-                float worldTexelSizeX = extentX / m_Width;
-                float worldTexelSizeY = extentY / m_Height;
-                centerX = floor(centerX / worldTexelSizeX) * worldTexelSizeX;
-                centerY = floor(centerY / worldTexelSizeY) * worldTexelSizeY;
-                minX = centerX - extentX / 2.0f;
-                maxX = centerX + extentX / 2.0f;
-                minY = centerY - extentY / 2.0f;
-                maxY = centerY + extentY / 2.0f;
+                // Calculate world units per texel based on the sphere radius derived projection size
+                float extentX = maxX - minX; // Should be 2.0f * sphereRadius
+                float extentY = maxY - minY; // Should be 2.0f * sphereRadius
+                float unitsPerTexelX = extentX / static_cast<float>(m_Width);
+                float unitsPerTexelY = extentY / static_cast<float>(m_Height);
+
+                // Transform the sphere center into light view space
+                glm::vec4 centerLightSpace = lightViewMatrix * glm::vec4(frustumCenter, 1.0f);
+
+                // Snap the center x/y in light space to the texel grid
+                // We want floor snapping to prevent potential precision issues with moving the boundary
+                centerLightSpace.x = floor(centerLightSpace.x / unitsPerTexelX) * unitsPerTexelX;
+                centerLightSpace.y = floor(centerLightSpace.y / unitsPerTexelY) * unitsPerTexelY;
+
+                // Transform the snapped center back to world space
+                glm::mat4 inverseLightView = glm::inverse(lightViewMatrix);
+                snappedCenterWorld = inverseLightView * centerLightSpace; // Assign to the outer scope variable
+
+                // Recalculate the light view matrix using the snapped world space center
+                lightViewMatrix = glm::lookAt(
+                    glm::vec3(snappedCenterWorld) - lightDirection * lightDistance,
+                    glm::vec3(snappedCenterWorld), // Look at the snapped center
+                    up
+                );
             } else {
                  GE_CORE_WARN("Cascade {}: Shadow map width/height is zero, skipping stabilization.", cascadeIdx);
             }
 
             // 7. Calculate Ortho Z Bounds by Projecting World Corners onto Light Direction
+            // The Z bounds calculation remains the same, using the *original* frustum corners
+            // and the *final* stabilized lightViewMatrix
             float minLightDist = std::numeric_limits<float>::max();
             float maxLightDist = std::numeric_limits<float>::lowest();
             for (const auto& corner : frustumCorners) {
-                // Project corner onto light direction relative to frustum center
-                float distance = glm::dot(corner - frustumCenter, lightDirection);
+                // Project corner onto light direction relative to the *snapped* frustum center
+                float distance = glm::dot(corner - glm::vec3(snappedCenterWorld), lightDirection); // Now uses the correct variable
                 minLightDist = std::min(minLightDist, distance);
                 maxLightDist = std::max(maxLightDist, distance);
             }
+            float orthoNear = minLightDist;
+            float orthoFar = maxLightDist;
 
-            // Use these projected distances for near/far planes of ortho projection
-            // Add a small buffer/bias if needed, especially to the far plane
-            float orthoNear = minLightDist; 
-            float orthoFar = maxLightDist + 100.0f; // Add fixed extension to far plane for safety/bias
-            
+            // Adjust based on distance from the *snapped* center along the light direction
+            orthoNear = minLightDist;
+            orthoFar = maxLightDist;
 
-            // Optional: Ensure near is not too close or behind the 'light' position used in lookAt
-            // This might need adjustment based on how minLightDist behaves
-            // orthoNear = std::max(orthoNear, -lightDistance + 0.1f); 
+            // Add a buffer/margin to the far plane if needed
+            orthoFar += 100.0f; // Extend far plane further out
 
-            // 8. Create Orthographic Matrix
+
+            // Optional: Ensure near plane is not negative after adjustments if needed
+            // The near/far values are distances *along* the light direction *relative* to the lookAt target (frustumCenter)
+            // The glm::ortho function expects distances *from* the viewpoint.
+
+            // 8. Create Orthographic Matrix using the sphere-based bounds and stabilized view
             glm::mat4 lightProjectionMatrix = glm::ortho(
-                minX, maxX,         // Left, right (stabilized via center)
-                minY, maxY,         // Bottom, top (stabilized via center)
-                orthoNear, orthoFar // Near, far (calculated via projection)
+                minX, maxX,         // Left, right (from sphere radius)
+                minY, maxY,         // Bottom, top (from sphere radius)
+                orthoNear, orthoFar // Near, far (calculated via projection relative to center)
             );
 
             // 9. Store Final Matrix

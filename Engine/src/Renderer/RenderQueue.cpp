@@ -486,6 +486,7 @@ namespace Rapture {
 
 
 
+
         if (!radianceCascadesCmd.cascadeSSBO || !radianceCascadesCmd.radianceCascadesShader) {
             GE_RENDER_ERROR("RadianceCascades: Error retrieving cascadeSSBO or radianceCascadesShader, Probably not initialized");
             request.resultQueue->markAsDone();
@@ -499,7 +500,7 @@ namespace Rapture {
         IndirectLightingPassCommand indirectLightingPassCmd;
         indirectLightingPassCmd.cascadeSSBO = RadianceCascadesManager::getSSBO();
         indirectLightingPassCmd.cascadeHierarchy = RadianceCascadesManager::getHierarchy();
-        //request.resultQueue->add(indirectLightingPassCmd);
+        request.resultQueue->add(indirectLightingPassCmd);
 
 
         request.resultQueue->markAsDone();
