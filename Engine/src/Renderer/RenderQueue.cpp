@@ -500,7 +500,7 @@ namespace Rapture {
         IndirectLightingPassCommand indirectLightingPassCmd;
         indirectLightingPassCmd.cascadeSSBO = RadianceCascadesManager::getSSBO();
         indirectLightingPassCmd.cascadeHierarchy = RadianceCascadesManager::getHierarchy();
-        request.resultQueue->add(indirectLightingPassCmd);
+        //request.resultQueue->add(indirectLightingPassCmd);
 
 
         request.resultQueue->markAsDone();
