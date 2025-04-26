@@ -19,6 +19,7 @@ namespace Rapture {
 	}
 
 	inline GLenum convertBufferStorageFlags(BufferUsage usage) {
+
 		switch (usage) {
 			case BufferUsage::Static: 
 				return GL_DYNAMIC_STORAGE_BIT;

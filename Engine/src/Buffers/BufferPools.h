@@ -31,6 +31,23 @@ namespace Rapture {
     constexpr float NEXT_BUFFER_SIZE_THRESHOLD = 0.15f; // 15% threshold for increasing buffer size
 
 
+    struct AllocatorParams {
+        BufferLayout& layout;
+        void* vertexData = nullptr;
+        size_t vertexDataSize = 0;
+        const void* indexData = nullptr;
+        size_t indexDataSize = 0;
+        size_t indexCount = 0;
+        unsigned int indexType = 0;
+        glm::vec3 AABBMin = glm::vec3(0.0f);
+        glm::vec3 AABBMax = glm::vec3(0.0f);
+
+        AllocatorParams(BufferLayout& layout)
+        : layout(layout) {}
+        
+    };
+
+
     // Struct to represent an allocation within a buffer pool
     // TODOl should probably be split in 2 classes, becaus buffertype and usage will be duplicated a lot
     struct BufferAllocation {
@@ -52,27 +69,18 @@ namespace Rapture {
 
     // Struct to store mesh buffer data references
     struct MeshBufferData {
-        std::shared_ptr<VertexArray> vao;     // Reference to the VAO
-        std::shared_ptr<BufferAllocation> vertexAllocation;
-        std::shared_ptr<BufferAllocation> indexAllocation;
-        size_t indexCount;
-        unsigned int indexType;               // GL_UNSIGNED_SHORT, GL_UNSIGNED_INT, etc.
-        size_t vertexOffsetInVertices;
+        std::shared_ptr<VertexArray> vao = nullptr;     // Reference to the VAO
+        std::shared_ptr<BufferAllocation> vertexAllocation = nullptr;
+        std::shared_ptr<BufferAllocation> indexAllocation = nullptr;
+        size_t indexCount = 0;
+        unsigned int indexType = 0;               // GL_UNSIGNED_SHORT, GL_UNSIGNED_INT, etc.
+        size_t vertexOffsetInVertices = 0;
+        size_t triangleCount = 0;
 
-        MeshBufferData(
-            std::shared_ptr<BufferAllocation> vertexAllocation=nullptr, 
-            std::shared_ptr<BufferAllocation> indexAllocation=nullptr, 
-            unsigned int indexType=0, 
-            size_t indexCount=0,
-            size_t vertexOffsetInVertices=0,
+        glm::vec3 AABBMin = glm::vec3(0.0f);
+        glm::vec3 AABBMax = glm::vec3(0.0f);
 
-            std::shared_ptr<VertexArray> vao=nullptr)
-            : vertexAllocation(vertexAllocation), 
-              indexAllocation(indexAllocation), 
-              indexType(indexType),
-              indexCount(indexCount),
-              vertexOffsetInVertices(vertexOffsetInVertices),
-              vao(vao) {}
+        MeshBufferData() = default;
 
         void print() const {
             GE_CORE_TRACE("========== MeshBufferData: VAO: {0} ==========", vao->getID());
@@ -112,15 +120,12 @@ namespace Rapture {
         }
         
         // Allocate mesh data in buffer pools
-        MeshBufferData allocateMeshData(
-            const BufferLayout& layout,
-            const void* vertexData, size_t vertexDataSize,
-            const void* indexData, size_t indexDataSize, size_t indexCount,
-            unsigned int indexType
-        );
+        MeshBufferData allocateMeshData(const AllocatorParams& params);
         
         // Free mesh data from buffer pools
         void freeMeshData(MeshBufferData& meshData);
+
+        std::vector<std::shared_ptr<VertexArray>> getAllVertexArrays();
         
     private:
         // Prevent copying

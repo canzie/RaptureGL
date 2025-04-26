@@ -2,6 +2,7 @@
 #include "glad/glad.h"
 #include "../logger/Log.h"
 #include "../Debug/TracyProfiler.h"
+#include <string>
 
 namespace Rapture {
 
@@ -311,6 +312,24 @@ namespace Rapture {
 		std::shared_ptr<IndexBuffer> indexBuffer = std::make_shared<IndexBuffer>(buffer_length, comp_count, BufferUsage::Static);
         setIndexBuffer(indexBuffer);
 	}
+
+    // Definition moved here
+    std::string attributeTypeToString(AttributeType type) {
+        switch (type) {
+            case AttributeType::POSITION: return "POSITION";
+            case AttributeType::NORMAL: return "NORMAL";
+            case AttributeType::TANGENT: return "TANGENT";
+            case AttributeType::BITANGENT: return "BITANGENT";
+            case AttributeType::COLOR: return "COLOR";
+            case AttributeType::WEIGHTS_0: return "WEIGHTS_0";
+            case AttributeType::WEIGHTS_1: return "WEIGHTS_1";
+            case AttributeType::JOINTS_0: return "JOINTS_0";
+            case AttributeType::JOINTS_1: return "JOINTS_1";
+            case AttributeType::TEXCOORD_0: return "TEXCOORD_0";
+            case AttributeType::TEXCOORD_1: return "TEXCOORD_1";
+            default: return "UNKNOWN";
+        }
+    }
 }
 
 /*

@@ -66,7 +66,6 @@ namespace Rapture
 		CommandQueueBuilder::init(4); // Create 2 worker threads by default
 		//RadianceCascades::init();
         auto settings = BuildParams();
-        RadianceCascadesManager::init(settings);
         
         // Initialize G-buffer with current window size
         uint32_t width = 1280;
@@ -120,7 +119,6 @@ namespace Rapture
 		// Shutdown worker threads first to prevent accessing released resources
 		CommandQueueBuilder::shutdownWorkers();
         //RadianceCascades::shutdown();
-        RadianceCascadesManager::shutdown();
 
         // Clean up resources
         s_gBuffer.reset();
@@ -241,7 +239,6 @@ namespace Rapture
 			s_cameraUBO->setData(&cameraData, sizeof(CameraUniform));
 		}
 
-        RadianceCascadesManager::updateGpuBuffers();
 
 
         // Setup lights (uses caching)
@@ -255,7 +252,6 @@ namespace Rapture
         // the 2 queues should be made at the same time, this only happens when they are called after each other,
         // the other methods are no async so they would be blocking the main thread, so it cannot ask for the other queue
         auto geometryQueue = CommandQueueBuilder::buildGeometryCommandQueueAsync(s, RenderQueueType::DEFERRED);
-        auto radianceCascadesQueue = CommandQueueBuilder::buildGeometryCommandQueueAsync(s, RenderQueueType::RADIANCE_CASCADES);
 
         std::shared_ptr<RenderQueue> shadowQueue = nullptr;
         if (s_shadowMapDirty) {
@@ -267,7 +263,6 @@ namespace Rapture
 
         renderQueueAsync(geometryQueue);
 
-       renderQueueAsync(radianceCascadesQueue);
     }
 
     // TODO: Dogshit, needs to be giga optimized

@@ -10,6 +10,24 @@
 namespace Rapture {
 
 
+    enum class AttributeType {
+        POSITION,
+        NORMAL,
+        TANGENT,
+        BITANGENT,
+        COLOR,
+        WEIGHTS_0,
+        WEIGHTS_1,
+        JOINTS_0,
+        JOINTS_1,
+        TEXCOORD_0,
+        TEXCOORD_1
+
+    };
+
+    // Declaration only
+    std::string attributeTypeToString(AttributeType type);
+
 	struct BufferAttribute
 	{
 		std::string name;
@@ -76,6 +94,16 @@ namespace Rapture {
 			GE_CORE_ERROR("Attribute not found: {0}", name);
             return buffer_attribs[0];
 		}
+
+        BufferAttribute& getAttribute(AttributeType type) {
+            std::string name = attributeTypeToString(type);
+            if (name == "UNKNOWN") {
+                GE_CORE_ERROR("BufferLayout::getAttribute - Attribute type not found: {0}", (int)type);
+                return buffer_attribs[0];
+            }
+            
+            return getAttribute(name);
+        }
 
 		// Update offsets based on layout type (interleaved or not)
 		void updateOffsets() {

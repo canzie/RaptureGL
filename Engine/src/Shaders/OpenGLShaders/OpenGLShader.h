@@ -27,6 +27,7 @@ namespace Rapture {
 
         virtual void setFloat(const std::string& name, float value) override;
         virtual void setInt(const std::string& name, int value) override;
+        virtual void setUint(const std::string& name, uint32_t value) override;
         virtual void setBool(const std::string& name, bool value) override;
         virtual void setVec2(const std::string& name, const glm::vec2& value) override;
         virtual void setVec3(const std::string& name, const glm::vec3& value) override;

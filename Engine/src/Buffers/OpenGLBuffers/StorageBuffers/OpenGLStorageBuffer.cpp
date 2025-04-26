@@ -210,6 +210,51 @@ namespace Rapture {
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
 
+    void ShaderStorageBuffer::barrier(SSBOBarrierFlags flags)
+    {
+        uint32_t flag_bit = GL_SHADER_STORAGE_BARRIER_BIT;
+        if (flags.atomic) {
+            flag_bit |= GL_ATOMIC_COUNTER_BARRIER_BIT;
+        }
+        if (flags.bufferUpdate) {
+            flag_bit |= GL_BUFFER_UPDATE_BARRIER_BIT;
+        }
+        
+        glMemoryBarrier(flag_bit);
+    }
+
+    void ShaderStorageBuffer::clear(BufferInternalFormats format)
+    {
+        GLenum internalFormat;
+        GLenum dataFormat;
+        GLenum dataType;
+        const void* data = nullptr; 
+
+        switch (format) {
+            case BufferInternalFormats::R32UI:
+            { 
+                internalFormat = GL_R32UI;
+                dataFormat = GL_RED_INTEGER;
+                dataType = GL_UNSIGNED_INT;
+                static const unsigned int value = 0;
+                data = &value;
+                break;
+            } 
+            default:
+                GE_CORE_ERROR("StorageBuffer::clear - Unsupported buffer internal format");
+                return; 
+        }
+
+
+        if (GLCapabilities::hasDSA()) {
+            glClearNamedBufferData(m_rendererId, internalFormat, dataFormat, dataType, data);
+        } else {
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_rendererId);
+            glClearBufferData(GL_SHADER_STORAGE_BUFFER, internalFormat, dataFormat, dataType, data);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        }
+    }
+
     void ShaderStorageBuffer::setDebugLabel(const std::string& label) {
 		if (GLCapabilities::hasDebugMarkers()) {
 			glObjectLabel(GL_BUFFER, m_rendererId, -1, label.c_str());

@@ -56,7 +56,12 @@ namespace Rapture {
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 
-	void VertexBuffer::setData(const void* data, size_t size, size_t offset) {
+    void VertexBuffer::bindBase(uint32_t bindingPoint) const
+    {
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bindingPoint, m_rendererId);
+    }
+
+    void VertexBuffer::setData(const void* data, size_t size, size_t offset) {
 		if (offset + size > m_size) {
 			GE_CORE_ERROR("Buffer overflow: Trying to write {0} bytes at offset {1} in buffer of size {2}", 
 				size, offset, m_size);

@@ -578,6 +578,10 @@ namespace Rapture {
         unsigned int temp_compType = 0;
         unsigned int vertexCount = 0;
 
+        glm::vec3 minBounds(std::numeric_limits<float>::infinity());
+        glm::vec3 maxBounds(-std::numeric_limits<float>::infinity());
+        bool calculatedBounds = false;
+
         // Process vertex attributes
         if (primitive.contains("attributes")) {
             json& attribs = primitive["attributes"];
@@ -587,9 +591,25 @@ namespace Rapture {
                 std::string name = attrib.key();
                 if (name == "COLOR_0") continue; // Skip color data for now
                 
+
+
                 unsigned int accessorIdx = attrib.value();
                 json& accessor = m_accessors[accessorIdx];
                 
+                if (name == "POSITION" && accessor.contains("min") && accessor.contains("max")) {
+                    minBounds = glm::vec3(
+                        accessor["min"][0],
+                        accessor["min"][1],
+                        accessor["min"][2]
+                    );
+                    maxBounds = glm::vec3(
+                        accessor["max"][0],
+                        accessor["max"][1],
+                        accessor["max"][2]
+                    );
+                    calculatedBounds = true;
+                }
+
                 // Get vertex count from the first attribute (should be the same for all attributes)
                 if (vertexCount == 0 && accessor.contains("count")) {
                     vertexCount = accessor["count"];
@@ -674,9 +694,10 @@ namespace Rapture {
         
         // Calculate bounding box from the interleaved vertex data if position data is available
         BoundingBox localBoundingBox;
-        if (m_calculateBoundingBoxes && foundPosition) {
-            RAPTURE_PROFILE_SCOPE("Calculate Bounding Box");
-            
+
+        if (calculatedBounds) {
+            localBoundingBox = BoundingBox(minBounds, maxBounds);
+        } else {
             // Calculate bounding box directly from vertex data in RAM
             size_t floatStride = vertexStride / sizeof(float);
             localBoundingBox = BoundingBoxSystem::calculateFromVertexData(
@@ -685,10 +706,6 @@ namespace Rapture {
                 floatStride, 
                 positionOffset
             );
-            
-            if (localBoundingBox.isValid()) {
-                localBoundingBox.logBounds();
-            }
         }
         
         // Process indices if present
@@ -715,13 +732,16 @@ namespace Rapture {
         {
             RAPTURE_PROFILE_SCOPE("Set Mesh Data");
             if (indexData.size() > 0) {
-                meshComp.mesh->setMeshData(bufferLayout, 
-                    interleavedData.data(), 
-                    totalVertexDataSize, 
-                    indexData.data(), 
-                    indexData.size(), 
-                    indCount, 
-                    compType);
+                AllocatorParams params(bufferLayout);
+                params.vertexData = interleavedData.data();
+                params.vertexDataSize = totalVertexDataSize;
+                params.indexData = indexData.data();
+                params.indexDataSize = indexData.size();
+                params.indexCount = indCount;
+                params.indexType = compType;
+                params.AABBMin = minBounds;
+                params.AABBMax = maxBounds;
+                meshComp.mesh->setMeshData(params);
             } else {
                 GE_CORE_ERROR("glTF2Loader: Vertex data only not supported yet");
                 entity.removeComponent<MeshComponent>();
@@ -748,32 +768,6 @@ namespace Rapture {
                     entity.getComponent<MaterialComponent>().material = material;
                     entity.getComponent<MaterialComponent>().materialName = material->getName();
                 }
-
-                //loadMaterialByIndex(materialIdx);
-
-                /*
-                if (materialJSON.contains("extensions") && 
-                    materialJSON["extensions"].contains("KHR_materials_pbrSpecularGlossiness")) {
-                    hasSpecularGlossiness = true;
-                    
-                    // Process the material as a specular-glossiness material
-                    std::shared_ptr<Material> specGlossMaterial = processSpecularGlossinessMaterial(materialJSON);
-                    if (specGlossMaterial) {
-                        entity.getComponent<MaterialComponent>().material = specGlossMaterial;
-                        entity.getComponent<MaterialComponent>().materialName = specGlossMaterial->getName();
-                    } else {
-                        // Fallback to PBR if specular-glossiness processing failed
-                        auto material = processPBRMaterial(materialJSON);
-                        entity.getComponent<MaterialComponent>().material = material;
-                        entity.getComponent<MaterialComponent>().materialName = material->getName();
-                    }
-                } else {
-                    // Create a standard PBR material
-                    auto material = processPBRMaterial(materialJSON);
-                    entity.getComponent<MaterialComponent>().material = material;
-                    entity.getComponent<MaterialComponent>().materialName = material->getName();
-                }
-                */
             }
         }
 

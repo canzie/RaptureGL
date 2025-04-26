@@ -530,6 +530,11 @@ void OpenGLShader::setInt(const std::string& name, int value)
     glUniform1i(getUniformLocation(name), value);
 }
 
+void OpenGLShader::setUint(const std::string &name, uint32_t value)
+{
+    glUniform1ui(getUniformLocation(name), value);
+}
+
 void OpenGLShader::setBool(const std::string& name, bool value)
 {
     glUniform1i(getUniformLocation(name), static_cast<int>(value));

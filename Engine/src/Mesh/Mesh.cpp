@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "../Buffers/Buffers.h"
-#include "../Buffers/VertexArray.h"
 
 //#include "../File Loaders/glTF/glTFLoader.h"
 //#include "../File Loaders/glTF/glTF2Loader.h"
@@ -34,11 +33,11 @@ namespace Rapture
         bufferPoolManager.freeMeshData(m_meshBufferData);
 	}
 
-    bool Mesh::setMeshData(BufferLayout layout, const void* vertexData, size_t vertexDataSize, const void* indexData, size_t indexDataSize, size_t indexCount, unsigned int indexType)
+    bool Mesh::setMeshData(const AllocatorParams& params)
     {
 
         BufferPoolManager& bufferPoolManager = BufferPoolManager::getInstance();
-        m_meshBufferData = bufferPoolManager.allocateMeshData(layout, vertexData, vertexDataSize, indexData, indexDataSize, indexCount, indexType);
+        m_meshBufferData = bufferPoolManager.allocateMeshData(params);
 
         if (m_meshBufferData.vao == nullptr) {
             GE_CORE_ERROR("Failed to allocate mesh data");

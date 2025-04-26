@@ -4,6 +4,27 @@
 
 namespace Rapture {
 
+    enum class BufferInternalFormats {
+        R32UI,
+        R32F,
+        R16UI,
+        R16F,
+        R8UI,
+        R8F,
+        RGBA8UI,
+        RGBA8I,
+        RGBA8,
+        RGBA16F,
+        RGBA32F,
+        RGBA16UI,
+        RGBA16I
+    };
+
+    struct SSBOBarrierFlags {
+        bool atomic = false;
+        bool bufferUpdate = false;
+    };
+
 
 	class ShaderStorageBuffer : public Buffer {
 	public:
@@ -18,7 +39,12 @@ namespace Rapture {
 		void* map(size_t offset = 0, size_t size = 0);
 		void unmap();
 
+        void* getPersistentPtr() { return m_persistentlyMappedPtr; }
+
         void barrier();
+        static void barrier(SSBOBarrierFlags flags);
+
+        void clear(BufferInternalFormats format=BufferInternalFormats::R32UI);
 		
 		virtual void setDebugLabel(const std::string& label) override;
 		virtual unsigned int getID() const override { return m_rendererId; }

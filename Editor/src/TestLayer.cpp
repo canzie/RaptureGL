@@ -21,6 +21,8 @@
 #include "Renderer/RadianceCascades/RadianceCascades.h"
 #include "Renderer/RadianceCascades/RadianceCascadesManager.h"
 
+#include "RadixSortGPU/RadixSort.h"
+
 // Vendor includes
 #include <imgui.h>
 #include <glm/gtc/type_ptr.hpp>
@@ -28,6 +30,8 @@
 #include <glm/gtx/matrix_decompose.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtc/quaternion.hpp>
+
+#include "Timestep/Stopwatch.h"
 
 #include <filesystem>
 
@@ -197,33 +201,22 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
 	auto pos = Rapture::Input::getMousePos();
 	CameraController::setMousePosition(pos.first, pos.second);
 
-    /*
-    Rapture::Entity testEntity = activeScene->createEntity("RadianceCascade_DEBUG_Output");
 
-    // Ensure RadianceCascades is initialized
-    if (!Rapture::RadianceCascades::isInitialized()) {
-        Rapture::RadianceCascades::init();
+   Rapture::RadixSort radixSort(100000);
+   auto meshData = activeScene->getRegistry().view<Rapture::MeshComponent>();
+
+    Rapture::Stopwatch sw;
+    sw.start();
+
+    for (auto entity : meshData) {
+        auto& meshComponent = meshData.get<Rapture::MeshComponent>(entity);
+        radixSort.sort(meshComponent.mesh->getMeshData());
     }
-    auto rcDebugTex = Rapture::RadianceCascades::getDEBUGTexture(); // Get the 2D debug texture from RC
-    if (rcDebugTex) {
-         // Using a placeholder shader here, as ComputeTextureComponent needs one, but we might not execute it.
-         // The important part is the texture for viewing in ImGui panels.
-        auto placeholderShader = Rapture::RadianceCascades::getComputeShader(); // Reuse the RC compute shader as placeholder
-        testEntity.addComponent<Rapture::ComputeTextureComponent>(placeholderShader, rcDebugTex);
-    } else {
-        Rapture::GE_CORE_WARN("Could not get Radiance Cascades DEBUG texture.");
-    }*/
 
 
-   auto hierarchy = Rapture::RadianceCascadesManager::getHierarchy();
-   auto cascades = hierarchy->getCascades();
-   int i = 0;
-   for (auto& cascade : cascades) {
-    auto atlasTexture = cascade.getAtlasTexture();
-    auto testEntity = activeScene->createEntity("RadianceCascade_DEBUG_" + std::to_string(i));
-    testEntity.addComponent<Rapture::ComputeTextureComponent>(nullptr, atlasTexture);
-    i++;
-   }
+    sw.stop();
+    Rapture::GE_INFO("RadixSort::sort completed in {} microseconds", sw.getElapsedTime() * 1000.0);
+
 
 }
 

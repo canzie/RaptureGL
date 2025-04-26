@@ -26,7 +26,7 @@ namespace Rapture
 		// getters
 		//std::shared_ptr<SubMesh> addSubMesh();
 
-        bool setMeshData(BufferLayout layout, const void* vertexData, size_t vertexDataSize, const void* indexData, size_t indexDataSize, size_t indexCount, unsigned int indexType);
+        bool setMeshData(const AllocatorParams& params);
 
 		// Create a simple cube mesh for testing
 		static std::shared_ptr<Mesh> createCube(float size = 1.0f);

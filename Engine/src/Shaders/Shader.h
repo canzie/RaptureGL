@@ -89,6 +89,7 @@ namespace Rapture {
 
         // Enhanced uniform setters for materials
         virtual void setFloat(const std::string& name, float value) = 0;
+        virtual void setUint(const std::string& name, uint32_t value) = 0;
         virtual void setInt(const std::string& name, int value) = 0;
         virtual void setBool(const std::string& name, bool value) = 0;
         virtual void setVec2(const std::string& name, const glm::vec2& value) = 0;

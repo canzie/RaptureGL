@@ -14,7 +14,8 @@ class VertexBuffer : public Buffer {
 
 		virtual void bind() override;
 		virtual void unbind() override;
-		
+		void bindBase(uint32_t bindingPoint) const;
+        
 		void setData(const void* data, size_t size, size_t offset = 0);
 		void setData(const std::vector<unsigned char>& data, size_t offset = 0);
 		

@@ -11,7 +11,8 @@ namespace Rapture {
 
 		virtual void bind() override;
 		virtual void unbind() override;
-		
+		void bindBase(uint32_t bindingPoint) const;
+
 		void setData(const void* data, size_t size, size_t offset = 0);
 		void setData(const std::vector<unsigned char>& data, size_t offset = 0);
 		
@@ -29,6 +30,8 @@ namespace Rapture {
 		// Legacy method for compatibility
 		void addSubIndices(std::vector<unsigned char>& indices);
 		
+    private:
+        void generateHandle();
 
 	private:
 		unsigned int m_rendererId;
@@ -37,6 +40,8 @@ namespace Rapture {
 		size_t m_size;
 		BufferUsage m_usage;
 		bool m_isImmutable;
+
+        uint64_t m_handle;
 		
 		// For legacy support
 		size_t m_idx_last_element;

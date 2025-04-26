@@ -52,18 +52,14 @@ namespace Rapture {
 
     }
 
-    MeshBufferData BufferPoolManager::allocateMeshData(
-        const BufferLayout& layout,
-        const void* vertexData, size_t vertexDataSize,
-        const void* indexData, size_t indexDataSize, size_t indexCount,
-        unsigned int indexType)
+    MeshBufferData BufferPoolManager::allocateMeshData(const AllocatorParams& params)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         
         MeshBufferData meshData;
         
         // Find or create a vertex array with the given buffer layout
-        auto vao = findOrCreateVertexArray(layout, vertexDataSize, indexDataSize, indexType);
+        auto vao = findOrCreateVertexArray(params.layout, params.vertexDataSize, params.indexDataSize, params.indexType);
 
         if (!vao) {
              GE_CORE_ERROR("BufferPoolManager::allocateMeshData: Failed to find or create a suitable VAO.");
@@ -72,14 +68,14 @@ namespace Rapture {
 
 
         // Allocate the vertex data within the chosen VAO
-        auto vertexAllocation = allocateBuffer(vao, BufferType::Vertex, vertexDataSize);
+        auto vertexAllocation = allocateBuffer(vao, BufferType::Vertex, params.vertexDataSize);
         // Allocate the index data within the chosen VAO
-        auto indexAllocation = allocateBuffer(vao, BufferType::Index, indexDataSize);
+        auto indexAllocation = allocateBuffer(vao, BufferType::Index, params.indexDataSize);
 
 
         if (!vertexAllocation || !indexAllocation) {
             GE_CORE_ERROR("BufferPoolManager::allocateMeshData: Failed to allocate vertex ({0} bytes) or index ({1} bytes) buffer within VAO {2}, even after finding/creating it.",
-                          vertexDataSize, indexDataSize, vao ? vao->getID() : 0);
+                          params.vertexDataSize, params.indexDataSize, vao ? vao->getID() : 0);
             if (vertexAllocation && !vertexAllocation->isAllocated) meshData.vertexAllocation->isAllocated = false;
             if (indexAllocation && !indexAllocation->isAllocated) meshData.indexAllocation->isAllocated = false;
             return MeshBufferData{};
@@ -88,12 +84,20 @@ namespace Rapture {
         meshData.vao = vao;
         meshData.vertexAllocation = vertexAllocation;
         meshData.indexAllocation = indexAllocation;
-        meshData.indexType = indexType;
-        meshData.indexCount = indexCount;
+        meshData.indexType = params.indexType;
+        meshData.indexCount = params.indexCount;
         meshData.vertexOffsetInVertices = vertexAllocation->offsetBytes / vao->getBufferLayout().vertexSize;
 
-        vao->getVertexBuffer()->setData(vertexData, vertexDataSize, vertexAllocation->offsetBytes);
-        vao->getIndexBuffer()->setData(indexData, indexDataSize, indexAllocation->offsetBytes);
+        if (params.indexType == 5123) {
+            meshData.triangleCount =  params.indexDataSize / (3 * sizeof(unsigned short));
+        } else if (params.indexType == 5125) {
+            meshData.triangleCount =  params.indexDataSize / (3 * sizeof(unsigned int));
+        } else {
+            GE_CORE_ERROR("BufferPoolManager::allocateMeshData - Unsupported index type: {0}", params.indexType);
+        }
+
+        vao->getVertexBuffer()->setData(params.vertexData, params.vertexDataSize, vertexAllocation->offsetBytes);
+        vao->getIndexBuffer()->setData(params.indexData, params.indexDataSize, indexAllocation->offsetBytes);
 
         
         return meshData;
@@ -178,6 +182,19 @@ namespace Rapture {
         if (meshData.indexAllocation) {
              meshData.indexAllocation->isAllocated = false;
         }
+    }
+
+    std::vector<std::shared_ptr<VertexArray>> BufferPoolManager::getAllVertexArrays()
+    {
+
+        std::vector<std::shared_ptr<VertexArray>> vaos;
+        for (const auto& [layoutHash, vaoList] : m_layoutToVAOMap) {
+            for (const auto vao : vaoList) {
+                vaos.push_back(vao);
+            }
+        }
+
+        return vaos;
     }
 
     std::shared_ptr<VertexArray> BufferPoolManager::findOrCreateVertexArray(const BufferLayout& layout, size_t vertexDataSize, size_t indexDataSize, unsigned int indexType) {

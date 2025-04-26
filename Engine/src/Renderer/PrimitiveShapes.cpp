@@ -11,6 +11,8 @@
 #include <glad/glad.h>
 #include <string> // Required for std::to_string
 
+#include "../Scenes/Systems/BoundingBoxSystem.h"
+
 namespace Rapture {
 
     // Helper function to create a mesh with position-only vertices
@@ -29,15 +31,19 @@ namespace Rapture {
         layout.vertexSize = 3 * sizeof(float); // Only position (x,y,z)
         
         // Set the mesh data using our layout
-        mesh->setMeshData(
-            layout, 
-            positions.data(), 
-            positions.size() * sizeof(float),
-            indices.data(),
-            indices.size() * sizeof(uint32_t),
-            indices.size(),
-            GL_UNSIGNED_INT
-        );
+        AllocatorParams params(layout); 
+        params.vertexData = (void*)positions.data();
+        params.vertexDataSize = positions.size() * sizeof(float);
+        params.indexData = indices.data();
+        params.indexDataSize = indices.size() * sizeof(uint32_t);
+        params.indexCount = indices.size();
+        params.indexType = GL_UNSIGNED_INT;
+
+        auto aabb = BoundingBoxSystem::calculateFromVertexData(params.vertexData, params.vertexDataSize, layout.vertexSize, 0);
+        params.AABBMin = aabb.getMin();
+        params.AABBMax = aabb.getMax();
+
+        mesh->setMeshData(params);
         
         return mesh;
     }
@@ -110,15 +116,19 @@ namespace Rapture {
         }
         
         // Set the mesh data using our layout
-        mesh->setMeshData(
-            layout, 
-            interleavedData.data(), 
-            interleavedData.size() * sizeof(float),
-            indices.data(),
-            indices.size() * sizeof(uint32_t),
-            indices.size(),
-            GL_UNSIGNED_INT
-        );
+        AllocatorParams params(layout);
+        params.vertexData = interleavedData.data();
+        params.vertexDataSize = interleavedData.size() * sizeof(float);
+        params.indexData = indices.data();
+        params.indexDataSize = indices.size() * sizeof(uint32_t);
+        params.indexCount = indices.size();
+        params.indexType = GL_UNSIGNED_INT;
+
+        auto aabb = BoundingBoxSystem::calculateFromVertexData(params.vertexData, params.vertexDataSize, layout.vertexSize, 0);
+        params.AABBMin = aabb.getMin();
+        params.AABBMax = aabb.getMax();
+
+        mesh->setMeshData(params);
         
         return mesh;
     }
