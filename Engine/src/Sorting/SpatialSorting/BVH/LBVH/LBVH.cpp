@@ -382,6 +382,10 @@ namespace Rapture {
             return;
         }
 
+        if (node.leftChildIndex == 0 || node.rightChildIndex == 0) {
+            return;
+        }
+
         // If we are below the target depth, recurse into children
         if (currentDepth < targetDepth) {
             // Only recurse if it's an internal node (primitiveCount == 0)

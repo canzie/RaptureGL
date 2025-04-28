@@ -5,17 +5,34 @@
 
 #include "../../Debug/TracyProfiler.h"
 
+#include <algorithm>
+
 namespace Rapture {
+
+
+
+
     RadixSort::RadixSort(uint32_t maxTriangleCount)
     : m_maxTriangleCount(maxTriangleCount)
     {
-        auto [shader, handle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_RadixShaderPath);
+        auto [shader, handle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_RadixMultiShaderPath);
         auto [mortonShader, mortonHandle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_MortonShaderPath);
+        auto [histogramShader, histogramHandle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_HistogramShaderPath);
 
         m_Shader = shader;
         m_MortonShader = mortonShader;
+        m_HistogramShader = histogramShader;
 
-        
+        NUM_BLOCKS_PER_WORKGROUP = 32;
+        globalInvocationSize = 100000 / NUM_BLOCKS_PER_WORKGROUP;
+
+        uint32_t remainder = 100000 % NUM_BLOCKS_PER_WORKGROUP;
+        globalInvocationSize += remainder > 0 ? 1 : 0;
+
+        WORKGROUP_SIZE = 256;
+        NUMBER_OF_WORKGROUPS = (globalInvocationSize + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
+        RADIX_SORT_BINS = 256;
+
 
         //m_SortedIndicesBuffer = std::make_shared<ShaderStorageBuffer>();
         m_TriangleInfoBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(GpuMeshMetadata), BufferUsage::Dynamic);
@@ -24,6 +41,8 @@ namespace Rapture {
         m_MortonCodesBuffersB = std::make_shared<ShaderStorageBuffer>(sizeof(GpuOutputMortonElement) * maxTriangleCount, BufferUsage::Dynamic);
         
         m_PrimitiveAABBsBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(Element) * maxTriangleCount, BufferUsage::Dynamic);
+        m_GlobalHistogramBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(uint32_t) * RADIX_SORT_BINS * NUMBER_OF_WORKGROUPS, BufferUsage::Dynamic);
+
     }
 
     RadixSort::~RadixSort()
@@ -50,33 +69,63 @@ void RadixSort::sort(const MeshBufferData &meshBufferData) {
 
 
     updateMortonCodes(meshBufferData);
+    auto sortedMortonCodes = cpuSort(m_MortonCodesBuffersA, numElements);
+    const uint32_t NUM_PASSES = 4;
+    m_MortonCodesBuffersA->setData(sortedMortonCodes.data(), sortedMortonCodes.size() * sizeof(GpuOutputMortonElement));
 
-    const uint32_t WORKGROUP_SIZE = 256;
-    const uint32_t NUM_PASSES = 16;
+    m_SortedIndicesBuffer = m_MortonCodesBuffersA;
 
-    uint32_t numWorkGroups = (numElements + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
+    //uint32_t numWorkGroups = (numElements + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
 
-
+    /*
     std::shared_ptr<ShaderStorageBuffer> currentInputBuffer = m_MortonCodesBuffersA;
     std::shared_ptr<ShaderStorageBuffer> currentOutputBuffer = m_MortonCodesBuffersB;
 
-    // sort dispatch
-    m_Shader->bind();
-    m_Shader->setUint("u_numElements", numElements);
+    uint32_t shift = 0;
 
-    currentInputBuffer->bindBase(0);
-    currentOutputBuffer->bindBase(1);
+    for (uint32_t pass = 0; pass < NUM_PASSES; pass++) {
+        shift = pass * 8;
 
-    m_Shader->dispatchCompute(256, 1, 1);
-    ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true});
+        m_HistogramShader->bind();
 
-    m_Shader->unBind();
+        m_HistogramShader->setUint("g_num_elements", numElements);
+        m_HistogramShader->setUint("g_shift", shift);
+        m_HistogramShader->setUint("g_num_workgroups", NUMBER_OF_WORKGROUPS);
+        m_HistogramShader->setUint("g_num_blocks_per_workgroup", NUM_BLOCKS_PER_WORKGROUP);
+        
+        currentInputBuffer->bindBase(0);
+        m_GlobalHistogramBuffer->bindBase(1);
+
+        m_HistogramShader->dispatchCompute(globalInvocationSize, 1, 1);
+        ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true});
+        m_HistogramShader->unBind();
+
+        // sort dispatch
+        m_Shader->bind();
+        m_Shader->setUint("g_num_elements", numElements);
+        m_Shader->setUint("g_shift", shift);
+        m_Shader->setUint("g_num_workgroups", NUMBER_OF_WORKGROUPS);
+        m_Shader->setUint("g_num_blocks_per_workgroup", NUM_BLOCKS_PER_WORKGROUP);
+
+        currentInputBuffer->bindBase(0);
+        currentOutputBuffer->bindBase(1);
+        m_GlobalHistogramBuffer->bindBase(2);
+
+        m_Shader->dispatchCompute(globalInvocationSize, 1, 1);
+        ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true});
+
+        m_Shader->unBind();
+
+    }
 
 
-    m_SortedIndicesBuffer = currentOutputBuffer;
 
+
+    m_SortedIndicesBuffer = currentInputBuffer;
+*/
 
     //logBufferOutput(m_SortedIndicesBuffer, numElements);
+    
 }
 
 
@@ -149,6 +198,35 @@ void RadixSort::logBufferOutput(const std::shared_ptr<ShaderStorageBuffer> &buff
         GE_CORE_ERROR("RadixSort::sort - Failed to map sorted indices buffer for reading.");
     }
 
+}
+
+std::vector<GpuOutputMortonElement> RadixSort::cpuSort(const std::shared_ptr<ShaderStorageBuffer> &buffer, uint32_t numElements)
+{
+    ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true});
+
+    size_t bufferSize = numElements * sizeof(GpuOutputMortonElement);
+    std::vector<GpuOutputMortonElement> mortonCodes(numElements); // Allocate CPU memory
+
+    // Map the GPU buffer for reading
+    void* mappedPtr = buffer->map(0, bufferSize);
+
+    if (mappedPtr) {
+        // Copy data from GPU to CPU
+        memcpy(mortonCodes.data(), mappedPtr, bufferSize);
+        // Unmap the buffer once done
+        
+        buffer->unmap();
+        
+
+        std::sort(mortonCodes.begin(), mortonCodes.end(), [](const GpuOutputMortonElement &a, const GpuOutputMortonElement &b) {
+            return a.mortonCode < b.mortonCode;
+        });
+
+    } else {
+        GE_CORE_ERROR("RadixSort::sort - Failed to map sorted indices buffer for reading.");
+    }
+
+    return mortonCodes;
 }
 
 // Test the sort

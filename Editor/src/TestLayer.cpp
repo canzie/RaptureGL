@@ -118,9 +118,9 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
 	//Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
 	auto loader = Rapture::ModelLoadersCache::getLoader("E:/Dev/Games/LiDAR Game v1/LiDAR-Game/build/bin/Debug/assets/models/Sponza/Sponza.gltf", activeScene);
     if (loader){
-        //loader->loadModel("Sponza/Sponza.gltf");
+        loader->loadModel("Sponza/Sponza.gltf");
         //loader->loadModel("sphere.gltf");
-        loader->loadModel("stanford_dragon_pbr/scene.gltf");
+        //loader->loadModel("stanford_dragon_pbr/scene.gltf");
         //loader->loadModel("main1_sponza/NewSponza_Main_glTF_003.gltf");
     }
 

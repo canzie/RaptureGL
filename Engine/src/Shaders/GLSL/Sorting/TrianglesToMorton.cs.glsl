@@ -178,16 +178,14 @@ void main() {
         return;
     }
 
-    // Triangle index relative to the start of this mesh's data
-    uint localTriangleIndex = globalTriangleIndex;
 
     uint baseIndexByteOffset = mesh.indexOffsetBytes;
     uint indexType = mesh.indexType;
 
     // Read vertex indices for this triangle using byte offsets
-    uint i0 = readIndex(baseIndexByteOffset, localTriangleIndex, 0, indexType);
-    uint i1 = readIndex(baseIndexByteOffset, localTriangleIndex, 1, indexType);
-    uint i2 = readIndex(baseIndexByteOffset, localTriangleIndex, 2, indexType);
+    uint i0 = readIndex(baseIndexByteOffset, globalTriangleIndex, 0, indexType);
+    uint i1 = readIndex(baseIndexByteOffset, globalTriangleIndex, 1, indexType);
+    uint i2 = readIndex(baseIndexByteOffset, globalTriangleIndex, 2, indexType);
 
     // Read vertex positions (local space) using byte offsets
     uint baseVertexByteOffset = mesh.vertexOffsetBytes;
@@ -208,8 +206,8 @@ void main() {
     maxBounds.y = max(v0.y, max(v1.y, v2.y));
     maxBounds.z = max(v0.z, max(v1.z, v2.z));
 
-    Element bounds = Element(localTriangleIndex, minBounds.x, minBounds.y, minBounds.z, maxBounds.x, maxBounds.y, maxBounds.z);
-    primitiveAABBs.bounds[localTriangleIndex] = bounds;
+    Element bounds = Element(globalTriangleIndex, minBounds.x, minBounds.y, minBounds.z, maxBounds.x, maxBounds.y, maxBounds.z);
+    primitiveAABBs.bounds[globalTriangleIndex] = bounds;
 
     // Calculate centroid (local space)
     vec3 _centroid = (v0 + v1 + v2) / 3.0f;
@@ -223,13 +221,13 @@ void main() {
    // uint mortonCode = (expandBits10(quantizedPos.z) << 2) |
     //                      (expandBits10(quantizedPos.y) << 1) |
      //                      expandBits10(quantizedPos.x);
-    uint mortonCode = morton3D(quantizedPos.x, quantizedPos.y, quantizedPos.z);
+    uint mortonCode = morton3D(normalizedPos.x, normalizedPos.y, normalizedPos.z);
     // --- End Morton Code Calculation ---
 
     // Write the output
     GpuOutputMortonElement outputElement;
     outputElement.mortonCode = mortonCode;
-    outputElement.originalTriangleIndex = localTriangleIndex; // Index within the mesh
+    outputElement.originalTriangleIndex = globalTriangleIndex; // Index within the mesh
     outputElement.meshIndex = mesh.meshIndex;
 
     // Write to the output buffer at the global triangle index

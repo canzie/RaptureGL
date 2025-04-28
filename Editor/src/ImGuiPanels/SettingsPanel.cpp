@@ -298,7 +298,7 @@ void SettingsPanel::renderSceneSettings()
         
         Rapture::LBVHManager::setInterval(start, end);
 
-        ImGui::DragInt("Depth Level", &m_bvhDisplayDepth, 0.2f, 0, 16);
+        ImGui::DragInt("Depth Level", &m_bvhDisplayDepth, 0.1f, 0, 32);
 
 
         Rapture::LBVHManager::setDepthLevel(m_bvhDisplayDepth);

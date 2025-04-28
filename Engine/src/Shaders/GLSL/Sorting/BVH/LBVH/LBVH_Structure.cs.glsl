@@ -88,9 +88,9 @@ int delta(int i, uint codeI, int j) {
         uint elementIdxI = i;// g_sorted_morton_codes[i].elementIdx;
         uint elementIdxJ = j;// g_sorted_morton_codes[j].elementIdx;
         // add 32 for common prefix of codeI ^ codeJ
-        return 32 + 31 - findMSB(uint(elementIdxI ^ elementIdxJ));
+        return 32 + 31 - findMSB(elementIdxI ^ elementIdxJ);
     }
-    return 31 - findMSB(uint(codeI ^ codeJ));
+    return 31 - findMSB(codeI ^ codeJ);
 }
 
 void determineRange(int idx, out int lower, out int upper) {
@@ -120,6 +120,7 @@ void determineRange(int idx, out int lower, out int upper) {
     lower = min(idx, jdx);
     upper = max(idx, jdx);
 }
+
 
 int findSplit(int first, int last) {
     uint firstCode = g_sorted_morton_codes[first].mortonCode;
