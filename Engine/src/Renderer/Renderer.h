@@ -78,6 +78,10 @@ namespace Rapture
 		// Draw a bounding box for a specific entity
 		static void drawBoundingBox(Entity entity);
 
+        // Draw multiple bounding boxes efficiently using instanced rendering
+        // Assumes the provided transforms correctly position and scale a unit cube for each instance
+        static void drawInstancedBoundingBoxes(const std::vector<std::pair<glm::vec3, glm::vec3>>& bounds, const std::vector<glm::mat4>& transforms);
+
 	private:
 		// Static reusable line for debug purposes
 		static std::unique_ptr<Line> s_debugLightLine;

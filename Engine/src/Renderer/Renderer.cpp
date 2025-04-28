@@ -402,11 +402,63 @@ namespace Rapture
 
     void Renderer::drawAllBoundingBoxes(std::shared_ptr<Scene> s)
     {
+        RAPTURE_PROFILE_FUNCTION();
+
         auto& reg = s->getRegistry();
-        auto boundingBoxes = reg.view<BoundingBoxComponent>();
-        for (auto entity : boundingBoxes) {
-            drawBoundingBox(Entity(entity, s.get()));
+        // Get entities with both BoundingBoxComponent and TransformComponent
+        auto view = reg.view<BoundingBoxComponent, TransformComponent>();
+
+        std::vector<std::pair<glm::vec3, glm::vec3>> boundsList;
+        std::vector<glm::mat4> transformList;
+
+        boundsList.reserve(view.size_hint()); // Pre-allocate for potential size
+        transformList.reserve(view.size_hint());
+
+        for (auto entityHandle : view) {
+            auto& boundingBoxComp = view.get<BoundingBoxComponent>(entityHandle);
+            auto& transformComp = view.get<TransformComponent>(entityHandle);
+
+
+             // Update world bounding box if needed (copied logic from drawBoundingBox)
+            if (boundingBoxComp.needsUpdate) {
+                const BoundingBox& localBox = boundingBoxComp.localBoundingBox;
+                boundingBoxComp.worldBoundingBox = localBox.transform(transformComp.transformMatrix());
+                boundingBoxComp.needsUpdate = false; 
+            }
+
+            if (!boundingBoxComp.worldBoundingBox.isValid()) continue;
+
+            // Get the bounding box dimensions and center
+            glm::vec3 min = boundingBoxComp.worldBoundingBox.getMin();
+            glm::vec3 max = boundingBoxComp.worldBoundingBox.getMax();
+
+            // Safety check for NaN or infinity values (copied logic from drawBoundingBox)
+            if (glm::any(glm::isnan(min)) || glm::any(glm::isnan(max)) ||
+                glm::any(glm::isinf(min)) || glm::any(glm::isinf(max))) {
+                continue;
+            }
+
+            glm::vec3 size = max - min;
+            glm::vec3 center = (min + max) * 0.5f;
+
+            // Safety check for zero size (copied logic from drawBoundingBox)
+            if (glm::length(size) < 0.0001f) {
+                continue;
+            }
+
+            // Calculate transformation matrix for this instance
+            glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), center) *
+                                   glm::scale(glm::mat4(1.0f), size);
+
+            boundsList.push_back({min, max});
+            transformList.push_back(modelMatrix);
         }
+
+        // If there are bounding boxes to draw, call the instanced function
+        if (!transformList.empty()) {
+            drawInstancedBoundingBoxes(boundsList, transformList);
+        }
+
     }
 
     void Renderer::extractSceneData(const std::shared_ptr<Scene> s,
@@ -897,4 +949,78 @@ namespace Rapture
         }
         material->unbind();
     }
+
+    void Renderer::drawInstancedBoundingBoxes(const std::vector<std::pair<glm::vec3, glm::vec3>>& bounds, const std::vector<glm::mat4>& transforms)
+    {
+        RAPTURE_PROFILE_FUNCTION();
+
+        if (transforms.empty()) {
+            return; // Nothing to draw
+        }
+
+        // Check if the shared resources are available
+        if (!BoundingBoxComponent::s_visualizationMesh || !BoundingBoxComponent::s_visualizationMaterial) {
+            GE_RENDER_ERROR("Bounding box visualization resources not initialized");
+            return;
+        }
+
+        auto mesh = BoundingBoxComponent::s_visualizationMesh;
+        auto material = BoundingBoxComponent::s_visualizationMaterial;
+        auto vao = mesh->getMeshData().vao;
+        const auto& meshData = mesh->getMeshData();
+        int instanceCount = static_cast<int>(transforms.size());
+
+        if (!vao || !material) {
+             GE_RENDER_ERROR("Missing VAO or Material for instanced bounding box drawing");
+            return;
+        }
+
+        // Create and configure the instance VBO for transformation matrices
+        unsigned int instanceVBO;
+        glGenBuffers(1, &instanceVBO);
+        glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+        glBufferData(GL_ARRAY_BUFFER, instanceCount * sizeof(glm::mat4), transforms.data(), GL_STATIC_DRAW); // Use STATIC_DRAW for now, consider DYNAMIC if transforms change often
+
+        vao->bind();
+        glBindBuffer(GL_ARRAY_BUFFER, instanceVBO); // Bind instance VBO again *after* binding VAO
+
+        // Set up vertex attributes for the mat4 (assuming locations 3, 4, 5, 6)
+        // A mat4 is treated as 4 vec4s
+        const GLuint matrixAttribLocationStart = 3; // Base location for the matrix
+        const GLsizei vec4Size = sizeof(glm::vec4);
+        for (int i = 0; i < 4; ++i) {
+            glEnableVertexAttribArray(matrixAttribLocationStart + i);
+            glVertexAttribPointer(matrixAttribLocationStart + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(i * vec4Size));
+            glVertexAttribDivisor(matrixAttribLocationStart + i, 1); // Tell OpenGL this is an instanced attribute
+        }
+
+        // Bind material and set color
+        material->bind();
+        material->getShader()->setBool("u_IsInstanced", true); // Indicate instanced draw call
+
+        // Set polygon mode to line for wireframe
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+        // Call the instanced draw function
+        OpenGLRendererAPI::drawIndexedInstanced(
+            meshData.indexCount,
+            meshData.indexType,
+            meshData.indexAllocation->offsetBytes,
+            meshData.vertexOffsetInVertices,
+            instanceCount
+        );
+
+        // Reset state
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        for (int i = 0; i < 4; ++i) {
+            glDisableVertexAttribArray(matrixAttribLocationStart + i);
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        vao->unbind();
+        material->unbind();
+
+        // Clean up the instance buffer
+        glDeleteBuffers(1, &instanceVBO);
+    }
+
 }

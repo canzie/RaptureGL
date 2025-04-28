@@ -21,7 +21,7 @@
 #include "Renderer/RadianceCascades/RadianceCascades.h"
 #include "Renderer/RadianceCascades/RadianceCascadesManager.h"
 
-#include "RadixSortGPU/RadixSort.h"
+#include "Sorting/SpatialSorting/BVH/LBVH/LBVH.h"
 
 // Vendor includes
 #include <imgui.h>
@@ -118,9 +118,9 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
 	//Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
 	auto loader = Rapture::ModelLoadersCache::getLoader("E:/Dev/Games/LiDAR Game v1/LiDAR-Game/build/bin/Debug/assets/models/Sponza/Sponza.gltf", activeScene);
     if (loader){
-        loader->loadModel("Sponza/Sponza.gltf");
-        loader->loadModel("sphere.gltf");
+        //loader->loadModel("Sponza/Sponza.gltf");
         //loader->loadModel("sphere.gltf");
+        loader->loadModel("stanford_dragon_pbr/scene.gltf");
         //loader->loadModel("main1_sponza/NewSponza_Main_glTF_003.gltf");
     }
 
@@ -150,7 +150,7 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     
     Rapture::Cube cubeMesh = Rapture::Cube(cubeConfig);
 
-    cube.addComponent<Rapture::MeshComponent>(cubeMesh.getMesh());
+    //cube.addComponent<Rapture::MeshComponent>(cubeMesh.getMesh());
     cube.addComponent<Rapture::MaterialComponent>(cubeMesh.getMaterial());
 
 
@@ -201,23 +201,8 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
 	auto pos = Rapture::Input::getMousePos();
 	CameraController::setMousePosition(pos.first, pos.second);
 
-
-   Rapture::RadixSort radixSort(100000);
-   auto meshData = activeScene->getRegistry().view<Rapture::MeshComponent>();
-
-    Rapture::Stopwatch sw;
-    sw.start();
-
-    for (auto entity : meshData) {
-        auto& meshComponent = meshData.get<Rapture::MeshComponent>(entity);
-        radixSort.sort(meshComponent.mesh->getMeshData());
-    }
-
-
-    sw.stop();
-    Rapture::GE_INFO("RadixSort::sort completed in {} microseconds", sw.getElapsedTime() * 1000.0);
-
-
+    Rapture::LBVHManager::init(activeScene);
+    Rapture::LBVHManager::printTreeStructure(0);
 }
 
 
@@ -231,7 +216,7 @@ void TestLayer::onDetach()
 {
     Rapture::ModelLoadersCache::clear();
     Rapture::GameEvents::onSceneActivated().removeListener(m_sceneActivatedListenerId);
-
+    Rapture::LBVHManager::shutdown();
 }
 
 void TestLayer::notifyCameraChange()
@@ -423,10 +408,13 @@ void TestLayer::onUpdate(float ts)
 
     //Rapture::Renderer::drawAllBoundingBoxes(activeScene);
     //Rapture::Renderer::drawDebugFrustum();
+    //Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesSubset(), Rapture::LBVHManager::getTransformsSubset());
+    Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesAtDepth(), Rapture::LBVHManager::getTransformsAtDepth());
+
 
     // Draw the debug ray if active
     if (m_showDebugRay && m_debugRayLine) {
-        Rapture::Renderer::drawLine(*m_debugRayLine);
+        //Rapture::Renderer::drawLine(*m_debugRayLine);
     }
 
 

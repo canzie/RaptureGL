@@ -2,86 +2,163 @@
 
 #extension GL_ARB_gpu_shader_int64 : require
 #extension GL_ARB_shader_storage_buffer_object : require
+#extension GL_KHR_shader_subgroup_basic: enable
+#extension GL_KHR_shader_subgroup_arithmetic: enable
 
 // --- Workgroup Size ---
 // Must match the value used in the C++ dispatch call
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
-// --- Constants ---
-const uint RADIX_BITS = 4; // Process 4 bits per pass
-const uint RADIX_SIZE = 1 << RADIX_BITS; // 2^4 = 16 buckets
-const uint BITS_PER_PASS = RADIX_BITS;
-const uint TOTAL_BITS = 64; // Sorting uint64_t Morton codes
-const uint NUM_PASSES = (TOTAL_BITS + BITS_PER_PASS - 1) / BITS_PER_PASS; // ceil(64 / 4) = 16 passes
 
-// --- Data Structures (Matching C++) ---
-struct GpuOutputMortonElement {
-    uint64_t mortonCode;
-    uint originalTriangleIndex; // Index within its mesh
+#define WORKGROUP_SIZE 256// assert WORKGROUP_SIZE >= RADIX_SORT_BINS
+#define RADIX_SORT_BINS 256
+#define SUBGROUP_SIZE 32// 32 NVIDIA; 64 AMD
+
+#define BITS 32// sorting uint32_t
+#define ITERATIONS 4// 4 iterations, sorting 8 bits per iteration
+
+
+
+// only used on the GPU side during construction; it is necessary to allocate the (empty) buffer
+struct MortonCodeElement {
+    uint mortonCode;// key for sorting
+    uint elementIdx;// pointer into element buffer
     uint meshIndex;
+
 };
 
-// --- Buffers ---
 
-// Input for the current pass
-layout(std430, binding = 0) readonly buffer InputBuffer {
-    GpuOutputMortonElement elements[];
-} inputBuffer;
+layout (std430, binding = 0) buffer elements_in {
+    MortonCodeElement g_elements_in[];
+};
 
-// Output for the current pass
-layout(std430, binding = 1) writeonly buffer OutputBuffer {
-    GpuOutputMortonElement elements[];
-} outputBuffer;
+layout (std430, binding = 1) buffer elements_out {
+    MortonCodeElement g_elements_out[];
+};
 
-// Contains the global starting offset for each radix value (pre-calculated via prefix sum)
-// This needs to be read-write now for atomic increments during scatter.
-layout(std430, binding = 2) buffer GlobalOffsets {
-    uint offsets[]; // Size = RADIX_SIZE
-} globalOffsets;
 
 // --- Uniforms ---
 
 uniform uint u_numElements; // Total number of elements to sort
-uniform uint u_pass;        // Current pass number (0 to NUM_PASSES - 1)
 
 // --- Shared Memory ---
 
-// No shared memory needed for this simplified scatter approach
+shared uint[RADIX_SORT_BINS] histogram;
+shared uint[RADIX_SORT_BINS / SUBGROUP_SIZE] sums;// subgroup reductions
+shared uint[RADIX_SORT_BINS] local_offsets;// local exclusive scan (prefix sum) (inside subgroups)
+shared uint[RADIX_SORT_BINS] global_offsets;// global exclusive scan (prefix sum)
 
 
-// --- Main Logic ---
+struct BinFlags {
+    uint flags[WORKGROUP_SIZE / BITS];
+};
 
+shared BinFlags[RADIX_SORT_BINS] bin_flags;
+
+#define ELEMENT_KEY_IN(index, iteration) (iteration % 2 == 0 ? g_elements_in[index].mortonCode : g_elements_out[index].mortonCode)
+
+
+// sort morton codes
 void main() {
-    uint localId = gl_LocalInvocationID.x;
-    uint globalId = gl_GlobalInvocationID.x;
-    uint workGroupId = gl_WorkGroupID.x;
-    uint workGroupSize = gl_WorkGroupSize.x;
+    uint lID = gl_LocalInvocationID.x;
+    uint sID = gl_SubgroupID;
+    uint lsID = gl_SubgroupInvocationID;
 
-    uint bitOffset = u_pass * BITS_PER_PASS;
-    uint64_t mask = (uint64_t(RADIX_SIZE) - 1) << bitOffset;
+    for (uint iteration = 0; iteration < ITERATIONS; iteration++) {
+        uint shift = 8 * iteration;
 
-    // Determine the range of elements this thread should process
-    uint elementsPerWorkgroup = (u_numElements + gl_NumWorkGroups.x - 1) / gl_NumWorkGroups.x;
-    uint startElement = workGroupId * elementsPerWorkgroup;
-    uint endElement = min(startElement + elementsPerWorkgroup, u_numElements);
+        // initialize histogram
+        if (lID < RADIX_SORT_BINS) {
+            histogram[lID] = 0U;
+        }
+        barrier();
 
-    // --- Scatter Elements to Output Buffer --- //
+        for (uint ID = lID; ID < u_numElements; ID += WORKGROUP_SIZE) {
+            // determine the bin
+            const uint bin = (ELEMENT_KEY_IN(ID, iteration) >> shift) & (RADIX_SORT_BINS - 1);
+            // increment the histogram
+            atomicAdd(histogram[bin], 1U);
+        }
+        barrier();
 
-    // Each thread processes its assigned elements from the input buffer.
-    // It calculates the destination index by atomically incrementing the global offset
-    // corresponding to the element's radix value.
-    for (uint i = startElement + localId; i < endElement; i += workGroupSize) {
-        GpuOutputMortonElement element = inputBuffer.elements[i];
-        uint64_t morton = element.mortonCode;
-        uint radixValue = uint((morton & mask) >> bitOffset);
+        // subgroup reductions and subgroup prefix sums
+        if (lID < RADIX_SORT_BINS) {
+            uint histogram_count = histogram[lID];
+            uint sum = subgroupAdd(histogram_count);
+            uint prefix_sum = subgroupExclusiveAdd(histogram_count);
+            local_offsets[lID] = prefix_sum;
+            if (subgroupElect()) {
+                // one thread inside the warp/subgroup enters this section
+                sums[sID] = sum;
+            }
+        }
+        barrier();
 
-        // Atomically increment the global offset for this radix value.
-        // The returned value (before the increment) is the correct destination index.
-        uint destinationIndex = atomicAdd(globalOffsets.offsets[radixValue], 1);
+        // global prefix sums (offsets)
+        if (sID == 0) {
+            uint offset = 0;
+            for (uint i = lsID; i < RADIX_SORT_BINS; i += SUBGROUP_SIZE) {
+                global_offsets[i] = offset + local_offsets[i];
+                offset += sums[i / SUBGROUP_SIZE];
+            }
+        }
+        barrier();
 
-        // Write the element to its sorted position in the output buffer.
-        outputBuffer.elements[destinationIndex] = element;
+        //     ==== scatter keys according to global offsets =====
+        const uint flags_bin = lID / BITS;
+        const uint flags_bit = 1 << (lID % BITS);
+
+        for (uint blockID = 0; blockID < u_numElements; blockID += WORKGROUP_SIZE) {
+            barrier();
+
+            const uint ID = blockID + lID;
+
+            // initialize bin flags
+            if (lID < RADIX_SORT_BINS) {
+                for (int i = 0; i < WORKGROUP_SIZE / BITS; i++) {
+                    bin_flags[lID].flags[i] = 0U;// init all bin flags to 0
+                }
+            }
+            barrier();
+
+            MortonCodeElement element_in;
+            uint binID = 0;
+            uint binOffset = 0;
+            if (ID < u_numElements) {
+                if (iteration % 2 == 0) {
+                    element_in = g_elements_in[ID];
+                } else {
+                    element_in = g_elements_out[ID];
+                }
+                binID = (element_in.mortonCode >> shift) & uint(RADIX_SORT_BINS - 1);
+                // offset for group
+                binOffset = global_offsets[binID];
+                // add bit to flag
+                atomicAdd(bin_flags[binID].flags[flags_bin], flags_bit);
+            }
+            barrier();
+
+            if (ID < u_numElements) {
+                // calculate output index of element
+                uint prefix = 0;
+                uint count = 0;
+                for (uint i = 0; i < WORKGROUP_SIZE / BITS; i++) {
+                    const uint bits = bin_flags[binID].flags[i];
+                    const uint full_count = bitCount(bits);
+                    const uint partial_count = bitCount(bits & (flags_bit - 1));
+                    prefix += (i < flags_bin) ? full_count : 0U;
+                    prefix += (i == flags_bin) ? partial_count : 0U;
+                    count += full_count;
+                }
+                if (iteration % 2 == 0) {
+                    g_elements_out[binOffset + prefix] = element_in;
+                } else {
+                    g_elements_in[binOffset + prefix] = element_in;
+                }
+                if (prefix == count - 1) {
+                    atomicAdd(global_offsets[binID], count);
+                }
+            }
+        }
     }
-    // No barriers needed within the shader for this approach.
-    // Barriers between dispatches in C++ are still required.
 }

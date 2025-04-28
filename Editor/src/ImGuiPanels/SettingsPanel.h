@@ -6,6 +6,8 @@
 #include <filesystem>
 #include "../../Engine/src/WindowContext/OpenGLWindowContext/OpenGLWindowContext.h"
 #include "../../Engine/src/Scenes/Scene.h"
+#include <glm/glm.hpp>
+
 
 namespace Rapture {
     class WindowContext;
@@ -31,7 +33,14 @@ private:
     void renderGraphicsSettings();
     void renderRenderingSettings();
     void renderSceneSettings();
-    
+
+
+    // BVH Slider Range
+    int m_bvhDisplayRangeMin = 0;
+    int m_bvhDisplayRangeMax = 0;
+
+    int m_bvhDisplayDepth = 0;
+
     // Helper to extract filename from path
     std::string extractFilename(const std::filesystem::path& path) const {
         return path.filename().string();

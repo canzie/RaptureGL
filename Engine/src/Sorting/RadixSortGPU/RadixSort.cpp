@@ -1,16 +1,9 @@
 #include "RadixSort.h"
 
-#include "../AssetsManager/AssetManager.h"
-#include "../Shaders/Shader.h"
+#include "../../AssetsManager/AssetManager.h"
+#include "../../Shaders/Shader.h"
 
-#include "../Debug/TracyProfiler.h"
-
-// Make sure these match the shader
-const uint32_t RADIX_BITS = 4;
-const uint32_t RADIX_SIZE = 1 << RADIX_BITS;
-const uint32_t BITS_PER_PASS = RADIX_BITS;
-const uint32_t TOTAL_BITS = 64;
-const uint32_t NUM_PASSES = (TOTAL_BITS + BITS_PER_PASS - 1) / BITS_PER_PASS;
+#include "../../Debug/TracyProfiler.h"
 
 namespace Rapture {
     RadixSort::RadixSort(uint32_t maxTriangleCount)
@@ -18,23 +11,19 @@ namespace Rapture {
     {
         auto [shader, handle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_RadixShaderPath);
         auto [mortonShader, mortonHandle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_MortonShaderPath);
-        auto [prefixSumShader, prefixSumHandle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_PrefixSumShaderPath);
-        auto [histogramShader, histogramHandle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_HistogramShaderPath);
 
         m_Shader = shader;
         m_MortonShader = mortonShader;
-        m_PrefixSumShader = prefixSumShader;
-        m_HistogramShader = histogramShader;
-
 
         
 
         //m_SortedIndicesBuffer = std::make_shared<ShaderStorageBuffer>();
         m_TriangleInfoBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(GpuMeshMetadata), BufferUsage::Dynamic);
+
         m_MortonCodesBuffersA = std::make_shared<ShaderStorageBuffer>(sizeof(GpuOutputMortonElement) * maxTriangleCount, BufferUsage::Dynamic);
         m_MortonCodesBuffersB = std::make_shared<ShaderStorageBuffer>(sizeof(GpuOutputMortonElement) * maxTriangleCount, BufferUsage::Dynamic);
-        m_GlobalHistogramBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(uint32_t) * RADIX_SIZE, BufferUsage::Dynamic);
-        m_GlobalOffsetsBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(uint32_t) * RADIX_SIZE, BufferUsage::Dynamic);
+        
+        m_PrimitiveAABBsBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(Element) * maxTriangleCount, BufferUsage::Dynamic);
     }
 
     RadixSort::~RadixSort()
@@ -53,7 +42,7 @@ void RadixSort::sort(const MeshBufferData &meshBufferData) {
 
     uint32_t numElements = meshBufferData.triangleCount;
 
-    if (numElements == 0 || !m_Shader || !m_PrefixSumShader || !m_MortonShader) return;
+    if (numElements == 0 || !m_Shader || !m_MortonShader) return;
     if (numElements > m_maxTriangleCount) {
         GE_CORE_ERROR("RadixSort::sort called with numElements ({}) > maxElementCount ({})", numElements, m_maxTriangleCount);
         return;
@@ -71,59 +60,20 @@ void RadixSort::sort(const MeshBufferData &meshBufferData) {
     std::shared_ptr<ShaderStorageBuffer> currentInputBuffer = m_MortonCodesBuffersA;
     std::shared_ptr<ShaderStorageBuffer> currentOutputBuffer = m_MortonCodesBuffersB;
 
+    // sort dispatch
+    m_Shader->bind();
+    m_Shader->setUint("u_numElements", numElements);
 
-    for (uint32_t pass = 0; pass < NUM_PASSES; ++pass)
-    {
-        m_GlobalHistogramBuffer->clear(BufferInternalFormats::R32UI);
-        
-        ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true});
+    currentInputBuffer->bindBase(0);
+    currentOutputBuffer->bindBase(1);
 
-        // Histogram generation dispatch
-        m_HistogramShader->bind();
-        m_HistogramShader->setUint("u_numElements", numElements);
-        m_HistogramShader->setUint("u_pass", pass);
+    m_Shader->dispatchCompute(256, 1, 1);
+    ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true});
 
-        currentInputBuffer->bindBase(0);
-        m_GlobalHistogramBuffer->bindBase(1);
-
-        m_HistogramShader->dispatchCompute(numWorkGroups, 1, 1);
-
-        ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true});
-
-        m_HistogramShader->unBind();
-
-        // prefix sum dispatch
-        m_PrefixSumShader->bind();
-
-        m_GlobalHistogramBuffer->bindBase(0);
-        m_GlobalOffsetsBuffer->bindBase(1);
-
-        m_PrefixSumShader->dispatchCompute(1, 1, 1);
-        ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true});
-
-        m_PrefixSumShader->unBind();
-        
-        // sort dispatch
-        m_Shader->bind();
-        m_Shader->setUint("u_numElements", numElements);
-        m_Shader->setUint("u_pass", pass);
-
-        currentInputBuffer->bindBase(0);
-        currentOutputBuffer->bindBase(1);
-        m_GlobalOffsetsBuffer->bindBase(2);
-
-        m_Shader->dispatchCompute(numWorkGroups, 1, 1);
-        ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true});
-
-        m_Shader->unBind();
-
-        // swap buffers
-        std::swap(currentInputBuffer, currentOutputBuffer);
-
-    }
+    m_Shader->unBind();
 
 
-    m_SortedIndicesBuffer = currentInputBuffer;
+    m_SortedIndicesBuffer = currentOutputBuffer;
 
 
     //logBufferOutput(m_SortedIndicesBuffer, numElements);
@@ -154,14 +104,15 @@ void RadixSort::updateMortonCodes(const MeshBufferData &meshBufferData)
     m_TriangleInfoBuffer->bindBase(2);
 
     m_MortonCodesBuffersA->bindBase(3);
+    m_PrimitiveAABBsBuffer->bindBase(4);
 
     m_MortonShader->setVec3("u_sceneAABBMin", meshBufferData.AABBMin);
     m_MortonShader->setVec3("u_sceneAABBMax", meshBufferData.AABBMax);
 
-    m_MortonShader->dispatchCompute(numWorkGroups, 1, 1);
+    m_MortonShader->dispatchCompute(256, 1, 1);
     ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true});
     m_MortonShader->unBind();
-    //logBufferOutput(m_MortonCodesBuffersA, meshMetadata.triangleCount);
+
 }
 
 void RadixSort::logBufferOutput(const std::shared_ptr<ShaderStorageBuffer> &buffer, uint32_t numElements)

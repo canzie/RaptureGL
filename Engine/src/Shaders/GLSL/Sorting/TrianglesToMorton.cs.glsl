@@ -22,7 +22,7 @@ struct GpuMeshMetadata {
 };
 
 struct GpuOutputMortonElement {
-    uint64_t mortonCode;
+    uint mortonCode;
     uint originalTriangleIndex; // Index within its mesh
     uint meshIndex;
     // uint padding; // Add if needed for std430 16-byte alignment
@@ -52,6 +52,20 @@ layout(std430, binding = 2) readonly buffer MeshMetadataBuffer {
 layout(std430, binding = 3) writeonly buffer OutputMortonBuffer {
     GpuOutputMortonElement mortonElements[];
 } outputMortonBuffer;
+
+struct Element {
+    uint primitiveIdx;// the id of the primitive; this primitive id is copied to the leaf nodes of the  LBVHNode
+    float aabbMinX;// aabb of the primitive
+    float aabbMinY;
+    float aabbMinZ;
+    float aabbMaxX;
+    float aabbMaxY;
+    float aabbMaxZ;
+};
+
+layout(std430, binding = 4) buffer PrimitiveAABBs {
+    Element bounds[];
+} primitiveAABBs;
 
 // --- Uniforms ---
 
@@ -133,16 +147,23 @@ vec3 readPosition(uint baseVertexByteOffset, uint relativeVertexIndex, uint vert
 
 // Expands a 10-bit integer into 30 bits by inserting 2 zeros after each bit.
 // Used for interleaving bits for Morton codes.
-uint64_t expandBits10(uint v) {
-    uint64_t x = uint64_t(v & 0x3FF); // Ensure we only consider 10 bits
-    x = (x | (x << 10)) & 0x000F801F000Ful; // ....1 ..1.. 1..1. ..1.. 1..1. .
-    x = (x | (x <<  5)) & 0x0381C0E070381ul; // ...1. .1.. .1.. .1... 1.1.. .1..
-    x = (x | (x <<  2)) & 0x049249249249249ul; // ..1.. 1..1 ..1.. 1..1 ..1.. 1..1
-    x = (x | (x <<  1)) & 0x092492492492492ul; // .1.1. .1.1 .1.1. .1.1 .1.1. .1.1
-    x = (x | (x <<  2)) & 0x249249249249249ul; // 1.1.1 .1.1 .1.1. .1.1 .1.1. .1.1
-    return x;
+uint expandBits10(uint v) {
+    v = (v * 0x00010001u) & 0xFF0000FFu;
+    v = (v * 0x00000101u) & 0x0F00F00Fu;
+    v = (v * 0x00000011u) & 0xC30C30C3u;
+    v = (v * 0x00000005u) & 0x49249249u;
+    return v;
 }
 
+uint morton3D(float x, float y, float z) {
+    x = min(max(x * 1024.0f, 0.0f), 1023.0f);
+    y = min(max(y * 1024.0f, 0.0f), 1023.0f);
+    z = min(max(z * 1024.0f, 0.0f), 1023.0f);
+    uint xx = expandBits10(uint(x));
+    uint yy = expandBits10(uint(y));
+    uint zz = expandBits10(uint(z));
+    return xx * 4 + yy * 2 + zz;
+}
 
 // --- Main Logic ---
 
@@ -176,6 +197,20 @@ void main() {
     vec3 v1 = readPosition(baseVertexByteOffset, i1, stride, posAttrOffset);
     vec3 v2 = readPosition(baseVertexByteOffset, i2, stride, posAttrOffset);
 
+    // Calculate AABB for the triangle
+    vec3 minBounds;
+    minBounds.x = min(v0.x, min(v1.x, v2.x));
+    minBounds.y = min(v0.y, min(v1.y, v2.y));
+    minBounds.z = min(v0.z, min(v1.z, v2.z));
+
+    vec3 maxBounds;
+    maxBounds.x = max(v0.x, max(v1.x, v2.x));
+    maxBounds.y = max(v0.y, max(v1.y, v2.y));
+    maxBounds.z = max(v0.z, max(v1.z, v2.z));
+
+    Element bounds = Element(localTriangleIndex, minBounds.x, minBounds.y, minBounds.z, maxBounds.x, maxBounds.y, maxBounds.z);
+    primitiveAABBs.bounds[localTriangleIndex] = bounds;
+
     // Calculate centroid (local space)
     vec3 _centroid = (v0 + v1 + v2) / 3.0f;
 
@@ -185,9 +220,10 @@ void main() {
     uvec3 quantizationMask = (uvec3(1) << u_sceneAABBQuantizationBits) - uvec3(1);
     uvec3 quantizedPos = uvec3(normalizedPos * vec3(quantizationMask));
 
-    uint64_t mortonCode = (expandBits10(quantizedPos.z) << 2) |
-                          (expandBits10(quantizedPos.y) << 1) |
-                           expandBits10(quantizedPos.x);
+   // uint mortonCode = (expandBits10(quantizedPos.z) << 2) |
+    //                      (expandBits10(quantizedPos.y) << 1) |
+     //                      expandBits10(quantizedPos.x);
+    uint mortonCode = morton3D(quantizedPos.x, quantizedPos.y, quantizedPos.z);
     // --- End Morton Code Calculation ---
 
     // Write the output
@@ -202,3 +238,4 @@ void main() {
     // or matches mesh.triangleCount if only one mesh is processed.
     outputMortonBuffer.mortonElements[globalTriangleIndex] = outputElement;
 }
+

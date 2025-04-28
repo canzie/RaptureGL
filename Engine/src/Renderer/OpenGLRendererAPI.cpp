@@ -76,6 +76,51 @@ namespace Rapture {
         
 	}
 
+    void OpenGLRendererAPI::drawIndexedInstanced(int indexCount, unsigned int indexType, size_t offset, size_t vertexOffset, int instanceCount)
+    {
+        RAPTURE_PROFILE_GPU_SCOPE("GPU Instanced Draw Call");
+
+        // Basic validation
+        if (instanceCount <= 0) {
+            GE_CORE_ERROR("Invalid instance count: {0}", instanceCount);
+            return;
+        }
+        if (indexCount <= 0) {
+            GE_CORE_ERROR("Invalid index count for instanced draw: {0}", indexCount);
+            return;
+        }
+        if (indexType != GL_UNSIGNED_BYTE && indexType != GL_UNSIGNED_SHORT && indexType != GL_UNSIGNED_INT) {
+            GE_CORE_ERROR("Invalid index type for instanced draw: {0}", indexType);
+            return;
+        }
+
+        // Check if we have valid VAO and IBO bound (similar checks as drawIndexed)
+        GLint currentVAO = 0;
+        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &currentVAO);
+        GLint currentIBO = 0;
+        glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentIBO);
+
+        if (currentVAO == 0) {
+            GE_CORE_ERROR("No VAO bound for instanced draw call");
+            return;
+        }
+        if (currentIBO == 0) {
+            GE_CORE_ERROR("No IBO bound for instanced draw call");
+            return;
+        }
+
+        // The actual instanced draw call
+        glDrawElementsInstancedBaseVertexBaseInstance(
+            GL_LINES,             // Mode: Use GL_LINES for bounding boxes
+            indexCount,           // Count: Number of indices in the base mesh
+            indexType,            // Type: Type of the indices
+            (void*)offset,        // Indices: Pointer to the start of indices (offset in bytes)
+            instanceCount,        // InstanceCount: How many instances to draw
+            vertexOffset,         // BaseVertex: Offset added to each index before looking up vertex data
+            0                     // BaseInstance: Instance ID offset (usually 0)
+        );
+    }
+
     void OpenGLRendererAPI::drawLine(glm::vec3 start, glm::vec3 end, glm::vec4 color)
     {
         RAPTURE_PROFILE_FUNCTION();
