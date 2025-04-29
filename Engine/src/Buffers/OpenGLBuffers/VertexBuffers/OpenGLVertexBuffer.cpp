@@ -8,7 +8,7 @@ namespace Rapture {
 
     // VertexBuffer implementation
 	VertexBuffer::VertexBuffer(size_t size, BufferUsage usage, const void* data)
-		: m_size(size), m_usage(usage), m_isImmutable(false), m_idx_last_element(0)
+		: m_size(size), m_usage(usage), m_isImmutable(false)
 	{
 		if (GLCapabilities::hasBufferStorage() && usage != BufferUsage::Stream) {
 			// Use immutable storage for static and dynamic buffers
@@ -16,9 +16,7 @@ namespace Rapture {
 			glNamedBufferStorage(m_rendererId, size, data, convertBufferStorageFlags(usage));
 			m_isImmutable = true;
 			
-			if (data != nullptr) {
-				m_idx_last_element = size;
-			}
+
 		} else {
 			// Fall back to traditional buffers
 			if (GLCapabilities::hasDSA()) {
@@ -31,9 +29,7 @@ namespace Rapture {
 				glBindBuffer(GL_ARRAY_BUFFER, 0);
 			}
 			
-			if (data != nullptr) {
-				m_idx_last_element = size;
-			}
+
 		}
 	}
 
@@ -87,37 +83,23 @@ namespace Rapture {
 		}
 	}
 
-	// Legacy method implementations for backward compatibility
-	void VertexBuffer::addSubData(std::vector<unsigned char>& binary_data) {
-		if (binary_data.size() + m_idx_last_element > m_size) {
-			GE_CORE_ERROR("Buffers/Buffer.cpp --- no space left in VertexBuffer({0})---", m_rendererId);
-			GE_CORE_ERROR("given:{0}Bytes, max:{1}Bytes", binary_data.size() + m_idx_last_element, m_size);
-			return;
-		}
 
-		m_premature_buffer_data.insert(m_premature_buffer_data.end(), binary_data.begin(), binary_data.end());
-		m_idx_last_element += binary_data.size();
-	}
 
-	void VertexBuffer::pushData2Buffer(std::vector<std::vector<std::pair<size_t, size_t>>> premature_buffer_layout) {
-		if (m_size != m_idx_last_element)
-			GE_CORE_WARN("Data Pushed to Buffer has remaining free space: {0}Bytes", m_size - m_idx_last_element);
+    void VertexBuffer::generateBufferHandle()
+    {
+        if (!GLCapabilities::hasBindlessTextures()) {
+            GE_CORE_WARN("VertexBuffer::generateBufferHandle - Bindless buffers not supported");
+            return;
+        }
 
-		std::vector<unsigned char> reordered_data;
-		reordered_data.reserve(m_premature_buffer_data.size());
+        glBindBuffer(GL_ARRAY_BUFFER, m_rendererId);
+        glGetBufferParameterui64vNV(GL_ARRAY_BUFFER, GL_BUFFER_GPU_ADDRESS_NV, &m_bufferHandle);
+        glMakeBufferResidentNV(GL_ARRAY_BUFFER, GL_READ_ONLY);
 
-		// Re-order the data in the correct format
-		for (int attrib = 0; attrib < premature_buffer_layout.size(); attrib++) {
-			auto& attr_data = premature_buffer_layout[attrib];
-			for (int i = 0; i < attr_data.size(); i++) {
-				reordered_data.insert(reordered_data.end(), 
-					m_premature_buffer_data.begin() + attr_data[i].first,
-					m_premature_buffer_data.begin() + attr_data[i].second);
-			}
-		}
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-		setData(reordered_data.data(), reordered_data.size(), 0);
-		m_premature_buffer_data.clear();
-	}
-
+        if (m_bufferHandle == 0) {
+            GE_CORE_ERROR("VertexBuffer::generateBufferHandle - Failed to generate buffer handle");
+        }
+    }
 }

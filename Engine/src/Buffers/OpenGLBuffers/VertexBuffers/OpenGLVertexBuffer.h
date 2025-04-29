@@ -16,6 +16,9 @@ class VertexBuffer : public Buffer {
 		virtual void unbind() override;
 		void bindBase(uint32_t bindingPoint) const;
         
+        uint64_t getBufferHandle() const { return m_bufferHandle; }
+
+
 		void setData(const void* data, size_t size, size_t offset = 0);
 		void setData(const std::vector<unsigned char>& data, size_t offset = 0);
 		
@@ -25,18 +28,18 @@ class VertexBuffer : public Buffer {
 		// Compatibility method for existing code
 		unsigned int getID__DEBUG() const { return m_rendererId; }
 		
-		// Legacy methods for compatibility
-		void addSubData(std::vector<unsigned char>& binary_data);
-		void pushData2Buffer(std::vector<std::vector<std::pair<size_t, size_t>>> premature_buffer_layout);
-		
-	private:
+
+    private:
+        void generateBufferHandle();
+	
+    private:
 		unsigned int m_rendererId;
 		size_t m_size;
 		BufferUsage m_usage;
 		bool m_isImmutable;
-		
-		// For legacy support
-		std::vector<unsigned char> m_premature_buffer_data;
-		size_t m_idx_last_element;
+
+        uint64_t m_bufferHandle = 0;
+        bool m_isResident = false;
+
 	};
 }

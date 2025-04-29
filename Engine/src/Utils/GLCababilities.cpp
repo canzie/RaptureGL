@@ -12,6 +12,7 @@ namespace Rapture {
 	bool GLCapabilities::s_hasBufferStorage = false;
 	bool GLCapabilities::s_hasDebugMarkers = false;
 	bool GLCapabilities::s_hasBindlessTextures = false;
+    bool GLCapabilities::s_hasBindlessBuffers = false;
 
 	void GLCapabilities::initialize() {
 		if (s_initialized) return;
@@ -31,12 +32,18 @@ namespace Rapture {
         s_hasBindlessTextures = glfwExtensionSupported("GL_ARB_bindless_texture") || 
 						  (GLVersion.major > 4 || (GLVersion.major == 4 && GLVersion.minor >= 4));
 
-		GE_CORE_INFO("OpenGL Capabilities:");
+        s_hasBindlessBuffers = glfwExtensionSupported("GL_NV_shader_buffer_load") || 
+						  (GLVersion.major > 4 || (GLVersion.major == 4 && GLVersion.minor >= 4));
+
+		
+
+        GE_CORE_INFO("OpenGL Capabilities:");
 		GE_CORE_INFO("  Direct State Access (DSA): {0}", s_hasDSA ? "Yes" : "No");
 		GE_CORE_INFO("  Buffer Storage: {0}", s_hasBufferStorage ? "Yes" : "No");
 		GE_CORE_INFO("  Debug Markers: {0}", s_hasDebugMarkers ? "Yes" : "No");
 		GE_CORE_INFO("  Bindless Textures: {0}", s_hasBindlessTextures ? "Yes" : "No");
-		
+		GE_CORE_INFO("  Bindless Buffers: {0}", s_hasBindlessBuffers ? "Yes" : "No");
+
 		s_initialized = true;
 	}
 
@@ -60,5 +67,11 @@ namespace Rapture {
 		if (!s_initialized) initialize();
 		return s_hasBindlessTextures;
 	}
+
+    bool GLCapabilities::hasBindlessBuffers()
+    {
+        if (!s_initialized) initialize();
+        return s_hasBindlessBuffers;
+    }
 
 } // namespace Rapture
