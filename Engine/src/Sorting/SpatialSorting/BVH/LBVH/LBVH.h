@@ -78,9 +78,8 @@ class LBVH {
         std::shared_ptr<ShaderStorageBuffer> m_PrimitiveAABBsBuffer;
         std::shared_ptr<ShaderStorageBuffer> m_LBVHConstructionInfoBuffer;
         
-        std::filesystem::path m_baseShaderPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL/Sorting";
-        std::string m_StructureShaderPath = "BVH/LBVH/LBVH_Structure.cs.glsl";
-        std::string m_AABBShaderPath = "BVH/LBVH/LBVH_AABB.cs.glsl";
+        std::string m_StructureShaderPath = "Sorting/BVH/LBVH/LBVH_Structure.cs.glsl";
+        std::string m_AABBShaderPath = "Sorting/BVH/LBVH/LBVH_AABB.cs.glsl";
 
         // CPU-side cache for BVH nodes
         std::vector<BVHCPU> m_cpuBVHNodes;

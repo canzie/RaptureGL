@@ -7,6 +7,7 @@
 #include <string> 
 #include <algorithm> 
 
+#include "../../../../WindowContext/Application.h"
 
 #define MAX_TRIANGLE_COUNT 100000
 
@@ -31,8 +32,16 @@ namespace Rapture {
       m_isDirty(true),
       m_lastTriangleCount(0)
     {
-        auto [structureShader, structureHandle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_StructureShaderPath);
-        auto [aabbShader, aabbHandle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_AABBShaderPath);
+        auto& app = Application::getInstance();
+        auto project = app.getProject();
+        if (!project) {
+            GE_RENDER_ERROR("LBVH::LBVH - Project not found, unable to start LBVH");
+            return;
+        }
+        auto shaderPath = project->getConfig().shaderPath;
+
+        auto [structureShader, structureHandle] = AssetManager::importAsset<Shader>(shaderPath / m_StructureShaderPath);
+        auto [aabbShader, aabbHandle] = AssetManager::importAsset<Shader>(shaderPath / m_AABBShaderPath);
 
         m_StructureShader = structureShader;
         m_AABBShader = aabbShader;

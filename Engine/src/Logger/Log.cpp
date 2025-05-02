@@ -259,7 +259,11 @@ namespace Rapture {
 		time_t rawtime;
 		struct tm timeinfo;
 		time(&rawtime);
+#ifdef _WIN32
+		localtime_s(&timeinfo, &rawtime);
+#elif __linux__
 		localtime_r(&rawtime, &timeinfo);
+#endif
 		strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &timeinfo);
 		logMsg.timestamp = timestamp;
 		

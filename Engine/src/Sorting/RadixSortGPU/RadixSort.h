@@ -76,13 +76,12 @@ namespace Rapture {
             //std::shared_ptr<Shader> m_PrefixSumShader;
             std::shared_ptr<Shader> m_HistogramShader;
 
-            std::filesystem::path m_baseShaderPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL/Sorting";
-            std::string m_RadixShaderPath = "RadixSort/RadixSort.cs.glsl";
-            std::string m_RadixMultiShaderPath = "RadixSort/RadixSortMulti.cs.glsl";
+            std::string m_RadixShaderPath = "Sorting/RadixSort/RadixSort.cs.glsl";
+            std::string m_RadixMultiShaderPath = "Sorting/RadixSort/RadixSortMulti.cs.glsl";
 
-            std::string m_MortonShaderPath = "TrianglesToMorton.cs.glsl";
+            std::string m_MortonShaderPath = "Sorting/TrianglesToMorton.cs.glsl";
             //std::string m_PrefixSumShaderPath = "PrefixSum.cs.glsl";
-            std::string m_HistogramShaderPath = "RadixSort/RadixSortHistogramMulti.cs.glsl";
+            std::string m_HistogramShaderPath = "Sorting/RadixSort/RadixSortHistogramMulti.cs.glsl";
 
             std::shared_ptr<ShaderStorageBuffer> m_SortedIndicesBuffer;
 

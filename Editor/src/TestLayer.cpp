@@ -125,11 +125,11 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     }
 
     auto config = project->getConfig();
-    auto path = config.directory;
+    auto path = config.directory / "Editor/assets/models/Sponza/Sponza.gltf";
     
     
 	//Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
-	auto loader = Rapture::ModelLoadersCache::getLoader(path / "Editor/assets/models/Sponza/Sponza.gltf", activeScene);
+	auto loader = Rapture::ModelLoadersCache::getLoader(path.string(), activeScene);
     if (loader){
         loader->loadModel("Sponza/Sponza.gltf");
         //loader->loadModel("sphere.gltf");

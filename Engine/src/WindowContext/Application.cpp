@@ -66,9 +66,10 @@ namespace Rapture {
 				project_dir = parent;
 				steps++;
 			}
-			
-			m_project->setProjectDirectory(project_dir);
 
+            m_project->setProjectDirectory(project_dir);
+
+            
             AssetManager::init();
 
 			TextureLibrary::init(4);

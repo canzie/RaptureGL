@@ -36,7 +36,6 @@ private:
     static bool m_initialized;
 
     // Store the path for shader loading
-    static std::filesystem::path _shaderPath; // TODO: Make this configurable
     static std::string _testShaderName; // Placeholder shader
     static std::string _populateShaderName;
     

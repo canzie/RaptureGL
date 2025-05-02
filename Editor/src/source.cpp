@@ -11,10 +11,10 @@
 class EditorApp : public Rapture::Application {
 public:
     EditorApp() {
-        m_debugName = "LiDAR Editor";
+        m_debugName = "Rapture Editor";
         
         // Log startup message
-        Rapture::GE_INFO("LiDAR Editor starting up...");
+        Rapture::GE_INFO("Rapture Editor starting up...");
         
         // Initialize event listeners
         setupEventHandlers();
@@ -27,7 +27,7 @@ public:
     }
     
     ~EditorApp() {
-        Rapture::GE_INFO("LiDAR Editor shutting down...");
+        Rapture::GE_INFO("Rapture Editor shutting down...");
         
         // Clean up event listeners
         Rapture::GameEvents::onSceneActivated().removeListener(m_sceneActivatedListenerId);

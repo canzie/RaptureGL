@@ -74,7 +74,7 @@ namespace Rapture
 		entt::registry& getRegistry() { return m_Registry; }
 
         SceneSettings& getSettings() { return m_config; }
-        SkyBox& getSkyBox() { return m_SkyBox; }
+        SkyBox& getSkyBox();
 
         std::string getSceneName() { return m_config.sceneName; }
 
@@ -95,7 +95,7 @@ namespace Rapture
 		friend class Entity;
 
         SceneSettings m_config;
-        SkyBox m_SkyBox;
+        std::shared_ptr<SkyBox> m_SkyBox;
         std::weak_ptr<Entity> mainCameraEntity;
 
 

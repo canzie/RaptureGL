@@ -7,6 +7,9 @@
 #include "../../Buffers/OpenGLBuffers/UniformBuffers/OpenGLUniformBuffer.h"
 #include "../../Shaders/OpenGLUniforms/UniformBindingPointIndices.h"
 
+#include "../../WindowContext/Application.h"
+
+
 namespace Rapture {
 
     CascadedShadowMapping::CascadedShadowMapping(uint32_t width, uint32_t height, uint8_t numCascades, float lambda)
@@ -40,10 +43,17 @@ namespace Rapture {
             return;
         }
         
-        std::filesystem::path s_shaderPath = std::filesystem::path("E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL");
+
+        auto& app = Application::getInstance();
+        auto project = app.getProject();
+        if (!project) {
+            GE_RENDER_ERROR("CascadedShadowMapping::init - Project not found, unable to start cascaded shadow mapping");
+            return;
+        }
+        auto shaderPath = project->getConfig().shaderPath;
 
         // Load shader with vertex, fragment, and geometry shaders for texture array support
-        auto [shader, shaderHandle] = AssetManager::importAsset<Shader>(s_shaderPath / "CascadedShadowMapping.vs.glsl");
+        auto [shader, shaderHandle] = AssetManager::importAsset<Shader>(shaderPath / "CascadedShadowMapping.vs.glsl");
         
         if (!shader)
         {

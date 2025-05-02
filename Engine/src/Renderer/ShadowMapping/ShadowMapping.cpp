@@ -3,6 +3,8 @@
 
 #include <glad/glad.h>
 
+#include "../../WindowContext/Application.h"
+
 namespace Rapture {
         
 
@@ -30,11 +32,17 @@ namespace Rapture {
         }
 
 
-        std::filesystem::path s_shaderPath = std::filesystem::path("E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL");
+        auto& app = Application::getInstance();
+        auto project = app.getProject();
+        if (!project) {
+            GE_RENDER_ERROR("ShadowMap::init - Project not found, unable to start shadow mapping");
+            return;
+        }
+        auto shaderPath = project->getConfig().shaderPath;
 
         
 
-        auto [shader, shaderHandle] = AssetManager::importAsset<Shader>(s_shaderPath / "ShadowMapping.vs.glsl");
+        auto [shader, shaderHandle] = AssetManager::importAsset<Shader>(shaderPath / "ShadowMapping.vs.glsl");
         if (!shader)
         {
             GE_CORE_ERROR("Failed to get shader for shadow mapping");

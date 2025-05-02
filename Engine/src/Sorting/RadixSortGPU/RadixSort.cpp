@@ -7,6 +7,8 @@
 
 #include <algorithm>
 
+#include "../../WindowContext/Application.h"
+
 namespace Rapture {
 
 
@@ -15,9 +17,17 @@ namespace Rapture {
     RadixSort::RadixSort(uint32_t maxTriangleCount)
     : m_maxTriangleCount(maxTriangleCount)
     {
-        auto [shader, handle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_RadixMultiShaderPath);
-        auto [mortonShader, mortonHandle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_MortonShaderPath);
-        auto [histogramShader, histogramHandle] = AssetManager::importAsset<Shader>(m_baseShaderPath / m_HistogramShaderPath);
+        auto& app = Application::getInstance();
+        auto project = app.getProject();
+        if (!project) {
+            GE_RENDER_ERROR("RadixSort::RadixSort - Project not found, unable to start RadixSort");
+            return;
+        }
+        auto shaderPath = project->getConfig().shaderPath;
+
+        auto [shader, handle] = AssetManager::importAsset<Shader>(shaderPath / m_RadixMultiShaderPath);
+        auto [mortonShader, mortonHandle] = AssetManager::importAsset<Shader>(shaderPath / m_MortonShaderPath);
+        auto [histogramShader, histogramHandle] = AssetManager::importAsset<Shader>(shaderPath / m_HistogramShaderPath);
 
         m_Shader = shader;
         m_MortonShader = mortonShader;

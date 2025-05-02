@@ -16,7 +16,6 @@ namespace Rapture {
 std::shared_ptr<RadianceCascadeHierarchy> RadianceCascadesManager::m_hierarchy = nullptr;
 std::shared_ptr<Shader> RadianceCascadesManager::m_computeShader = nullptr;
 std::shared_ptr<ShaderStorageBuffer> RadianceCascadesManager::m_cascadeInfoSSBO = nullptr;
-std::filesystem::path RadianceCascadesManager::_shaderPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL"; // TODO: Make this configurable
 std::string RadianceCascadesManager::_populateShaderName = "RadianceCascadingCS/PopulateCascade_SSR.cs.glsl";
 std::string RadianceCascadesManager::_testShaderName = "RadianceCascadingCS/test.cs.glsl"; // Placeholder shader
 bool RadianceCascadesManager::m_initialized = false;
@@ -33,7 +32,14 @@ void RadianceCascadesManager::init(BuildParams params)
 
     m_hierarchy->buildCascades(params);
 
-    auto [shader, handle] = AssetManager::importAsset<Shader>(_shaderPath / _populateShaderName);
+    auto& app = Application::getInstance();
+    auto project = app.getProject();
+    if (!project) {
+        GE_RENDER_ERROR("RadianceCascadesManager::init - Project not found, unable to start radiance cascades manager");
+        return;
+    }
+
+    auto [shader, handle] = AssetManager::importAsset<Shader>(project->getConfig().shaderPath / _populateShaderName);
     m_computeShader = shader;
 
 

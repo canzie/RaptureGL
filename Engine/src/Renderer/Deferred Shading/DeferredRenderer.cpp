@@ -18,11 +18,12 @@
 
 #include <cmath> // For std::ceil if needed, or use integer division trick
 
+#include "../../WindowContext/Application.h"
+
 namespace Rapture
 {
 
 
-    std::filesystem::path s_shaderPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL";
 
     // Define the static member variables
     std::shared_ptr<GBuffer> DeferredRenderer::s_gBuffer = nullptr;
@@ -86,7 +87,18 @@ namespace Rapture
 
         s_indirectLightingBuffer = Framebuffer::create(lightingBufferSpec);
 
-        auto [indShader, indHandle] = AssetManager::importAsset<Shader>(s_shaderPath / "RadianceCascadingCS/indirectLightingPass.vs.glsl");
+
+        auto& app = Application::getInstance();
+        auto project = app.getProject();
+        if (!project) {
+            GE_RENDER_ERROR("DeferredRenderer::init - Project not found, unable to start deferred renderer");
+            Raycast::shutdown();
+            CommandQueueBuilder::shutdownWorkers();
+            return;
+        }
+        auto shaderPath = project->getConfig().shaderPath;
+
+        auto [indShader, indHandle] = AssetManager::importAsset<Shader>(shaderPath / "RadianceCascadingCS/indirectLightingPass.vs.glsl");
         s_indirectLightingPassShader = indShader;
         s_indirectLightingPassShaderHandle = indHandle;
 
@@ -96,7 +108,7 @@ namespace Rapture
         s_lightsUBO = std::make_shared<UniformBuffer>(sizeof(LightsUniform), BufferUsage::Stream, nullptr, LIGHTS_BINDING_POINT_IDX);
         s_shadowSSBO = std::make_shared<ShaderStorageBuffer>(sizeof(ShadowStorageLayout), BufferUsage::Stream, nullptr);
         // Load deferred shaders
-        auto [shader, handle] = AssetManager::importAsset<Shader>(s_shaderPath / "DeferredLightingPass.vert.glsl");
+        auto [shader, handle] = AssetManager::importAsset<Shader>(shaderPath / "DeferredLightingPass.vert.glsl");
         s_lightingPassShader = shader;
         s_lightingPassShaderHandle = handle;
 

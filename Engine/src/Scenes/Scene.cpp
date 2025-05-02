@@ -8,6 +8,7 @@ namespace Rapture
 	Scene::Scene(std::string sceneName)
 	{
 		m_config.sceneName = sceneName;
+        m_SkyBox = nullptr;
 	}
 	Scene::~Scene()
 	{
@@ -27,10 +28,27 @@ namespace Rapture
 
     void Scene::onUpdate()
     {
-        Renderer::drawCube(m_SkyBox.skybox);
+        if (m_SkyBox)
+        {
+            Renderer::drawCube(m_SkyBox->skybox);
+        } else {
+            m_SkyBox = std::make_unique<SkyBox>();
+            Renderer::drawCube(m_SkyBox->skybox);
+        }
     }
 
-	/*
+    SkyBox &Scene::getSkyBox()
+    {
+        if (!m_SkyBox)
+        {
+            m_SkyBox = std::make_unique<SkyBox>();
+            return *m_SkyBox;
+        }
+        
+        return *m_SkyBox;
+    }
+
+    /*
 	void Scene::OnUpdateRuntime(Timestep ts)
 	{
 
