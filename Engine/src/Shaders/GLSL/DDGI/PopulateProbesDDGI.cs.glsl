@@ -56,11 +56,13 @@ layout(std430, binding = 1) readonly buffer LBVHNodes {
 
 
 struct MeshInfo {
-    uint RootIndex;
+    uint RootIndex; // index of the root node in the BVH
     uint64_t AlbedoTextureHandle;
     uint64_t NormalTextureHandle;
     uint64_t MetallicRoughnessTextureHandle;
     uint bufferMetadataIDX; // index for BufferMetadata array
+    uint triangleOffset; // offset of the first triangle
+    //uint triangleCount; // number of triangles
 
     mat4 Transform;
 };
@@ -176,29 +178,9 @@ vec3 octDecode(vec2 f) {
     return normalize(n);
 }
 
-// Intersects ray with axis-aligned bounding box using the slab method
-// Returns true if intersection occurs, false otherwise.
-// tmin_out stores the distance to the *entry* point of the AABB along the ray.
-bool intersectAABB(Ray ray, vec3 aabbMin, vec3 aabbMax, out float tmin_out) {
-    vec3 invDir = ray.invDir;
-    vec3 t0s = (aabbMin - ray.origin) * invDir;
-    vec3 t1s = (aabbMax - ray.origin) * invDir;
 
-    vec3 tsmaller = min(t0s, t1s);
-    vec3 tbigger  = max(t0s, t1s);
 
-    float tmin = max(tsmaller.x, max(tsmaller.y, tsmaller.z));
-    float tmax = min(tbigger.x, min(tbigger.y, tbigger.z));
-
-    // Ensure the intersection interval is valid and occurs in front of the ray origin
-    if (tmin < tmax && tmax > 0.0) {
-        tmin_out = max(0.0, tmin); // Return the entry distance (clamp to 0 if origin is inside)
-        return true;
-    }
-    return false;
-}
-
-float RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax) {
+bool RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax, out float tmin_out) {
     vec3 tMin = (aabbMin - ray.origin) * ray.invDir;
 	vec3 tMax = (aabbMax - ray.origin) * ray.invDir;
 
@@ -209,8 +191,12 @@ float RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax) {
 	float tFar = min(min(t2.x, t2.y), t2.z);
 
 	bool hit = tFar >= tNear && tFar > 0;
-	float dst = hit ? tNear > 0 ? tNear : 0 : 1.#INF;
-	return dst;
+	tmin_out = hit ? tNear > 0 ? tNear : 0 : 1.#INF;
+	
+    if (tFar >= tNear && tFar > 0.0) {
+        return true;
+    }
+    return false;
 
     
 }
@@ -218,7 +204,7 @@ float RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax) {
 // Iteratively traverses the BVH for a given ray.
 // Returns the index of the first leaf node encountered whose AABB is intersected by the ray,
 // prioritizing traversal towards closer AABBs. Returns -1 if no leaf node AABB is hit.
-LBVHNode traceBVH(Ray ray, uint index) {
+bool traceBVH(Ray ray, uint index, out HitInfo hitInfo) {
     int currentNodeIndex = 0; // Start at the root
     const int MAX_ITERATIONS = 20; // Safeguard against infinite loops
 
@@ -235,10 +221,11 @@ LBVHNode traceBVH(Ray ray, uint index) {
         LBVHNode node = u_lbvh.lbvh[currentNodeIndex];
 
         float tHitCurrent;
-        if (intersectAABB(ray, vec3(node.aabbMinX, node.aabbMinY, node.aabbMinZ), vec3(node.aabbMaxX, node.aabbMaxY, node.aabbMaxZ), tHitCurrent)) {
+        if (RayBoundingBoxDst(ray, vec3(node.aabbMinX, node.aabbMinY, node.aabbMinZ), vec3(node.aabbMaxX, node.aabbMaxY, node.aabbMaxZ), tHitCurrent)) {
             if (node.primitiveIdx > 0) {
-                result = node;
-                break;
+                result = node; // should check the triangle intersection here
+
+                return true;
 
             } else {
                 int childIndexA = node.left;
@@ -246,8 +233,10 @@ LBVHNode traceBVH(Ray ray, uint index) {
                 LBVHNode childA = u_lbvh.lbvh[childIndexA];
                 LBVHNode childB = u_lbvh.lbvh[childIndexB];
 
-                float dstA = RayBoundingBoxDst(ray, vec3(childA.aabbMinX, childA.aabbMinY, childA.aabbMinZ), vec3(childA.aabbMaxX, childA.aabbMaxY, childA.aabbMaxZ));
-                float dstB = RayBoundingBoxDst(ray, vec3(childB.aabbMinX, childB.aabbMinY, childB.aabbMinZ), vec3(childB.aabbMaxX, childB.aabbMaxY, childB.aabbMaxZ));
+                float dstA;
+                float dstB;
+                RayBoundingBoxDst(ray, vec3(childA.aabbMinX, childA.aabbMinY, childA.aabbMinZ), vec3(childA.aabbMaxX, childA.aabbMaxY, childA.aabbMaxZ), dstA);
+                RayBoundingBoxDst(ray, vec3(childB.aabbMinX, childB.aabbMinY, childB.aabbMinZ), vec3(childB.aabbMaxX, childB.aabbMaxY, childB.aabbMaxZ), dstB);
 
                 bool isNestestA = dstA < dstB;
                 float dstNearest = isNestestA ? dstA : dstB;
@@ -266,23 +255,47 @@ LBVHNode traceBVH(Ray ray, uint index) {
         }
     }
 
-    return result;
+    return false;
 }
 
-// Placeholder: Gets triangle data (vertices, uvs) in world space
-// This needs implementation using Buffer Device Address (buffer_reference)
-// or alternative vertex fetching methods.
-Triangle getTriangle(uint meshIndex, uint primitiveIndex) {
+// meshinfo contains needed metadata about where to get the vertex data, the index is for the specific triangle
+Triangle getTriangle(MeshInfo meshInfo, uint primitiveIndex) {
     Triangle tri;
-    // TODO: Implement vertex data fetching.
-    // 1. Get BufferMetadata: meta = u_bufferMetadata.AllBufferMetadata[u_sceneInfo.MeshInfos[meshIndex].bufferMetadataIDX];
-    // 2. Get buffer handles: vboPtr = buffer_reference<float>(meta.VBOHandle); iboPtr = buffer_reference<uint_or_ushort>(meta.IBOHandle);
-    // 3. Determine index size (meta.indexType == 5125 -> uint, else ushort).
-    // 4. Read indices i0, i1, i2 from IBO based on primitiveIndex and meta.indexOffsetBytes.
-    // 5. Read vertex positions v0_local, v1_local, v2_local from VBO based on indices, meta.vertexOffsetBytes, meta.vertexStrideBytes, meta.positionAttributeOffsetBytes.
-    // 6. Read texcoords uv0, uv1, uv2 from VBO based on indices, meta.vertexOffsetBytes, meta.vertexStrideBytes, meta.texCoordAttributeOffsetBytes.
-    // 7. Transform vertices to world space: tri.v0 = (u_sceneInfo.MeshInfos[meshIndex].Transform * vec4(v0_local, 1.0)).xyz; ...
-    // 8. Assign texcoords: tri.uv0 = uv0; ...
+    BufferMetadata bufferMetadata = u_bufferMetadata.AllBufferMetadata[meshInfo.bufferMetadataIDX];
+    uint64_t vboHandle = bufferMetadata.VBOHandle;
+    uint64_t iboHandle = bufferMetadata.IBOHandle;
+
+    uint indexOffset = meshInfo.triangleOffset + primitiveIndex * 3;
+    uint indexType = bufferMetadata.indexType;
+
+    if (indexType == 5125) {
+        uint32_t indices[3];
+        indices[0] = buffer_reference<uint>(iboHandle)[indexOffset];
+        indices[1] = buffer_reference<uint>(iboHandle)[indexOffset + 1];
+        indices[2] = buffer_reference<uint>(iboHandle)[indexOffset + 2];
+    } else {
+        uint16_t indices[3];
+        indices[0] = buffer_reference<uint16_t>(iboHandle)[indexOffset];
+        indices[1] = buffer_reference<uint16_t>(iboHandle)[indexOffset + 1];
+        indices[2] = buffer_reference<uint16_t>(iboHandle)[indexOffset + 2];
+    }
+
+    vec3 v0_local = buffer_reference<vec3>(vboHandle)[indices[0] * bufferMetadata.vertexStrideBytes + bufferMetadata.positionAttributeOffsetBytes];
+    vec3 v1_local = buffer_reference<vec3>(vboHandle)[indices[1] * bufferMetadata.vertexStrideBytes + bufferMetadata.positionAttributeOffsetBytes];
+    vec3 v2_local = buffer_reference<vec3>(vboHandle)[indices[2] * bufferMetadata.vertexStrideBytes + bufferMetadata.positionAttributeOffsetBytes];
+    
+    vec2 uv0 = buffer_reference<vec2>(vboHandle)[indices[0] * bufferMetadata.vertexStrideBytes + bufferMetadata.texCoordAttributeOffsetBytes];
+    vec2 uv1 = buffer_reference<vec2>(vboHandle)[indices[1] * bufferMetadata.vertexStrideBytes + bufferMetadata.texCoordAttributeOffsetBytes];
+    vec2 uv2 = buffer_reference<vec2>(vboHandle)[indices[2] * bufferMetadata.vertexStrideBytes + bufferMetadata.texCoordAttributeOffsetBytes];
+    
+    tri.v0 = (meshInfo.Transform * vec4(v0_local, 1.0)).xyz;
+    tri.v1 = (meshInfo.Transform * vec4(v1_local, 1.0)).xyz;
+    tri.v2 = (meshInfo.Transform * vec4(v2_local, 1.0)).xyz;
+    
+    tri.uv0 = uv0;
+    tri.uv1 = uv1;
+    tri.uv2 = uv2;
+
     return tri;
 }
 
@@ -357,10 +370,10 @@ void main() {
         MeshInfo meshInfo = u_sceneInfo.MeshInfos[i];
 
         uint rootIndex = meshInfo.RootIndex;
+            // trace ray
+        traceBVH(ray);
     }
 
-    // trace ray
-    traceBVH(ray);
 
     // write to probe atlas
     imageStore(probeAtlas, globalIndex2D, vec4(hitInfo.hit, 0.0, 0.0, 0.0));
