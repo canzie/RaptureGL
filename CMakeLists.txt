@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(LiDAR_Game VERSION 1.0.0 LANGUAGES C CXX)
 
+find_package(Threads REQUIRED)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -28,7 +30,7 @@ if(MSVC)
     set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE} /LTCG")
 else()
     # GCC/Clang optimizations for Release mode
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -march=native -flto")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -march=native -flto=auto")
 endif()
 
 # Add subdirectories

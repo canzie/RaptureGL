@@ -19,6 +19,9 @@ set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
 
+# ---> ADDED: Enable Wayland support if building from source <---
+set(GLFW_BUILD_WAYLAND ON CACHE BOOL "Build GLFW with Wayland support" FORCE) 
+
 if(EXISTS "${GLFW_DIR}/include/GLFW/glfw3.h")
     message(STATUS "GLFW headers found")
     

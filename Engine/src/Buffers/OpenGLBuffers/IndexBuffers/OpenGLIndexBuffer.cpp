@@ -1,6 +1,6 @@
 #include "OpenGLIndexBuffer.h"
 #include "glad/glad.h"
-#include "../../../logger/Log.h"
+#include "../../../Logger/Log.h"
 #include "../../BufferConversionHelpers.h"
 #include "../../../Debug/TracyProfiler.h"
 

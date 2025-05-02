@@ -30,6 +30,7 @@ set_property(TARGET ${EDITOR_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
 target_link_libraries(${EDITOR_NAME} PRIVATE 
     Rapture
     spdlog  # Link directly with spdlog
+    Threads::Threads
 )
 
 # Set output directory

@@ -1,6 +1,6 @@
 #include "Framebuffer.h"
 
-#include "../logger/Log.h"
+#include "../Logger/Log.h"
 #include "../Textures/Texture.h"
 
 #include <glad/glad.h>

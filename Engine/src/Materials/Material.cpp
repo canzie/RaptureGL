@@ -1,6 +1,6 @@
 #include "Material.h"
 #include "../Shaders/OpenGLUniforms/UniformBindingPointIndices.h"
-#include "../logger/Log.h"
+#include "../Logger/Log.h"
 #include "../Shaders/OpenGLShaders/OpenGLShader.h"
 #include "MaterialInstance.h"
 #include "../Logger/Log.h"

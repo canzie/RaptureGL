@@ -1,6 +1,6 @@
 #include "OpenGLWindowContext.h"
 
-#include "../../logger/Log.h"
+#include "../../Logger/Log.h"
 #include "../../Debug/TracyProfiler.h"
 
 

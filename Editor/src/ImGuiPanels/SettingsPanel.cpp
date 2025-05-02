@@ -12,9 +12,12 @@
 #include "Sorting/SpatialSorting/BVH/LBVH/LBVH.h"
 
 
+// Platform-specific file dialog includes
+#ifdef _WIN32
 // For Windows file dialog
 #include <Windows.h>
 #include <commdlg.h>
+#endif
 
 SettingsPanel::SettingsPanel(Rapture::WindowContext* context)
     : m_windowContext(context)
@@ -54,6 +57,7 @@ SettingsPanel::SettingsPanel(Rapture::WindowContext* context)
 }
 
 bool SettingsPanel::openSkyboxFileDialog(char* outPath, size_t outPathSize) {
+#ifdef _WIN32
     // Windows file dialog implementation
     OPENFILENAMEA ofn;
     char szFile[260] = { 0 };
@@ -67,15 +71,28 @@ bool SettingsPanel::openSkyboxFileDialog(char* outPath, size_t outPathSize) {
     ofn.lpstrFileTitle = nullptr;
     ofn.nMaxFileTitle = 0;
     ofn.lpstrInitialDir = nullptr;
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR; // Added OFN_NOCHANGEDIR
     
     // Show the dialog
     if (GetOpenFileNameA(&ofn)) {
+        // Use strncpy_s for safety if available, otherwise standard strncpy
+#ifdef _MSC_VER
+        strncpy_s(outPath, outPathSize, ofn.lpstrFile, _TRUNCATE);
+#else
         std::strncpy(outPath, ofn.lpstrFile, outPathSize - 1);
         outPath[outPathSize - 1] = '\0'; // Ensure null termination
+#endif
         return true;
     }
     return false;
+#elif defined(__linux__)
+    Rapture::GE_CORE_WARN("File dialog not implemented for Linux in SettingsPanel.");
+    return false;
+#else
+    #pragma message("Warning: File dialog not implemented for this platform in SettingsPanel.")
+    Rapture::GE_CORE_WARN("File dialog not implemented for this platform in SettingsPanel.");
+    return false;
+#endif
 }
 
 void SettingsPanel::render()

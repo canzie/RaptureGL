@@ -133,38 +133,68 @@ namespace Rapture {
 
 	void Log::EnableFileLogging(const std::string& filename, LogCategory category)
 	{
-		std::lock_guard<std::mutex> lock(s_LogMutex);
-		
-		// Create sink if it doesn't exist
-		if (s_BasicFileSinks.find(filename) == s_BasicFileSinks.end() && 
-			s_RotatingFileSinks.find(filename) == s_RotatingFileSinks.end()) {
-			s_BasicFileSinks[filename] = std::make_shared<spdlog::sinks::basic_file_sink_mt>(filename, true);
-			s_BasicFileSinks[filename]->set_pattern("[%Y-%m-%d %T.%e] [%l] %n: %v");
-			s_FileSinkCategories[filename] = std::set<LogCategory>();
-		}
-		
-		// Add category to file's categories
-		s_FileSinkCategories[filename].insert(category);
-		
-		// Add file sink to appropriate logger
 		std::shared_ptr<spdlog::logger> targetLogger = nullptr;
-		
-		switch (category) {
-			case LogCategory::Core:    targetLogger = s_CoreLogger; break;
-			case LogCategory::Client:  targetLogger = s_ClientLogger; break;
-			case LogCategory::Debug:   targetLogger = s_DebugLogger; break;
-			case LogCategory::Render:  targetLogger = s_RenderLogger; break;
-			case LogCategory::Physics: targetLogger = s_PhysicsLogger; break;
-			case LogCategory::Audio:   targetLogger = s_AudioLogger; break;
-		}
-		
-		if (targetLogger) {
-			if (s_BasicFileSinks.find(filename) != s_BasicFileSinks.end()) {
-				targetLogger->sinks().push_back(s_BasicFileSinks[filename]);
-			} else if (s_RotatingFileSinks.find(filename) != s_RotatingFileSinks.end()) {
-				targetLogger->sinks().push_back(s_RotatingFileSinks[filename]);
+		bool addedSink = false; // Flag to track if a sink was actually added
+
+		{
+			std::lock_guard<std::mutex> lock(s_LogMutex);
+			
+			// Create sink if it doesn't exist
+			if (s_BasicFileSinks.find(filename) == s_BasicFileSinks.end() && 
+				s_RotatingFileSinks.find(filename) == s_RotatingFileSinks.end()) {
+				s_BasicFileSinks[filename] = std::make_shared<spdlog::sinks::basic_file_sink_mt>(filename, true);
+				s_BasicFileSinks[filename]->set_pattern("[%Y-%m-%d %T.%e] [%l] %n: %v");
+				s_FileSinkCategories[filename] = std::set<LogCategory>();
+				addedSink = true; // Mark that a new sink was created
 			}
-			s_CoreLogger->info("Added {} to file {}", targetLogger->name(), filename);
+			
+			// Add category to file's categories
+			if (s_FileSinkCategories.count(filename)) {
+				 s_FileSinkCategories[filename].insert(category);
+			}
+				
+			// Determine the target logger based on category
+			switch (category) {
+				case LogCategory::Core:    targetLogger = s_CoreLogger; break;
+				case LogCategory::Client:  targetLogger = s_ClientLogger; break;
+				case LogCategory::Debug:   targetLogger = s_DebugLogger; break;
+				case LogCategory::Render:  targetLogger = s_RenderLogger; break;
+				case LogCategory::Physics: targetLogger = s_PhysicsLogger; break;
+				case LogCategory::Audio:   targetLogger = s_AudioLogger; break;
+			}
+			
+			// Add file sink to appropriate logger if the logger exists
+			if (targetLogger) {
+				spdlog::sink_ptr sinkToAdd = nullptr;
+				if (s_BasicFileSinks.count(filename)) {
+					sinkToAdd = s_BasicFileSinks[filename];
+				} else if (s_RotatingFileSinks.count(filename)) {
+					sinkToAdd = s_RotatingFileSinks[filename];
+				}
+
+				if (sinkToAdd) {
+					// Check if the sink is already present to avoid duplicates
+					auto& sinks = targetLogger->sinks();
+					bool alreadyExists = false;
+					for(const auto& existingSink : sinks) {
+						if (existingSink == sinkToAdd) {
+							alreadyExists = true;
+							break;
+						}
+					}
+					if (!alreadyExists) {
+						sinks.push_back(sinkToAdd);
+						addedSink = true; // Mark that a sink was added to this logger
+					}
+				}
+			}
+		} // Mutex lock_guard goes out of scope here
+
+		// Log outside the mutex lock
+		if (targetLogger && addedSink) { 
+			// Use targetLogger->name() directly if it's guaranteed to be valid
+			std::string loggerName = targetLogger ? targetLogger->name() : "UnknownLogger";
+			s_CoreLogger->info("Enabled logging for {} to file {}", loggerName, filename);
 		}
 	}
 
@@ -229,7 +259,7 @@ namespace Rapture {
 		time_t rawtime;
 		struct tm timeinfo;
 		time(&rawtime);
-		localtime_s(&timeinfo, &rawtime);
+		localtime_r(&rawtime, &timeinfo);
 		strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &timeinfo);
 		logMsg.timestamp = timestamp;
 		

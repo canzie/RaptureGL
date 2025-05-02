@@ -3,7 +3,7 @@
 #include "Logger/Log.h"
 #include <glm/gtc/type_ptr.hpp>
 #include "Scenes/Components/Components.h"
-#include "ImGuiPanelStyle.h"
+#include "imGuiPanelStyle.h"
 #include "Scenes/Systems/BoundingBoxSystem.h"
 
 void ViewportPanel::renderSceneViewport(TestLayer* testLayer) {

@@ -31,6 +31,8 @@
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "WindowContext/Application.h"
+
 #include "Timestep/Stopwatch.h"
 
 #include <filesystem>
@@ -114,9 +116,20 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
         Rapture::GE_ERROR("No active scene found");
         return;
     }
+
+    auto& app = Rapture::Application::getInstance();
+    auto project = app.getProject();
+    if (!project) {
+        Rapture::GE_ERROR("No project found");
+        return;
+    }
+
+    auto config = project->getConfig();
+    auto path = config.directory;
+    
     
 	//Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
-	auto loader = Rapture::ModelLoadersCache::getLoader("E:/Dev/Games/LiDAR Game v1/LiDAR-Game/build/bin/Debug/assets/models/Sponza/Sponza.gltf", activeScene);
+	auto loader = Rapture::ModelLoadersCache::getLoader(path / "Editor/assets/models/Sponza/Sponza.gltf", activeScene);
     if (loader){
         loader->loadModel("Sponza/Sponza.gltf");
         //loader->loadModel("sphere.gltf");

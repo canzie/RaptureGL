@@ -7,6 +7,7 @@
 #include <mutex>
 #include <functional>
 #include <filesystem>
+#include <thread>
 
 #include "../Utils/GLCapabilities.h"
 

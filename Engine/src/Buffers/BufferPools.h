@@ -9,7 +9,7 @@
 #include <atomic>
 #include <condition_variable>
 
-#include "../logger/Log.h"
+#include "../Logger/Log.h"
 #include "Buffers.h"
 #include "VertexArray.h"  // Make sure this is included before using VertexArray
 #include "OpenGLBuffers/VertexBuffers/OpenGLVertexBuffer.h"

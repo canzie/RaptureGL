@@ -117,7 +117,10 @@ namespace Rapture
         std::string getProjectName() const { return m_config.name; }
         std::string getInitialWorldName() const { return m_config.initialWorldName; }
         
-        void setProjectDirectory(const std::filesystem::path& dir) { m_config.directory = dir; }
+        void setProjectDirectory(const std::filesystem::path& dir) { 
+            m_config.directory = dir;
+            m_config.shaderPath = dir / "Engine/src/Shaders/GLSL";
+        }
         void setProjectName(const std::string& name) { m_config.name = name; }
         void setInitialWorldName(const std::string& name) { m_config.initialWorldName = name; }
 

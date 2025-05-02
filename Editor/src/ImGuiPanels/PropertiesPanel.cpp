@@ -7,9 +7,15 @@
 
 #include "Scenes/Components/Transforms.h"
 
+// Platform-specific file dialog includes
+#ifdef _WIN32
 // Windows file dialog
 #include <Windows.h>
 #include <commdlg.h>
+#elif defined(__linux__)
+// Linux file dialog (using tinyfiledialogs as an example)
+// Make sure to link against tinyfiledialogs
+#endif
 #include <filesystem>
 
 // ImGuizmo
@@ -94,9 +100,12 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
             
             char buffer[256];
             memset(buffer, 0, sizeof(buffer));
-            strncpy_s(buffer, sizeof(buffer), tagComponent.tag.c_str(), sizeof(buffer) - 1);
+            // Copy the tag content into the buffer, ensuring null termination
+            tagComponent.tag.copy(buffer, sizeof(buffer) - 1);
+            buffer[std::min(tagComponent.tag.size(), sizeof(buffer) - 1)] = '\0'; // Explicitly null-terminate
+
             if (ImGui::InputText("Name", buffer, sizeof(buffer))) {
-                tagComponent.tag = std::string(buffer);
+                tagComponent.tag = std::string(buffer); // Update the component tag if changed
             }
         } else {
             ImGui::Text("Entity ID: %u", entity->getID());
@@ -215,6 +224,7 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
                 
                 // Button to select texture
                 if (ImGui::Button("Select Texture", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+#ifdef _WIN32
                     // Windows file dialog implementation
                     OPENFILENAMEA ofn;
                     char szFile[260] = { 0 };
@@ -223,13 +233,15 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
                     ofn.hwndOwner = nullptr;
                     ofn.lpstrFile = szFile;
                     ofn.nMaxFile = sizeof(szFile);
-                    ofn.lpstrFilter = "Image Files\0*.png;*.jpg;*.jpeg;*.bmp;*.tga\0All Files\0*.*\0";
+                    // Define filters carefully
+                    const char* filter = "Image Files *.png;*.jpg;*.jpeg;*.bmp;*.tga All Files *.* ";
+                    ofn.lpstrFilter = filter;
                     ofn.nFilterIndex = 1;
                     ofn.lpstrFileTitle = nullptr;
                     ofn.nMaxFileTitle = 0;
-                    ofn.lpstrInitialDir = nullptr;
-                    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-                    
+                    ofn.lpstrInitialDir = nullptr; // Set initial directory if desired
+                    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR; // Added OFN_NOCHANGEDIR
+
                     // Show the dialog
                     if (GetOpenFileNameA(&ofn)) {
                         std::string filepath = ofn.lpstrFile;
@@ -239,6 +251,14 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
                         // Log texture loading
                         Rapture::GE_INFO("Loading texture: {}", filepath);
                     }
+#elif defined(__linux__)
+                    // Linux file dialog implementation (using tinyfiledialogs)
+                    Rapture::GE_CORE_WARN("File dialog not implemented for this platform.");
+#else
+                    #pragma message("Warning: File dialog not implemented for this platform.")
+                    Rapture::GE_CORE_WARN("File dialog not implemented for this platform.");
+                    // Optionally add a placeholder or disable the button
+#endif
                 }
             }
         }

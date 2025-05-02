@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <cstdint>
 #include <variant>
+#include <string>
 
 namespace Rapture {
 
@@ -33,6 +34,24 @@ namespace Rapture {
         Shader,
         
     };
+
+    inline std::string AssetTypeToString(AssetType type) {
+        switch (type) {
+            case AssetType::None: return "None";
+            case AssetType::Mesh: return "Mesh";
+            case AssetType::Texture2D: return "Texture2D";
+            case AssetType::Cubemap: return "Cubemap";
+            case AssetType::Material: return "Material";
+            case AssetType::Skeleton: return "Skeleton";
+            case AssetType::Animation: return "Animation";
+            case AssetType::Audio: return "Audio";
+            case AssetType::Script: return "Script";
+            case AssetType::Scene: return "Scene";
+            case AssetType::Font: return "Font";
+            case AssetType::Shader: return "Shader";
+            default: return "Unknown";
+        }
+    }
 
     struct AssetMetadata {
 

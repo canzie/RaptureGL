@@ -44,17 +44,41 @@ namespace Rapture {
 		{
 			RAPTURE_PROFILE_SCOPE("Systems Initialization");
             
+
+			// Initialize project - this will setup default world and scene
+			m_project = std::make_shared<Project>();
+			auto working_dir = std::filesystem::current_path();
+			auto project_dir = working_dir;
+			
+			// Try to find the project root by looking for Engine folder
+			const int max_steps = 4;
+			int steps = 0;
+			while (steps < max_steps) {
+				// Check if Engine directory exists in current path
+				if (std::filesystem::exists(project_dir / "Engine") && std::filesystem::exists(project_dir / "build")) {
+					break;
+				}
+				// Go up one directory
+				auto parent = project_dir.parent_path();
+				if (parent == project_dir) {  // We've hit the root
+					break;
+				}
+				project_dir = parent;
+				steps++;
+			}
+			
+			m_project->setProjectDirectory(project_dir);
+
             AssetManager::init();
 
 			TextureLibrary::init(4);
-			Rapture::MaterialLibrary::init();
+			MaterialLibrary::init();
 			BufferPoolManager::init();
 			Renderer::init();
             DeferredRenderer::init();
 
 			
-			// Initialize project - this will setup default world and scene
-			m_project = std::make_shared<Project>();
+
 
 
 		}

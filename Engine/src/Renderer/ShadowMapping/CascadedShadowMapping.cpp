@@ -1,5 +1,5 @@
 #include "CascadedShadowMapping.h"
-#include "../../logger/log.h"
+#include "../../Logger/Log.h"
 #include "../../AssetsManager/AssetManager.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>

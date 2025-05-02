@@ -25,10 +25,13 @@ void MaterialLibrary::init()
         return;
     }
 
-    //Application& app = Application::getInstance();
-    //std::filesystem::path s_shaderPath = app.getCurrentProject()->getConfig().shaderPath;
-
-    std::filesystem::path s_shaderPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Engine/src/Shaders/GLSL";
+    Application& app = Application::getInstance();
+    auto project = app.getCurrentProject();
+    if (!project) {
+        GE_CORE_ERROR("MaterialLibrary: No project found!");
+        return;
+    }
+    std::filesystem::path s_shaderPath = project->getConfig().shaderPath;
     
     GE_CORE_INFO("MaterialLibrary: Initializing...");
     // Initialize static shaders for material types

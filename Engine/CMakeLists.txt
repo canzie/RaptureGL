@@ -10,8 +10,6 @@ file(GLOB_RECURSE ENGINE_SOURCES
 
 # Always include the profiler source files for both debug and release builds
 list(APPEND ENGINE_SOURCES 
-    src/Debug/Profiler.cpp
-    src/Debug/GPUProfiler.cpp
     src/Debug/TracyProfiler.cpp
 )
 
@@ -50,6 +48,7 @@ target_include_directories(${ENGINE_NAME} PUBLIC
 # Link with vendor libraries
 target_link_libraries(${ENGINE_NAME} PUBLIC
     vendor_libraries
+    Threads::Threads
 )
 
 # Add additional compile definitions

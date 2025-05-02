@@ -1,7 +1,7 @@
 #include "EntityBrowserPanel.h"
 #include "Logger/Log.h"
 #include "Debug/TracyProfiler.h"
-#include "ImGuiPanels/imGuiPanelStyle.h"
+#include "imGuiPanelStyle.h"
 
 #include "imgui_internal.h" // Required for TableSetBgColor
 

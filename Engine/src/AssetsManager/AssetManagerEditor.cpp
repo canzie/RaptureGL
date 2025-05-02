@@ -1,14 +1,15 @@
 #include "AssetManagerEditor.h"
 #include "AssetImporter.h"
 #include "../Utils/UUID.h"
-#include "../logger/log.h"
+#include "../Logger/Log.h"
 #include "../Materials/Material.h"
+
+#include "../WindowContext/Application.h"
 
 #include <filesystem>
 
 namespace Rapture {
 
-    const std::filesystem::path s_defaultMaterialPath = "E:/Dev/Games/LiDAR Game v1/LiDAR-Game/Editor/assets/materials/default.rmat";
 
     AssetManagerEditor::AssetManagerEditor()
     : AssetManagerBase()
@@ -201,10 +202,18 @@ namespace Rapture {
 
 
         } else if (assetType == AssetType::Material) {
-            return importAsset(s_defaultMaterialPath);
+            auto& app = Application::getInstance();
+            auto project = app.getProject();
+            if (!project) {
+                GE_CORE_ERROR("AssetManagerEditor::getDefaultAsset - No project found");
+                return std::make_pair(nullptr, AssetHandle());
+            }
+            auto config = project->getConfig();
+            auto path = config.directory;
+            return importAsset(path / "Editor/assets/materials/default.rmat");
 
         } else {
-            GE_CORE_ERROR("AssetManagerEditor::getDefaultAsset - No default asset found");
+            GE_CORE_ERROR("AssetManagerEditor::getDefaultAsset - Unknown asset type: {}", AssetTypeToString(assetType));
         }
 
         return std::make_pair(nullptr, AssetHandle());

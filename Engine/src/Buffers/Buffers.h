@@ -4,7 +4,7 @@
 #include <glm/glm.hpp>
 #include <utility>
 #include <memory>
-#include "../logger/Log.h"
+#include "../Logger/Log.h"
 #include "../DataTypes.h"
 #include "../RendererAPI.h"
 
