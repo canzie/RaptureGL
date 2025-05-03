@@ -26,12 +26,14 @@ namespace Rapture {
 		unsigned int getID__DEBUG() const { return m_rendererId; }
 		unsigned int getIndexCount() const { return m_count; }
 		unsigned int getIndexType() const { return m_componentType; }
+
+        uint64_t getBufferHandle() const { return m_bufferHandle; }
 		
 		// Legacy method for compatibility
 		void addSubIndices(std::vector<unsigned char>& indices);
 		
     private:
-        void generateHandle();
+        void generateBufferHandle();
 
 	private:
 		unsigned int m_rendererId;
@@ -41,7 +43,7 @@ namespace Rapture {
 		BufferUsage m_usage;
 		bool m_isImmutable;
 
-        uint64_t m_handle;
+        uint64_t m_bufferHandle;
 		
 		// For legacy support
 		size_t m_idx_last_element;

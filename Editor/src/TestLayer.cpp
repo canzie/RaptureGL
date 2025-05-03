@@ -20,6 +20,7 @@
 #include "Timestep/Timestep.h"
 #include "Renderer/RadianceCascades/RadianceCascades.h"
 #include "Renderer/RadianceCascades/RadianceCascadesManager.h"
+#include "Renderer/DDGI/DynamicDiffuseGI.h"
 
 #include "Sorting/SpatialSorting/BVH/LBVH/LBVH.h"
 
@@ -214,8 +215,9 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
 	auto pos = Rapture::Input::getMousePos();
 	CameraController::setMousePosition(pos.first, pos.second);
 
-    Rapture::LBVHManager::init(activeScene);
-    Rapture::LBVHManager::printTreeStructure(0);
+    Rapture::LBVHManager::init(activeScene, false);
+    Rapture::DynamicDiffuseGI ddgi = Rapture::DynamicDiffuseGI();
+    //ddgi.populateProbes(activeScene);
 }
 
 

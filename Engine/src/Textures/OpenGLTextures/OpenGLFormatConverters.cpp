@@ -14,6 +14,8 @@ namespace Rapture {
 			case TextureFormat::RGB32F:      return GL_RGB32F;
 			case TextureFormat::RGBA16F:     return GL_RGBA16F;
 			case TextureFormat::RGBA32F:     return GL_RGBA32F;
+			case TextureFormat::R11G11B10F:  return GL_R11F_G11F_B10F;
+			case TextureFormat::RG16F:      return GL_RG16F;
 		}
 
 		GE_CORE_ERROR("TextureFormatToGL - Unknown framebuffer texture format!");
@@ -30,6 +32,8 @@ namespace Rapture {
 			case TextureFormat::RGB32F:      return GL_RGB;
 			case TextureFormat::RGBA16F:     return GL_RGBA;
 			case TextureFormat::RGBA32F:     return GL_RGBA;
+			case TextureFormat::R11G11B10F:  return GL_RGB;
+			case TextureFormat::RG16F:      return GL_RG;
 		}
 
 		GE_CORE_ERROR("TextureFormatToGLDataFormat - Unknown framebuffer data format!");
@@ -46,6 +50,8 @@ namespace Rapture {
 			case TextureFormat::RGB32F:      return GL_FLOAT;
 			case TextureFormat::RGBA16F:     return GL_FLOAT;
 			case TextureFormat::RGBA32F:     return GL_FLOAT;
+			case TextureFormat::R11G11B10F:  return GL_FLOAT;
+			case TextureFormat::RG16F:      return GL_FLOAT;
 		}
 
 		GE_CORE_ERROR("TextureFormatToGLDataType - Unknown framebuffer data type!");

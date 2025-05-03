@@ -1,14 +1,16 @@
 #version 460 core
 
-#extension GL_EXT_buffer_reference : require
+#extension GL_ARB_shader_storage_buffer_object : require
 #extension GL_ARB_bindless_texture : require
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_ARB_gpu_shader_int64 : require
+#extension GL_NV_shader_buffer_load : require
+#extension GL_NV_gpu_shader5 : require
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 
 // Output Images
-layout (binding = 0, r11g11b10f) uniform restrict writeonly image2D probeAtlas;
+layout (binding = 0, r11f_g11f_b10f) uniform restrict writeonly image2D probeAtlas;
 layout (binding = 1, rg16f) uniform restrict writeonly image2D probeDepthAtlas; // Not used in this step
 
 
@@ -26,10 +28,6 @@ struct LBVHNode {
 };
 
 struct BufferMetadata {
-    uint vertexOffsetBytes; // Starting *byte* offset in the global vertex buffer
-    uint texCoordOffsetBytes;
-    uint indexOffsetBytes;  // Starting *byte* offset in the global index buffer
-    uint triangleCount;     // Number of triangles in this mesh
 
     uint positionAttributeOffsetBytes; // Offset of position *within* the stride
     uint texCoordAttributeOffsetBytes;
@@ -42,12 +40,12 @@ struct BufferMetadata {
 
 // Input Uniforms / Buffers
 // Contains global information about the probe grid
-layout(std140, binding = 0) readonly uniform ProbeInfo {
-    vec3 probeGridDimensions; // Number of probes in each dimension (X, Y, Z)
-    vec2 probeResolution; // Resolution of each probe texture (e.g., 8x8)
+layout(std140, binding = 0) uniform ProbeInfo {
+    uvec3 probeGridDimensions; // Number of probes in each dimension (X, Y, Z)
+    uvec2 probeResolution; // Resolution of each probe texture (e.g., 8x8)
     vec3 probeSpacing;
     vec3 probeOrigin; // will probably be camera position
-} probeInfo;
+};
 
 // Contains the actual BVH node data
 layout(std430, binding = 1) readonly buffer LBVHNodes {
@@ -61,8 +59,10 @@ struct MeshInfo {
     uint64_t NormalTextureHandle;
     uint64_t MetallicRoughnessTextureHandle;
     uint bufferMetadataIDX; // index for BufferMetadata array
-    uint triangleOffset; // offset of the first triangle
-    //uint triangleCount; // number of triangles
+
+    uint vertexOffsetBytes;
+    uint indexOffsetBytes;
+
 
     mat4 Transform;
 };
@@ -191,7 +191,7 @@ bool RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax, out float tmin_out) 
 	float tFar = min(min(t2.x, t2.y), t2.z);
 
 	bool hit = tFar >= tNear && tFar > 0;
-	tmin_out = hit ? tNear > 0 ? tNear : 0 : 1.#INF;
+	tmin_out = hit ? tNear > 0 ? tNear : 0 : 0x7FFFFFFF;
 	
     if (tFar >= tNear && tFar > 0.0) {
         return true;
@@ -204,20 +204,18 @@ bool RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax, out float tmin_out) 
 // Iteratively traverses the BVH for a given ray.
 // Returns the index of the first leaf node encountered whose AABB is intersected by the ray,
 // prioritizing traversal towards closer AABBs. Returns -1 if no leaf node AABB is hit.
-bool traceBVH(Ray ray, uint index, out HitInfo hitInfo) {
-    int currentNodeIndex = 0; // Start at the root
-    const int MAX_ITERATIONS = 20; // Safeguard against infinite loops
+bool traceBVH(Ray ray, uint index, out LBVHNode result) {
+    uint currentNodeIndex = 0; 
 
     // stack
-    int nodeStack[32];
+    uint nodeStack[32];
     uint stackPointer = 0;
     nodeStack[stackPointer++] = index;
 
-    LBVHNode result;
 
 
     while (stackPointer > 0) {
-        int currentNodeIndex = nodeStack[--stackPointer];
+        currentNodeIndex = nodeStack[--stackPointer];
         LBVHNode node = u_lbvh.lbvh[currentNodeIndex];
 
         float tHitCurrent;
@@ -228,8 +226,8 @@ bool traceBVH(Ray ray, uint index, out HitInfo hitInfo) {
                 return true;
 
             } else {
-                int childIndexA = node.left;
-                int childIndexB = node.right;
+                uint childIndexA = node.left;
+                uint childIndexB = node.right;
                 LBVHNode childA = u_lbvh.lbvh[childIndexA];
                 LBVHNode childB = u_lbvh.lbvh[childIndexB];
 
@@ -241,8 +239,8 @@ bool traceBVH(Ray ray, uint index, out HitInfo hitInfo) {
                 bool isNestestA = dstA < dstB;
                 float dstNearest = isNestestA ? dstA : dstB;
                 float dstFarthest = isNestestA ? dstB : dstA;
-                int childIndexNear = isNestestA ? childIndexA : childIndexB;
-                int childIndexFar = isNestestA ? childIndexB : childIndexA;
+                uint childIndexNear = isNestestA ? childIndexA : childIndexB;
+                uint childIndexFar = isNestestA ? childIndexB : childIndexA;
 
                 if (dstFarthest < tHitCurrent) {
                     nodeStack[stackPointer++] = childIndexFar;
@@ -258,36 +256,77 @@ bool traceBVH(Ray ray, uint index, out HitInfo hitInfo) {
     return false;
 }
 
+#define UNSIGNED_INT 5125
+#define UNSIGNED_SHORT 5123
+
 // meshinfo contains needed metadata about where to get the vertex data, the index is for the specific triangle
 Triangle getTriangle(MeshInfo meshInfo, uint primitiveIndex) {
     Triangle tri;
     BufferMetadata bufferMetadata = u_bufferMetadata.AllBufferMetadata[meshInfo.bufferMetadataIDX];
     uint64_t vboHandle = bufferMetadata.VBOHandle;
     uint64_t iboHandle = bufferMetadata.IBOHandle;
-
-    uint indexOffset = meshInfo.triangleOffset + primitiveIndex * 3;
     uint indexType = bufferMetadata.indexType;
+    uint indexSize = indexType == UNSIGNED_INT ? 4 : 2;
 
-    if (indexType == 5125) {
-        uint32_t indices[3];
-        indices[0] = buffer_reference<uint>(iboHandle)[indexOffset];
-        indices[1] = buffer_reference<uint>(iboHandle)[indexOffset + 1];
-        indices[2] = buffer_reference<uint>(iboHandle)[indexOffset + 2];
-    } else {
-        uint16_t indices[3];
-        indices[0] = buffer_reference<uint16_t>(iboHandle)[indexOffset];
-        indices[1] = buffer_reference<uint16_t>(iboHandle)[indexOffset + 1];
-        indices[2] = buffer_reference<uint16_t>(iboHandle)[indexOffset + 2];
+
+    uint indexOffset = (meshInfo.indexOffsetBytes/indexSize) + primitiveIndex * 3;
+
+    uint indices[3];
+
+    // Read indices based on indexType
+    if (indexType == UNSIGNED_INT) { // GL_UNSIGNED_INT
+        uint *iboPtr = (uint *)iboHandle;
+        indices[0] = iboPtr[indexOffset];
+        indices[1] = iboPtr[indexOffset + 1];
+        indices[2] = iboPtr[indexOffset + 2];
+    } else { // Assuming GL_UNSIGNED_SHORT (5123)
+        // Requires GL_EXT_shader_explicit_arithmetic_types or similar for uint16_t
+        uint16_t *iboPtr = (uint16_t *)iboHandle;
+        indices[0] = uint(iboPtr[indexOffset]);     // Cast uint16_t to uint
+        indices[1] = uint(iboPtr[indexOffset + 1]); // Cast uint16_t to uint
+        indices[2] = uint(iboPtr[indexOffset + 2]); // Cast uint16_t to uint
     }
 
-    vec3 v0_local = buffer_reference<vec3>(vboHandle)[indices[0] * bufferMetadata.vertexStrideBytes + bufferMetadata.positionAttributeOffsetBytes];
-    vec3 v1_local = buffer_reference<vec3>(vboHandle)[indices[1] * bufferMetadata.vertexStrideBytes + bufferMetadata.positionAttributeOffsetBytes];
-    vec3 v2_local = buffer_reference<vec3>(vboHandle)[indices[2] * bufferMetadata.vertexStrideBytes + bufferMetadata.positionAttributeOffsetBytes];
-    
-    vec2 uv0 = buffer_reference<vec2>(vboHandle)[indices[0] * bufferMetadata.vertexStrideBytes + bufferMetadata.texCoordAttributeOffsetBytes];
-    vec2 uv1 = buffer_reference<vec2>(vboHandle)[indices[1] * bufferMetadata.vertexStrideBytes + bufferMetadata.texCoordAttributeOffsetBytes];
-    vec2 uv2 = buffer_reference<vec2>(vboHandle)[indices[2] * bufferMetadata.vertexStrideBytes + bufferMetadata.texCoordAttributeOffsetBytes];
-    
+
+    uvec3 vertexStartByteOffset;
+    vertexStartByteOffset[0] = meshInfo.vertexOffsetBytes + (indices[0] * bufferMetadata.vertexStrideBytes);
+    vertexStartByteOffset[1] = meshInfo.vertexOffsetBytes + (indices[1] * bufferMetadata.vertexStrideBytes);
+    vertexStartByteOffset[2] = meshInfo.vertexOffsetBytes + (indices[2] * bufferMetadata.vertexStrideBytes);
+
+    // Calculate the absolute byte offset for the start of the position attribute within that vertex
+    uvec3 positionStartByteOffset;
+    positionStartByteOffset[0] = vertexStartByteOffset[0] + bufferMetadata.positionAttributeOffsetBytes;
+    positionStartByteOffset[1] = vertexStartByteOffset[1] + bufferMetadata.positionAttributeOffsetBytes;
+    positionStartByteOffset[2] = vertexStartByteOffset[2] + bufferMetadata.positionAttributeOffsetBytes;
+
+    uvec3 textureStartByteOffset;
+    textureStartByteOffset[0] = vertexStartByteOffset[0] + bufferMetadata.texCoordAttributeOffsetBytes;
+    textureStartByteOffset[1] = vertexStartByteOffset[1] + bufferMetadata.texCoordAttributeOffsetBytes;
+    textureStartByteOffset[2] = vertexStartByteOffset[2] + bufferMetadata.texCoordAttributeOffsetBytes;
+
+    // dont need to divide by 4 because we will read from the buffer per byte
+    positionStartByteOffset = positionStartByteOffset;
+    textureStartByteOffset = textureStartByteOffset;
+
+
+    // Access vertex data using byte offsets and pointer casting
+    // Conceptual base byte pointer from the VBO handle
+    // Using uint8_t* requires an appropriate extension, but the arithmetic works
+    // by adding byte offsets to the base uint64_t handle.
+    uint8_t *vboBasePtr = (uint8_t *)vboHandle;
+
+    // --- Vertex 0 ---
+    vec3 v0_local = *((vec3 *)(vboBasePtr + positionStartByteOffset[0]));
+    vec2 uv0      = *((vec2 *)(vboBasePtr + textureStartByteOffset[0]));
+
+    // --- Vertex 1 ---
+    vec3 v1_local = *((vec3 *)(vboBasePtr + positionStartByteOffset[1]));
+    vec2 uv1      = *((vec2 *)(vboBasePtr + textureStartByteOffset[1]));
+
+    // --- Vertex 2 ---
+    vec3 v2_local = *((vec3 *)(vboBasePtr + positionStartByteOffset[2]));
+    vec2 uv2      = *((vec2 *)(vboBasePtr + textureStartByteOffset[2]));
+
     tri.v0 = (meshInfo.Transform * vec4(v0_local, 1.0)).xyz;
     tri.v1 = (meshInfo.Transform * vec4(v1_local, 1.0)).xyz;
     tri.v2 = (meshInfo.Transform * vec4(v2_local, 1.0)).xyz;
@@ -302,12 +341,14 @@ Triangle getTriangle(MeshInfo meshInfo, uint primitiveIndex) {
 // Placeholder: Samples albedo texture using bindless handle
 // Requires GL_ARB_bindless_texture
 vec3 sampleAlbedo(uint meshIndex, vec2 uv) {
-    // TODO: Implement bindless texture sampling.
-    // uint64_t handle = u_sceneInfo.MeshInfos[meshIndex].AlbedoTextureHandle;
-    // if (handle == 0) return vec3(0.8); // Handle invalid texture
-    // sampler2D albedoSampler = sampler2D(handle);
-    // return texture(albedoSampler, uv).rgb;
-    return vec3(0.8); // Return constant grey for now
+    MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIndex];
+    uint64_t albedoTextureHandle = meshInfo.AlbedoTextureHandle;
+    if (albedoTextureHandle == 0) {
+        return vec3(0.8); // Return constant grey for now
+    }
+
+    sampler2D albedoSampler = sampler2D(albedoTextureHandle);
+    return texture(albedoSampler, uv).rgb;
 }
 
 // assumes 1 probe map is in a square format
@@ -350,34 +391,57 @@ vec2 normalizeTexelCoord(vec2 texelCoord, vec2 probeResolution) {
 
 void main() {
     // texel in the atlas
-    ivec2 globalIndex2D = gl_GlobalInvocationID.xy;
+    ivec2 globalIndex2D = ivec2(gl_GlobalInvocationID.xy);
 
 
     // get the probe related to the texel 
-    vec3 probeIndex = texelToProbeIndex(globalIndex2D, probeInfo.probeResolution);
+    vec3 probeIndex = texelToProbeIndex(globalIndex2D, probeResolution, probeGridDimensions);
 
     //get probe position
     // NOTE: might need to quantize the probe index to the nearest integer
-    vec3 probePosition = probeInfo.probeOrigin + probeIndex * probeInfo.probeSpacing;
+    vec3 probePosition = probeOrigin + probeIndex * probeSpacing;
 
-    vec2 normAtlasTexcoord = normalizeTexelCoord(globalIndex2D, probeInfo.probeResolution);
+    vec2 normAtlasTexcoord = normalizeTexelCoord(globalIndex2D, probeResolution);
     vec3 rayDirection = octDecode(normAtlasTexcoord);
     vec3 invDir = 1.0 / rayDirection;
 
     Ray ray = Ray(probePosition, rayDirection, invDir);
-    
+    HitInfo hitInfo;
+    LBVHNode result;
+
     for (int i = 0; i < u_sceneInfo.MeshInfos.length(); i++) {
         MeshInfo meshInfo = u_sceneInfo.MeshInfos[i];
 
         uint rootIndex = meshInfo.RootIndex;
             // trace ray
-        traceBVH(ray);
+        if (traceBVH(ray, rootIndex, result)) {
+            // get triangle
+            Triangle tri = getTriangle(meshInfo, result.primitiveIdx);
+
+            vec2 barycentricUV;
+            float t;
+            if (intersectTriangle(ray, tri, barycentricUV, t)) {
+                // get uv
+                hitInfo.hit = true;
+                hitInfo.barycentricUV = barycentricUV;
+                hitInfo.primitiveIndex = result.primitiveIdx;
+                hitInfo.meshIndex = i;
+                
+                vec2 uv = interpolateUV(barycentricUV, tri);
+                vec3 albedo = sampleAlbedo(i, uv);
+
+                // write to probe atlas
+                imageStore(probeAtlas, globalIndex2D, vec4(albedo, 1.0));
+
+                return;
+            } 
+        }
+        
     }
 
 
-    // write to probe atlas
-    imageStore(probeAtlas, globalIndex2D, vec4(hitInfo.hit, 0.0, 0.0, 0.0));
-    
+    imageStore(probeAtlas, globalIndex2D, vec4(1.0, 0.0, 1.0, 1.0));
+
         
         
     

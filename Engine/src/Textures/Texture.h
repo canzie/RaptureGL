@@ -66,7 +66,9 @@ enum class TextureFormat : uint16_t {
     RGBA16F,
     RGB16F,
     RGBA32F,
-    RGB32F
+    RGB32F,
+    R11G11B10F,
+    RG16F,
 };
 
 struct TextureSpecification {

@@ -212,6 +212,8 @@ void RadixSort::logBufferOutput(const std::shared_ptr<ShaderStorageBuffer> &buff
 
 std::vector<GpuOutputMortonElement> RadixSort::cpuSort(const std::shared_ptr<ShaderStorageBuffer> &buffer, uint32_t numElements)
 {
+    RAPTURE_PROFILE_FUNCTION();
+    
     ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true});
 
     size_t bufferSize = numElements * sizeof(GpuOutputMortonElement);

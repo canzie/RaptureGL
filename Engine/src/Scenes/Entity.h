@@ -15,6 +15,8 @@ namespace Rapture
         explicit EntityException(const std::string& message) : std::runtime_error(message) {}
     };
 
+    using EntityID = uint32_t;
+
 	class Entity
 	{
 	public:
@@ -154,6 +156,11 @@ namespace Rapture
                 m_EntityHandle = entt::null;
                 m_Scene = nullptr;
             }
+        }
+
+        static EntityID enttHandleToEntityID(const entt::entity& handle)
+        {
+            return static_cast<EntityID>(handle);
         }
 
         // Return the underlying scene

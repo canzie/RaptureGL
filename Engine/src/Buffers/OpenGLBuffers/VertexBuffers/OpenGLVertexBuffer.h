@@ -30,6 +30,7 @@ class VertexBuffer : public Buffer {
 		
 
     private:
+        // automaticaly makes buffer resident
         void generateBufferHandle();
 	
     private:

@@ -109,4 +109,21 @@ namespace Rapture {
 		m_idx_last_element += indices.size();
 	}
 
+    void IndexBuffer::generateBufferHandle()
+    {
+        if (!GLCapabilities::hasBindlessTextures()) {
+            GE_CORE_WARN("IndexBuffer::generateBufferHandle - Bindless buffers not supported");
+            return;
+        }
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_rendererId);
+        glGetBufferParameterui64vNV(GL_ELEMENT_ARRAY_BUFFER, GL_BUFFER_GPU_ADDRESS_NV, &m_bufferHandle);
+        glMakeBufferResidentNV(GL_ELEMENT_ARRAY_BUFFER, GL_READ_ONLY);
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+        if (m_bufferHandle == 0) {
+            GE_CORE_ERROR("IndexBuffer::generateBufferHandle - Failed to generate buffer handle");
+        }
+    }
 }

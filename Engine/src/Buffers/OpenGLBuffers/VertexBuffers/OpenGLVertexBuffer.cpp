@@ -31,6 +31,8 @@ namespace Rapture {
 			
 
 		}
+
+        generateBufferHandle();
 	}
 
 	VertexBuffer::VertexBuffer(const std::vector<unsigned char>& data, BufferUsage usage)
@@ -57,8 +59,11 @@ namespace Rapture {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bindingPoint, m_rendererId);
     }
 
-    void VertexBuffer::setData(const void* data, size_t size, size_t offset) {
-		if (offset + size > m_size) {
+
+
+    void VertexBuffer::setData(const void *data, size_t size, size_t offset)
+    {
+        if (offset + size > m_size) {
 			GE_CORE_ERROR("Buffer overflow: Trying to write {0} bytes at offset {1} in buffer of size {2}", 
 				size, offset, m_size);
 			return;
@@ -71,9 +76,9 @@ namespace Rapture {
 			glBufferSubData(GL_ARRAY_BUFFER, offset, size, data);
 			glBindBuffer(GL_ARRAY_BUFFER, 0);
 		}
-	}
+    }
 
-	void VertexBuffer::setData(const std::vector<unsigned char>& data, size_t offset) {
+    void VertexBuffer::setData(const std::vector<unsigned char>& data, size_t offset) {
 		setData(data.data(), data.size(), offset);
 	}
 

@@ -171,9 +171,6 @@ std::shared_ptr<Texture2D> TextureLibrary::loadAsync(const std::string &filepath
         return nullptr;
     }
 
-    s_workerThreads.emplace_back(&TextureLibrary::textureLoadThread);
-
-    
     return texture;
 }
 
@@ -332,6 +329,7 @@ void TextureLibrary::makeAllTexturesNonResident()
 
 void TextureLibrary::textureLoadThread()
 {
+    RAPTURE_PROFILE_THREAD("TextureLibrary::textureLoadThread");
     GE_CORE_INFO("TextureLibrary: Texture loading thread started");
     
     while (s_threadRunning) {
@@ -355,6 +353,7 @@ void TextureLibrary::textureLoadThread()
         if (!s_threadRunning) break;
         
         if (hasRequest) {
+            RAPTURE_PROFILE_SCOPE("TextureLibrary::textureLoadThread - Loading texture data");
             // Load image data but check shutdown flag regularly
             stbi_set_flip_vertically_on_load(0);
             unsigned char* data = stbi_load(request.path.c_str(), &request.width, &request.height, &request.channels, 0);

@@ -130,7 +130,17 @@ namespace Rapture {
 
 
     }
-        
+
+    std::shared_ptr<ShaderStorageBuffer> LBVH::getCompleteBVHNodesBuffer()
+    {
+
+        if (m_CompleteBVHNodesBuffer == nullptr) {
+            fillCompleteBVHNodesBuffer();
+        }
+
+        return m_CompleteBVHNodesBuffer;
+    }
+
     std::vector<BVHNode> LBVH::getCPUBVHNodes()
     {
         RAPTURE_PROFILE_FUNCTION();
@@ -191,11 +201,24 @@ namespace Rapture {
             BVHNodes[i].minBounds = glm::vec3(nodes[i].aabbMinX, nodes[i].aabbMinY, nodes[i].aabbMinZ);
             BVHNodes[i].leftChildIndex = nodes[i].left;
             BVHNodes[i].rightChildIndex = nodes[i].right;
-            BVHNodes[i].primitiveCount = nodes[i].primitiveIdx;
+            BVHNodes[i].primitiveIdx = nodes[i].primitiveIdx;
         }
 
 
         return BVHNodes;
+    }
+
+    void LBVH::fillCompleteBVHNodesBuffer()
+    {
+        std::vector<BVHNode> nodes;
+
+        for (const auto& bvh : m_cpuBVHNodes) {
+            auto nodes = bvh.second.nodes;
+            nodes.insert(nodes.end(), nodes.begin(), nodes.end());
+        }
+
+        m_CompleteBVHNodesBuffer = std::make_shared<ShaderStorageBuffer>(nodes.size() * sizeof(BVHNode), BufferUsage::Static, nodes.data());
+
     }
 
     // sorts all of the geometry in an entire scene, this way we can calculated the max_triangles
@@ -205,22 +228,32 @@ namespace Rapture {
 
         auto& registry = scene->getRegistry();
         auto view = registry.view<MeshComponent, TransformComponent>();
+
+        uint32_t totalNodes = 0;
+
         for (auto entity : view) {
+            
             auto& meshComponent = view.get<MeshComponent>(entity);
             auto& transformComponent = view.get<TransformComponent>(entity);
             generate(meshComponent.mesh->getMeshData());
+
+            EntityID entityID = Entity::enttHandleToEntityID(entity);
+
 
             auto nodes = getCPUBVHNodes();
             BVHCPU bvhCPU;
             bvhCPU.nodes = nodes;
             bvhCPU.transform = transformComponent.transformMatrix();
-            m_cpuBVHNodes.push_back(bvhCPU);
+            bvhCPU.absoluteRootIndex = totalNodes + bvhCPU.rootIndex;
+            m_cpuBVHNodes[entityID] = bvhCPU;
+
+            totalNodes += nodes.size();
         }
     }
 
 
 
-    void LBVHManager::init(std::shared_ptr<Scene> scene)
+    void LBVHManager::init(std::shared_ptr<Scene> scene, bool generateBVHDebugData)
     {
         RAPTURE_PROFILE_FUNCTION();
 
@@ -229,10 +262,17 @@ namespace Rapture {
 
         s_lbvh->generate(scene);
 
-        auto nodes = s_lbvh->getAllCPUBVHNodes();
-        size_t totalNodes = 0;
-        for (const auto& bvhLevel : nodes) {
-            for (const auto& node : bvhLevel.nodes) {
+        uint32_t totalNodes = 0;
+
+        if (generateBVHDebugData) {
+            auto nodes = s_lbvh->getAllCPUBVHNodes();
+            for (const auto& bvhLevel : nodes) {
+                auto& bvh = bvhLevel.second;
+                RAPTURE_PROFILE_SCOPE("LBVHManager::init - Adding box and transform");
+
+                for (const auto& node : bvh.nodes) {
+
+
                     glm::vec3 size = node.maxBounds - node.minBounds;
                     glm::vec3 center = (node.minBounds + node.maxBounds) * 0.5f;
                     if (glm::length(size) < 0.0001f) {
@@ -240,11 +280,12 @@ namespace Rapture {
                     }
                     glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), center) *
                                         glm::scale(glm::mat4(1.0f), size);
-                    modelMatrix = bvhLevel.transform * modelMatrix; 
+                    modelMatrix = bvh.transform * modelMatrix; 
                     s_Boxes.push_back({node.minBounds, node.maxBounds}); 
                     s_transforms.push_back(modelMatrix);
                     totalNodes++;
-            }
+                }
+        }
         }
 
         GE_CORE_INFO("LBVHManager - Generated {} BVH boxes for visualization.", totalNodes);
@@ -400,7 +441,7 @@ namespace Rapture {
             // Only recurse if it's an internal node (primitiveCount == 0)
             // Although the depth check already handles this implicitly,
             // checking primitiveCount avoids unnecessary recursion if a leaf is reached before targetDepth.
-            if (node.primitiveCount == 0) {
+            if (node.primitiveIdx == 0) {
                  traverseNodeForDepth(bvhCpu, node.leftChildIndex, currentDepth + 1, targetDepth, boxesAtDepth, transformsAtDepth);
                  traverseNodeForDepth(bvhCpu, node.rightChildIndex, currentDepth + 1, targetDepth, boxesAtDepth, transformsAtDepth);
             }
@@ -435,8 +476,9 @@ namespace Rapture {
 
 
         for (const auto& bvhCpu : allBvhs) {
-            if (bvhCpu.nodes.empty()) continue; // Skip empty BVHs
-            traverseNodeForDepth(bvhCpu, bvhCpu.rootIndex, 0, depth, s_BoxesAtDepth, s_transformsAtDepth);
+            auto& bvh = bvhCpu.second;
+            if (bvh.nodes.empty()) continue; // Skip empty BVHs
+            traverseNodeForDepth(bvh, bvh.rootIndex, 0, depth, s_BoxesAtDepth, s_transformsAtDepth);
         }
 
 

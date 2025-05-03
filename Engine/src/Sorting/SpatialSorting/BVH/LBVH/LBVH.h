@@ -7,7 +7,8 @@
 #include <cstdint>
 #include <vector>
 #include <utility>
-
+#include <unordered_map>
+#include "../../../../Scenes/Entity.h"
 #include "../../../../Scenes/Scene.h"
 
 
@@ -16,12 +17,13 @@ namespace Rapture {
 
 
 struct BVHNode {
+    int leftChildIndex; // Index of left child.
+    int rightChildIndex; // Index of right child.
+
+    uint32_t primitiveIdx;  
+
     glm::vec3 minBounds;
     glm::vec3 maxBounds;
-    uint32_t leftChildIndex; // Index of left child.
-    uint32_t rightChildIndex; // Index of right child.
-    uint32_t parentIndex; // Index of parent node.
-    uint32_t primitiveCount;        // 0 for internal, >0 for leaf
 
 };
 
@@ -46,7 +48,8 @@ struct LBVHConstructionInfo {
 
 struct BVHCPU {
     std::vector<BVHNode> nodes;
-    uint32_t rootIndex=0;
+    uint32_t rootIndex=0; // relative to a specific mesh bvh
+    uint32_t absoluteRootIndex=0; // index inside a full bvh buffer with bvhs from other meshes, should be better when we have a tlas
     glm::mat4 transform;
 };
 
@@ -60,12 +63,15 @@ class LBVH {
 
 
         // Returns a const reference to the vector containing all generated BVHs (one per mesh)
-        const std::vector<BVHCPU>& getAllCPUBVHNodes() const { return m_cpuBVHNodes; };
+        const std::unordered_map<uint32_t, BVHCPU>& getAllCPUBVHNodes() const { return m_cpuBVHNodes; };
+
+        std::shared_ptr<ShaderStorageBuffer> getCompleteBVHNodesBuffer();
 
     private:
         // Reads the BVH node data from the GPU buffer to the CPU if necessary
         // and returns a const reference to the cached CPU-side vector.
         std::vector<BVHNode> getCPUBVHNodes();
+        void fillCompleteBVHNodesBuffer();
 
     private:
         std::shared_ptr<Shader> m_StructureShader;
@@ -78,11 +84,15 @@ class LBVH {
         std::shared_ptr<ShaderStorageBuffer> m_PrimitiveAABBsBuffer;
         std::shared_ptr<ShaderStorageBuffer> m_LBVHConstructionInfoBuffer;
         
+        // contains all the bvh nodes from all meshes, instead of just for 1 mesh
+        std::shared_ptr<ShaderStorageBuffer> m_CompleteBVHNodesBuffer;
+
+
         std::string m_StructureShaderPath = "Sorting/BVH/LBVH/LBVH_Structure.cs.glsl";
         std::string m_AABBShaderPath = "Sorting/BVH/LBVH/LBVH_AABB.cs.glsl";
 
         // CPU-side cache for BVH nodes
-        std::vector<BVHCPU> m_cpuBVHNodes;
+        std::unordered_map<EntityID, BVHCPU> m_cpuBVHNodes;
         // Dirty flag to track if GPU data needs to be re-read
         bool m_isDirty = true;
         // Store the triangle count from the last generation for buffer size calculation
@@ -94,8 +104,9 @@ class LBVH {
 
 class LBVHManager {
     public:
-        static void init(std::shared_ptr<Scene> scene);
+        static void init(std::shared_ptr<Scene> scene, bool generateBVHDebugData=true);
         static void shutdown();
+
 
         static std::shared_ptr<LBVH> getLBVH();
         static std::vector<std::pair<glm::vec3, glm::vec3>> getBoxes(uint32_t start, uint32_t end);
