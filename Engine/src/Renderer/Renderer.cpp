@@ -1023,4 +1023,105 @@ namespace Rapture
         glDeleteBuffers(1, &instanceVBO);
     }
 
+    // Draw multiple instances of a base sphere at specified positions.
+    void Renderer::drawInstancedSpheres(const Sphere& baseSphere, const std::vector<glm::vec3>& positions)
+    {
+        RAPTURE_PROFILE_FUNCTION();
+        RAPTURE_PROFILE_GPU_SCOPE("DrawInstancedSpheres");
+
+        if (positions.empty()) {
+            return; // Nothing to draw
+        }
+
+        // Get mesh and material from the provided base sphere
+        auto mesh = baseSphere.getMesh();
+        auto material = const_cast<Sphere&>(baseSphere).getMaterial();
+
+        if (!mesh || !material) {
+             GE_RENDER_ERROR("Failed to get mesh or material from base sphere");
+            return;
+        }
+
+        auto vao = mesh->getMeshData().vao;
+        const auto& meshData = mesh->getMeshData();
+        int instanceCount = static_cast<int>(positions.size());
+
+        if (!vao) {
+             GE_RENDER_ERROR("Missing VAO for instanced sphere drawing");
+            return;
+        }
+
+        // --- Create Transformation Matrices from Positions ---
+        std::vector<glm::mat4> transforms;
+        transforms.reserve(instanceCount);
+        // Note: This assumes the baseSphere mesh already has the desired radius.
+        // If scaling per instance is needed, it should be incorporated here or
+        // passed differently.
+        for (const auto& pos : positions) {
+            // Create a translation matrix
+            transforms.push_back(glm::translate(glm::mat4(1.0f), pos));
+        }
+        // ----------------------------------------------------
+
+        // Create and configure the instance VBO for transformation matrices
+        unsigned int instanceVBO;
+        glGenBuffers(1, &instanceVBO);
+        glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+        // Now using the generated transforms vector
+        glBufferData(GL_ARRAY_BUFFER, instanceCount * sizeof(glm::mat4), transforms.data(), GL_DYNAMIC_DRAW);
+
+        vao->bind();
+        glBindBuffer(GL_ARRAY_BUFFER, instanceVBO); // Bind instance VBO again *after* binding VAO
+
+        // Set up vertex attributes for the mat4 (locations 3, 4, 5, 6)
+        const GLuint matrixAttribLocationStart = 3;
+        const GLsizei vec4Size = sizeof(glm::vec4);
+        for (int i = 0; i < 4; ++i) {
+            glEnableVertexAttribArray(matrixAttribLocationStart + i);
+            glVertexAttribPointer(matrixAttribLocationStart + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(i * vec4Size));
+            glVertexAttribDivisor(matrixAttribLocationStart + i, 1); // Tell OpenGL this is an instanced attribute
+        }
+
+        // Bind material (handles color, texture, etc.)
+        material->bind();
+        auto shader = material->getShader();
+        if (!shader) {
+             GE_RENDER_ERROR("Missing shader for sphere material");
+             // Clean up attribute state before returning
+             for (int i = 0; i < 4; ++i) {
+                glDisableVertexAttribArray(matrixAttribLocationStart + i);
+             }
+             glBindBuffer(GL_ARRAY_BUFFER, 0);
+             vao->unbind();
+             glDeleteBuffers(1, &instanceVBO);
+            return;
+        }
+
+        // Set uniforms required by the shader for instancing
+        shader->setBool("u_IsInstanced", true);
+        // NOTE: Shader must be adapted to use aInstanceMatrix (attribute 3-6).
+        // It should apply this matrix to the vertex position.
+
+
+        // Call the instanced draw function
+        OpenGLRendererAPI::drawIndexedInstanced(
+            meshData.indexCount,
+            meshData.indexType,
+            meshData.indexAllocation->offsetBytes,
+            meshData.vertexOffsetInVertices,
+            instanceCount
+        );
+
+
+        for (int i = 0; i < 4; ++i) {
+            glDisableVertexAttribArray(matrixAttribLocationStart + i);
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        vao->unbind();
+        material->unbind();
+
+        // Clean up the instance buffer
+        glDeleteBuffers(1, &instanceVBO);
+    }
+
 }

@@ -212,12 +212,12 @@ namespace Rapture {
     {
         std::vector<BVHNode> nodes;
 
-        for (const auto& bvh : m_cpuBVHNodes) {
-            auto nodes = bvh.second.nodes;
-            nodes.insert(nodes.end(), nodes.begin(), nodes.end());
-        }
+        //for (const auto& bvh : m_cpuBVHNodes) {
+        //    auto nodes = bvh.second.nodes;
+        //    nodes.insert(nodes.end(), nodes.begin(), nodes.end());
+        //}
 
-        m_CompleteBVHNodesBuffer = std::make_shared<ShaderStorageBuffer>(nodes.size() * sizeof(BVHNode), BufferUsage::Static, nodes.data());
+        m_CompleteBVHNodesBuffer = std::make_shared<ShaderStorageBuffer>(m_correctOrderedNodes.size() * sizeof(BVHNode), BufferUsage::Static, m_correctOrderedNodes.data());
 
     }
 
@@ -246,6 +246,8 @@ namespace Rapture {
             bvhCPU.transform = transformComponent.transformMatrix();
             bvhCPU.absoluteRootIndex = totalNodes + bvhCPU.rootIndex;
             m_cpuBVHNodes[entityID] = bvhCPU;
+
+            m_correctOrderedNodes.insert(m_correctOrderedNodes.end(), nodes.begin(), nodes.end());
 
             totalNodes += nodes.size();
         }

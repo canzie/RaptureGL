@@ -247,14 +247,16 @@ namespace Rapture
 			cameraData.projection_mat = projMat;
 			cameraData.view_mat = viewMat;
 
-				
+			
 			s_cameraUBO->setData(&cameraData, sizeof(CameraUniform));
-		}
+		    s_cameraUBO->bindBase();
+        }
 
 
 
         // Setup lights (uses caching)
         setupLightsUniforms(s);
+        s_lightsUBO->bindBase();
 
         // Update shadow matrices for all lights with shadow maps
         updateShadowMatrix(s);

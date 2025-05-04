@@ -20,7 +20,6 @@
 #include "Timestep/Timestep.h"
 #include "Renderer/RadianceCascades/RadianceCascades.h"
 #include "Renderer/RadianceCascades/RadianceCascadesManager.h"
-#include "Renderer/DDGI/DynamicDiffuseGI.h"
 
 #include "Sorting/SpatialSorting/BVH/LBVH/LBVH.h"
 
@@ -216,8 +215,18 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
 	CameraController::setMousePosition(pos.first, pos.second);
 
     Rapture::LBVHManager::init(activeScene, false);
-    Rapture::DynamicDiffuseGI ddgi = Rapture::DynamicDiffuseGI();
-    //ddgi.populateProbes(activeScene);
+    m_ddgi = std::make_shared<Rapture::DynamicDiffuseGI>();
+    m_ddgi->populateProbes(activeScene);
+
+    auto radianceTexture = m_ddgi->getRadianceTexture();
+    Rapture::Entity ddgiEntity = activeScene->createEntity("DDGI");
+    ddgiEntity.addComponent<Rapture::ComputeTextureComponent>(nullptr, radianceTexture);
+
+    Rapture::PrimitiveConfig sphereConfig;
+    sphereConfig.useTexCoords = true;
+    sphereConfig.radius = 0.1f;
+    m_debugProbeSphere = std::make_shared<Rapture::Sphere>(sphereConfig);
+    
 }
 
 
@@ -420,12 +429,14 @@ void TestLayer::onUpdate(float ts)
         //Rapture::Renderer::drawBoundingBox(*m_selectedEntity);
     }
 
+    //m_ddgi->populateProbesCompute();
+
 
     //Rapture::Renderer::drawAllBoundingBoxes(activeScene);
     //Rapture::Renderer::drawDebugFrustum();
     //Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesSubset(), Rapture::LBVHManager::getTransformsSubset());
     Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesAtDepth(), Rapture::LBVHManager::getTransformsAtDepth());
-
+    Rapture::Renderer::drawInstancedSpheres(*m_debugProbeSphere, m_ddgi->getDebugProbePositions());
 
     // Draw the debug ray if active
     if (m_showDebugRay && m_debugRayLine) {

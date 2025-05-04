@@ -18,6 +18,8 @@ namespace Rapture
 {
 	// Forward declaration
 	class Mesh;
+    class Material;
+    class Sphere; // Forward declare Sphere
 
 	class Renderer
 	{
@@ -81,6 +83,9 @@ namespace Rapture
         // Draw multiple bounding boxes efficiently using instanced rendering
         // Assumes the provided transforms correctly position and scale a unit cube for each instance
         static void drawInstancedBoundingBoxes(const std::vector<std::pair<glm::vec3, glm::vec3>>& bounds, const std::vector<glm::mat4>& transforms);
+
+        // Draw multiple instances of a base sphere at specified positions.
+        static void drawInstancedSpheres(const Sphere& baseSphere, const std::vector<glm::vec3>& positions);
 
 	private:
 		// Static reusable line for debug purposes

@@ -19,35 +19,34 @@ namespace Rapture {
 
 struct BufferMetadata {
 
-    uint32_t positionAttributeOffsetBytes; // Offset of position *within* the stride
-    uint32_t texCoordAttributeOffsetBytes;
-    uint32_t vertexStrideBytes;            // Stride of the vertex buffer in bytes
-    uint32_t indexType;                    // GL_UNSIGNED_INT (5125) or GL_UNSIGNED_SHORT (5123)
+    alignas(4) uint32_t positionAttributeOffsetBytes; // Offset of position *within* the stride
+    alignas(4) uint32_t texCoordAttributeOffsetBytes;
+    alignas(4) uint32_t vertexStrideBytes;            // Stride of the vertex buffer in bytes
+    alignas(4) uint32_t indexType;                    // GL_UNSIGNED_INT (5125) or GL_UNSIGNED_SHORT (5123)
 
-    uint64_t VBOHandle;
-    uint64_t IBOHandle;
+    alignas(8) uint64_t VBOHandle;
+    alignas(8) uint64_t IBOHandle;
 };
 
 struct MeshInfo {
-    uint32_t RootIndex; // index of the root node in the BVH
-    uint64_t AlbedoTextureHandle;
-    uint64_t NormalTextureHandle;
-    uint64_t MetallicRoughnessTextureHandle;
-    uint32_t bufferMetadataIDX; // index for BufferMetadata array
-    uint32_t triangleOffset; // offset of the first triangle
+    alignas(4) uint32_t RootIndex; // index of the root node in the BVH
+    alignas(8) uint64_t AlbedoTextureHandle;
+    alignas(8) uint64_t NormalTextureHandle;
+    alignas(8) uint64_t MetallicRoughnessTextureHandle;
+    alignas(4) uint32_t bufferMetadataIDX; // index for BufferMetadata array
 
     // offset of the mesh's vertex and index data
-    uint32_t vertexOffsetBytes;
-    uint32_t indexOffsetBytes;
+    alignas(4) uint32_t vertexOffsetBytes;
+    alignas(4) uint32_t indexOffsetBytes;
 
-    glm::mat4 Transform;
+    alignas(16) glm::mat4 Transform;
 };
 
 struct ProbeInfo {
-    glm::uvec3 probeGridDimensions; // Number of probes in each dimension (X, Y, Z)
-    glm::uvec2 probeResolution; // Resolution of each probe texture (e.g., 8x8)
-    glm::vec3 probeSpacing;
-    glm::vec3 probeOrigin; // will probably be camera position
+    alignas(16) glm::uvec3 probeGridDimensions; // Number of probes in each dimension (X, Y, Z)
+    alignas(8) glm::uvec2 probeResolution; // Resolution of each probe texture (e.g., 8x8)
+    alignas(16) glm::vec3 probeSpacing;
+    alignas(16) glm::vec3 probeOrigin; // will probably be camera position
 };
 
 class DynamicDiffuseGI {
@@ -56,6 +55,11 @@ public:
     ~DynamicDiffuseGI();
 
     void populateProbes(std::shared_ptr<Scene> scene);
+    void populateProbesCompute();
+
+    std::shared_ptr<Texture2D> getRadianceTexture() { return m_RadianceTexture; }
+
+    std::vector<glm::vec3>& getDebugProbePositions() { return m_DebugProbePositions; }
 
 private:
     int createBufferMetadata(std::shared_ptr<VertexArray> vao);
@@ -75,7 +79,10 @@ private:
     std::shared_ptr<Texture2D> m_RadianceTexture;
     std::shared_ptr<Texture2D> m_VisibilityTexture;
 
+    std::vector<glm::vec3> m_DebugProbePositions;
 
+    uint32_t m_meshCount;
+    uint32_t m_probesPerRow; // Number of probes along the X-axis of the atlas texture
     
 };
 

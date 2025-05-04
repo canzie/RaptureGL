@@ -12,6 +12,7 @@
 #include "Textures/Texture.h"
 #include "Shaders/Shader.h"
 #include <vector>
+#include "Renderer/DDGI/DynamicDiffuseGI.h"
 
 // Forward declarations
 class ViewportPanel;
@@ -102,7 +103,10 @@ private:
 
     // Sphere for material viewer
     std::shared_ptr<Rapture::Sphere> m_materialViewerSphere;
-    
+    std::shared_ptr<Rapture::Sphere> m_debugProbeSphere;
+
+    std::shared_ptr<Rapture::DynamicDiffuseGI> m_ddgi;
+
     // Event listener IDs for cleanup
     size_t m_sceneActivatedListenerId = 0;
 

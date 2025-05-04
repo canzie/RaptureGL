@@ -17,13 +17,13 @@ namespace Rapture {
 
 
 struct BVHNode {
-    int leftChildIndex; // Index of left child.
-    int rightChildIndex; // Index of right child.
+    alignas(4) int leftChildIndex; // Index of left child.
+    alignas(4) int rightChildIndex; // Index of right child.
 
-    uint32_t primitiveIdx;  
+    alignas(4) uint32_t primitiveIdx;  
 
-    glm::vec3 minBounds;
-    glm::vec3 maxBounds;
+    alignas(16) glm::vec3 minBounds;
+    alignas(16) glm::vec3 maxBounds;
 
 };
 
@@ -93,6 +93,7 @@ class LBVH {
 
         // CPU-side cache for BVH nodes
         std::unordered_map<EntityID, BVHCPU> m_cpuBVHNodes;
+        std::vector<BVHNode> m_correctOrderedNodes;
         // Dirty flag to track if GPU data needs to be re-read
         bool m_isDirty = true;
         // Store the triangle count from the last generation for buffer size calculation

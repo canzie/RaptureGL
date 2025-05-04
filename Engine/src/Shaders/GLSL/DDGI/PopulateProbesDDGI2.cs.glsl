@@ -272,20 +272,37 @@ bool traceBVH(Ray ray, uint index, out BVHNode result) {
 
                 float dstA;
                 float dstB;
-                RayBoundingBoxDst(ray, childA.aabbMin, childA.aabbMax, dstA);
-                RayBoundingBoxDst(ray, childB.aabbMin, childB.aabbMax, dstB);
+                bool hitA = RayBoundingBoxDst(ray, childA.aabbMin, childA.aabbMax, dstA);
+                bool hitB = RayBoundingBoxDst(ray, childB.aabbMin, childB.aabbMax, dstB);
 
-                bool isNestestA = dstA < dstB;
-                float dstNearest = isNestestA ? dstA : dstB;
-                float dstFarthest = isNestestA ? dstB : dstA;
-                uint childIndexNear = isNestestA ? childIndexA : childIndexB;
-                uint childIndexFar = isNestestA ? childIndexB : childIndexA;
+                // Determine order for stack push (process nearer first)
+                uint childIndexNear, childIndexFar;
+                bool nearHit, farHit;
 
-                if (dstFarthest < tHitCurrent) {
-                    nodeStack[stackPointer++] = childIndexFar;
+                if (hitA && hitB) {
+                    if (dstA < dstB) {
+                        childIndexNear = childIndexA; nearHit = true;
+                        childIndexFar = childIndexB; farHit = true;
+                    } else {
+                        childIndexNear = childIndexB; nearHit = true;
+                        childIndexFar = childIndexA; farHit = true;
+                    }
+                } else if (hitA) {
+                    childIndexNear = childIndexA; nearHit = true;
+                    childIndexFar = childIndexB; farHit = false; // Mark far as miss
+                } else if (hitB) {
+                    childIndexNear = childIndexB; nearHit = true;
+                    childIndexFar = childIndexA; farHit = false; // Mark far as miss
+                } else {
+                    continue; // Neither child hit
                 }
 
-                if (dstNearest > tHitCurrent) {
+                // Push far child first if hit and stack has space (avoids overflow)
+                if (farHit && stackPointer < 128) {
+                    nodeStack[stackPointer++] = childIndexFar;
+                }
+                // Push near child if hit and stack has space (avoids overflow)
+                if (nearHit && stackPointer < 128) {
                     nodeStack[stackPointer++] = childIndexNear;
                 }
             }
@@ -459,21 +476,13 @@ void main() {
 
 
     Ray ray = Ray(probePosition, rayDirection, invDir);
-    HitInfo hitInfo;
-    hitInfo.hit = false; // Initialize hit info
     BVHNode hitNode; // Renamed from 'result' to avoid conflict
-    bool bvhHitNodeFound = false;
-    bool triangleIntersected = false;
     vec3 finalColor = vec3(0.0, 0.0, 0.0); // Default color (miss)
 
-    uint closestMeshIndex = 0;
-
-    float currentClosestHitDistance = 0x7FFFFFFF;
-    uint hits = 0;
-
-
-    // set default color
-    imageStore(probeAtlas, globalIndex2D, vec4(1.0, 0.0, 0.0, 1.0));
+    // Structure to store the closest hit information found across all meshes
+    HitInfo closestHitInfo;
+    closestHitInfo.hit = false;
+    closestHitInfo.t = 0x7FFFFFFF; // Initialize distance to max float (infinity)
 
     for (int i = 0; i < u_meshCount; i++) {
         MeshInfo meshInfo = u_sceneInfo.MeshInfos[i];
@@ -491,7 +500,6 @@ void main() {
         // Trace using the local space ray against the local space BVH AABBs
         if (traceBVH(localRay, rootIndex, hitNode)) {
             //imageStore(probeAtlas, globalIndex2D, vec4(hitNode.primitiveIdx, meshInfo.bufferMetadataIDX, 0.0, 1.0));
-            hits++;
             Triangle tri = getTriangle(meshInfo, hitNode.primitiveIdx);
 
             vec2 barycentricUV;
@@ -501,28 +509,49 @@ void main() {
 
 
             if (intersectTriangle(ray, tri, barycentricUV, t)) {
-                triangleIntersected = true;
-                hitInfo.hit = true;
-                hitInfo.barycentricUV = barycentricUV;
-                hitInfo.primitiveIndex = hitNode.primitiveIdx;
-                hitInfo.meshIndex = i;
-                hitInfo.t = t;
-
-                vec2 uv = interpolateUV(barycentricUV, tri);
-                vec3 albedo = sampleAlbedo(i, uv);
-                imageStore(probeAtlas, globalIndex2D, vec4(albedo, 1.0));
-
-                return; 
-            
+                // An intersection occurred for *this* triangle.
+                // Check if it's closer than the closest one found *so far*.
+                if (t < closestHitInfo.t) {
+                    // Yes, this is the new closest hit.
+                    closestHitInfo.hit = true;
+                    closestHitInfo.t = t;
+                    closestHitInfo.barycentricUV = barycentricUV;
+                    closestHitInfo.primitiveIndex = hitNode.primitiveIdx; // Store primitive index relative to this mesh
+                    closestHitInfo.meshIndex = i;                         // Store the mesh index
+                }
+                // Do NOT return here. Continue checking other meshes, as they might contain an even closer hit.
             }
-
-
         }
     }
 
+    // --- Determine Final Color (After checking ALL meshes) ---
+    if (closestHitInfo.hit) {
+        // An intersection was found. Use the details from closestHitInfo.
 
+        // Get the mesh info for the mesh that contained the closest hit.
+        MeshInfo closestMeshInfo = u_sceneInfo.MeshInfos[closestHitInfo.meshIndex];
+        // Get the specific triangle from that mesh using the stored primitive index.
+        Triangle closestTri = getTriangle(closestMeshInfo, closestHitInfo.primitiveIndex);
 
-    //imageStore(probeAtlas, globalIndex2D, vec4(finalColor, 1.0));
+        // Interpolate UV coordinates using the stored barycentrics.
+        vec2 uv = interpolateUV(closestHitInfo.barycentricUV, closestTri);
+
+        // Sample the albedo texture using the mesh index and interpolated UVs.
+        finalColor = sampleAlbedo(closestHitInfo.meshIndex, uv);
+
+         // --- Debug Views (Optional - Add #ifdef blocks if needed) ---
+        // e.g., finalColor = vec3(0.0, 1.0, 0.0); // Green for hit
+
+    } else {
+        // No intersection was found across all meshes for this ray.
+        finalColor = vec3(1.0, 0.0, 0.0); // Miss color (red)
+
+        // --- Debug Views for Miss Case (Optional - Add #ifdef blocks if needed) ---
+        // e.g., finalColor = vec3(0.0, 0.0, 1.0); // Blue for miss
+    }
+
+    // Store the final calculated color (hit or miss) into the probe atlas.
+    imageStore(probeAtlas, globalIndex2D, vec4(finalColor, 1.0));
 }
 
 

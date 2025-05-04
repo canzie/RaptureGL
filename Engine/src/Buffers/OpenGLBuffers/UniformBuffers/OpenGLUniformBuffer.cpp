@@ -97,8 +97,7 @@ namespace Rapture {
 
 		GE_CORE_INFO("UNIFORM BUFFER: Created UniformBuffer (ID: {0}, Size: {1} bytes)", m_rendererId, size);
 		
-		// Immediately bind to the specified binding point
-		bindBase();
+
 	}
 
 	UniformBuffer::~UniformBuffer() {

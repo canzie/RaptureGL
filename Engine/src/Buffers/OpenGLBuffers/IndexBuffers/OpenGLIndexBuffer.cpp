@@ -44,6 +44,8 @@ namespace Rapture {
 				m_idx_last_element = size;
 			}
 		}
+
+        generateBufferHandle();
 	}
 
 	IndexBuffer::IndexBuffer(const std::vector<unsigned char>& data, unsigned int componentType, BufferUsage usage)
