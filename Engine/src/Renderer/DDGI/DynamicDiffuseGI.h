@@ -49,6 +49,13 @@ struct ProbeInfo {
     alignas(16) glm::vec3 probeOrigin; // will probably be camera position
 };
 
+struct DebugData {
+    uint32_t leafHits;
+    uint32_t triangleHits;
+    float closestHit;
+    uint32_t closestHitMeshIndex;
+};
+
 class DynamicDiffuseGI {
 public:
     DynamicDiffuseGI();
@@ -64,6 +71,7 @@ public:
 private:
     int createBufferMetadata(std::shared_ptr<VertexArray> vao);
     int getBufferMetadataIndex(uint32_t vaoID);
+    void readDebugBuffer();
 
 private:
     std::shared_ptr<Shader> m_DDGI_PopulateProbesShader;
@@ -76,6 +84,8 @@ private:
     std::shared_ptr<ShaderStorageBuffer> m_BufferMetadataBuffer;
     std::shared_ptr<UniformBuffer> m_ProbeInfoBuffer;
 
+    std::shared_ptr<ShaderStorageBuffer> m_DebugBuffer;
+
     std::shared_ptr<Texture2D> m_RadianceTexture;
     std::shared_ptr<Texture2D> m_VisibilityTexture;
 
@@ -83,6 +93,7 @@ private:
 
     uint32_t m_meshCount;
     uint32_t m_probesPerRow; // Number of probes along the X-axis of the atlas texture
+
     
 };
 

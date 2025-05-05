@@ -237,3 +237,4 @@ void main() {
     outputMortonBuffer.mortonElements[globalTriangleIndex] = outputElement;
 }
 
+

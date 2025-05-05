@@ -149,7 +149,7 @@ void RadixSort::updateMortonCodes(const MeshBufferData &meshBufferData)
     meshMetadata.positionAttributeOffsetBytes = meshBufferData.vao->getBufferLayout().getAttribute(AttributeType::POSITION).offset;
     meshMetadata.meshIndex = 0; // only 1 mesh, so index 0
     meshMetadata.indexType = meshBufferData.indexType;
-    meshMetadata.vertexStride = meshBufferData.vao->getBufferLayout().vertexSize;
+    meshMetadata.vertexStrideBytes = meshBufferData.vao->getBufferLayout().vertexSize;
 
     uint32_t numWorkGroups = (meshMetadata.triangleCount + 256 - 1) / 256;
 
@@ -264,7 +264,7 @@ bool RadixSort::testMortonCodeConversion()
     meshMetadata.positionAttributeOffsetBytes = 0;
     meshMetadata.meshIndex = 0;
     meshMetadata.indexType = 5125;
-    meshMetadata.vertexStride = sizeof(glm::vec3);
+    meshMetadata.vertexStrideBytes = sizeof(glm::vec3);
 
 
 

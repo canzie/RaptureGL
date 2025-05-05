@@ -21,7 +21,7 @@ namespace Rapture {
         // buffer data index
 
         alignas(4) uint32_t positionAttributeOffsetBytes; // Offset of position within the stride
-        alignas(4) uint32_t vertexStride;                  // Stride of the vertex buffer
+        alignas(4) uint32_t vertexStrideBytes;                  // Stride of the vertex buffer
         alignas(4) uint32_t indexType;                   // Type of index buffer (16-bit or 32-bit)
         
         alignas(4) uint32_t meshIndex;             // The ID of this mesh (0, 1, 2...)

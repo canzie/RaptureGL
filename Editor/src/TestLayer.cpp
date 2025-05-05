@@ -429,12 +429,13 @@ void TestLayer::onUpdate(float ts)
         //Rapture::Renderer::drawBoundingBox(*m_selectedEntity);
     }
 
-    //m_ddgi->populateProbesCompute();
+    m_ddgi->populateProbesCompute();
 
 
     //Rapture::Renderer::drawAllBoundingBoxes(activeScene);
     //Rapture::Renderer::drawDebugFrustum();
     //Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesSubset(), Rapture::LBVHManager::getTransformsSubset());
+    
     Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesAtDepth(), Rapture::LBVHManager::getTransformsAtDepth());
     Rapture::Renderer::drawInstancedSpheres(*m_debugProbeSphere, m_ddgi->getDebugProbePositions());
 

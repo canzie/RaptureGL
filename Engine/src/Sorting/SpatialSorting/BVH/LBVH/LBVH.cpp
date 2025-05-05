@@ -189,11 +189,9 @@ namespace Rapture {
         } else {
             GE_CORE_ERROR("Failed to map BVHNodesBuffer for reading.");
             // Clear the vector to indicate failure, or handle error appropriately
-            nodes.clear(); 
+            nodes.clear();
         }
 
-        // Data is now up-to-date on the CPU (or cleared on error)
-        m_isDirty = false;
         
         std::vector<BVHNode> BVHNodes = std::vector<BVHNode>(nodes.size());
         for (uint32_t i = 0; i < nodes.size(); i++) {
@@ -210,11 +208,14 @@ namespace Rapture {
 
     void LBVH::fillCompleteBVHNodesBuffer()
     {
+        
         std::vector<BVHNode> nodes;
+
+        //uint32_t bvhnodesSize = 0;
 
         //for (const auto& bvh : m_cpuBVHNodes) {
         //    auto nodes = bvh.second.nodes;
-        //    nodes.insert(nodes.end(), nodes.begin(), nodes.end());
+        //    bvhnodesSize += nodes.size();
         //}
 
         m_CompleteBVHNodesBuffer = std::make_shared<ShaderStorageBuffer>(m_correctOrderedNodes.size() * sizeof(BVHNode), BufferUsage::Static, m_correctOrderedNodes.data());

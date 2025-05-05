@@ -13,6 +13,7 @@ namespace Rapture {
         m_BufferMetadataBuffer(nullptr),
         m_RadianceTexture(nullptr),
         m_VisibilityTexture(nullptr),
+        m_DebugBuffer(nullptr),
         m_probesPerRow(0)
     {
 
@@ -48,9 +49,9 @@ namespace Rapture {
 
         //probe info
         ProbeInfo probeInfo;
-        probeInfo.probeGridDimensions = glm::uvec3(16, 16, 16);
+        probeInfo.probeGridDimensions = glm::uvec3(32, 16, 32);
         probeInfo.probeResolution = glm::uvec2(8, 8);
-        probeInfo.probeSpacing = glm::vec3(2.0f, 2.0f, 2.0f);
+        probeInfo.probeSpacing = glm::vec3(1.0f, 1.0f, 1.0f);
 
         // probe positions, rotation does not matter since we place porbes around the camera, even behind
         probeInfo.probeOrigin = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -70,7 +71,7 @@ namespace Rapture {
                 }
             }
         }
-        
+
 
         
 
@@ -125,7 +126,6 @@ namespace Rapture {
                 if (albedoTextureHandle == 0 || normalTextureHandle == 0 || roughnessTextureHandle == 0) {
                     GE_CORE_WARN("DynamicDiffuseGI::populateProbes - Mesh {0} has no albedo, normal, or roughness texture", entityID);   
                 }
-                GE_CORE_TRACE("DynamicDiffuseGI::populateProbes - Mesh {0} has albedo texture handle: {1}, normal texture handle: {2}, roughness texture handle: {3}", entityID, albedoTextureHandle, normalTextureHandle, roughnessTextureHandle);
 
 
                 MeshInfo meshInfo;
@@ -175,6 +175,9 @@ namespace Rapture {
         texture_dims.x = m_probesPerRow * probeInfo.probeResolution.x;
         texture_dims.y = probesPerCol * probeInfo.probeResolution.y;
 
+        m_DebugBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(DebugData) * texture_dims.x * texture_dims.y, BufferUsage::Dynamic, nullptr);
+
+
         GE_CORE_INFO("DDGI Atlas Config: Total Probes: {}, Probes Per Row: {}, Probes Per Col: {}, Atlas Dims: ({}, {})", total_probes, m_probesPerRow, probesPerCol, texture_dims.x, texture_dims.y);
 
         TextureSpecification radianceSpec;
@@ -200,8 +203,10 @@ namespace Rapture {
 
         populateProbesCompute();
 
+        //readDebugBuffer();
 
     }
+
     void DynamicDiffuseGI::populateProbesCompute()
     {
 
@@ -215,6 +220,8 @@ namespace Rapture {
         m_MeshInfoBuffer->bindBase(3);
         m_BufferMetadataBuffer->bindBase(2);
         completeBVHNodesBuffer->bindBase(1);
+        m_DebugBuffer->bindBase(4);
+
 
         m_DDGI_PopulateProbesShader->setVec2("u_AtlasTextureResolution", glm::vec2(twidth, theight));
         m_DDGI_PopulateProbesShader->setUint("u_meshCount", m_meshCount);
@@ -270,5 +277,44 @@ namespace Rapture {
             }
         }
         return -1;
+    }
+
+    void DynamicDiffuseGI::readDebugBuffer()
+    {
+        if (!m_DebugBuffer) {
+            GE_CORE_WARN("DynamicDiffuseGI::readDebugBuffer - DebugBuffer is not set");
+            return;
+        }
+
+        ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true}); // Add a memory barrier before reading
+            
+        uint32_t bufferSize = m_RadianceTexture->getHeight() * m_RadianceTexture->getWidth() * sizeof(DebugData);
+
+        std::vector<DebugData> debugData(bufferSize);
+
+        // Map the buffer to read data
+        void* mappedData = m_DebugBuffer->map(0, bufferSize);
+        if (mappedData) {
+            // Copy the data from the mapped buffer to the CPU vector
+            memcpy(debugData.data(), mappedData, bufferSize);
+            // Unmap the buffer now that we're done reading
+            m_DebugBuffer->unmap();
+        } else {
+            GE_CORE_ERROR("Failed to map DebugBuffer for reading.");
+            // Clear the vector to indicate failure, or handle error appropriately
+            debugData.clear();
+        }
+
+
+
+        for (int i = 0; i < debugData.size(); i++) {
+            if (debugData[i].leafHits != 0) {
+                uint32_t probeIndex = uint32_t(i / 64);
+                GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Probe {0} - Leaf Hits: {1}, Triangle Hits: {2}, Closest Hit: {3}, Closest Hit Mesh Index: {4}", probeIndex, debugData[i].leafHits, debugData[i].triangleHits, debugData[i].closestHit, debugData[i].closestHitMeshIndex);
+            }
+        }
+
+        debugData.clear();
+        
     }
 }
