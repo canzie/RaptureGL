@@ -14,7 +14,12 @@ namespace Rapture {
         m_RadianceTexture(nullptr),
         m_VisibilityTexture(nullptr),
         m_DebugBuffer(nullptr),
-        m_probesPerRow(0)
+        m_PrevRadianceTexture(nullptr),
+        m_PrevVisibilityTexture(nullptr),
+        m_probesPerRow(0),
+        m_isEvenFrame(true),
+        m_Hysteresis(0.96f),
+        m_SunLightBuffer(nullptr)
     {
 
         auto& app = Application::getInstance();
@@ -142,13 +147,23 @@ namespace Rapture {
             }
 
 
-
         }
 
         std::vector<BufferMetadata> bufferMetadataOnly;
 
         for (auto& bufferMetadataPair : m_BufferMetadataMap) {
             bufferMetadataOnly.push_back(bufferMetadataPair.second);
+        }
+
+        auto lightView = reg.view<LightComponent, TransformComponent>();
+        DirectionalLightBufferInfo directionalLightBufferInfo = {glm::vec3(0.0f), 0.0f};
+
+        for (auto entity : lightView) {
+            auto [lightComp, transformComp] = lightView.get<LightComponent, TransformComponent>(entity);
+            if (lightComp.type == LightType::Directional) {
+                directionalLightBufferInfo.direction = transformComp.rotation();
+                directionalLightBufferInfo.intensity = lightComp.intensity;
+            }
         }
 
         // create all buffers and texture(s)
@@ -159,6 +174,9 @@ namespace Rapture {
         m_meshCount = meshInfos.size();
         // buffer buffermetadata ssbo
         m_BufferMetadataBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(BufferMetadata) * bufferMetadataOnly.size(), BufferUsage::Static, bufferMetadataOnly.data());
+
+        // sun light ubo
+        m_SunLightBuffer = std::make_shared<UniformBuffer>(sizeof(DirectionalLightBufferInfo), BufferUsage::Static, &directionalLightBufferInfo);
 
         // create the textures
 
@@ -189,17 +207,40 @@ namespace Rapture {
         visibilitySpec.width = texture_dims.x;
         visibilitySpec.height = texture_dims.y;
         visibilitySpec.format = TextureFormat::RG16F;
+        
 
         m_RadianceTexture = Texture2D::create(radianceSpec);
         m_VisibilityTexture = Texture2D::create(visibilitySpec);
+
+        m_PrevRadianceTexture = Texture2D::create(radianceSpec);
+        m_PrevVisibilityTexture = Texture2D::create(visibilitySpec);
+
 
         m_RadianceTexture->setMinFilter(TextureFilter::Nearest); // Linear interpolation within a cascade is valid
         m_RadianceTexture->setMagFilter(TextureFilter::Nearest);
         m_RadianceTexture->setWrapS(TextureWrap::ClampToEdge);
         m_RadianceTexture->setWrapT(TextureWrap::ClampToEdge);
 
+        m_VisibilityTexture->setMinFilter(TextureFilter::Nearest); // Linear interpolation within a cascade is valid
+        m_VisibilityTexture->setMagFilter(TextureFilter::Nearest);
+        m_VisibilityTexture->setWrapS(TextureWrap::ClampToEdge);
+        m_VisibilityTexture->setWrapT(TextureWrap::ClampToEdge);
+
+        m_PrevRadianceTexture->setMinFilter(TextureFilter::Nearest); // Linear interpolation within a cascade is valid
+        m_PrevRadianceTexture->setMagFilter(TextureFilter::Nearest);
+        m_PrevRadianceTexture->setWrapS(TextureWrap::ClampToEdge);
+        m_PrevRadianceTexture->setWrapT(TextureWrap::ClampToEdge);
+
+        m_PrevVisibilityTexture->setMinFilter(TextureFilter::Nearest); // Linear interpolation within a cascade is valid
+        m_PrevVisibilityTexture->setMagFilter(TextureFilter::Nearest);
+        m_PrevVisibilityTexture->setWrapS(TextureWrap::ClampToEdge);
+        m_PrevVisibilityTexture->setWrapT(TextureWrap::ClampToEdge);
+
         m_RadianceTexture->makeResident();
         m_VisibilityTexture->makeResident();
+
+        m_PrevRadianceTexture->makeResident();
+        m_PrevVisibilityTexture->makeResident();
 
         populateProbesCompute();
 
@@ -216,21 +257,35 @@ namespace Rapture {
 
         m_DDGI_PopulateProbesShader->bind();
 
-        m_ProbeInfoBuffer->bindBase(0);
-        m_MeshInfoBuffer->bindBase(3);
-        m_BufferMetadataBuffer->bindBase(2);
-        completeBVHNodesBuffer->bindBase(1);
-        m_DebugBuffer->bindBase(4);
+        m_ProbeInfoBuffer->bindBase(0); // UBO
+        m_SunLightBuffer->bindBase(1); // UBO
 
+
+        m_MeshInfoBuffer->bindBase(3); // SSBO
+        m_BufferMetadataBuffer->bindBase(2); // SSBO
+        completeBVHNodesBuffer->bindBase(1); // SSBO
+        m_DebugBuffer->bindBase(4); // SSBO
 
         m_DDGI_PopulateProbesShader->setVec2("u_AtlasTextureResolution", glm::vec2(twidth, theight));
         m_DDGI_PopulateProbesShader->setUint("u_meshCount", m_meshCount);
         m_DDGI_PopulateProbesShader->setUint("u_probesPerRow", m_probesPerRow);
+        m_DDGI_PopulateProbesShader->setFloat("u_hysteresis", m_Hysteresis);
 
         // bind the texture(s)
         // texture(s)
-        m_RadianceTexture->bindCompute(0);
-        m_VisibilityTexture->bindCompute(1);
+        if (m_isEvenFrame) {
+            m_RadianceTexture->bindCompute(0);
+            m_VisibilityTexture->bindCompute(1);
+            m_PrevRadianceTexture->bindCompute(2);
+            m_PrevVisibilityTexture->bindCompute(3);
+        } else {
+            m_PrevRadianceTexture->bindCompute(0);
+            m_PrevVisibilityTexture->bindCompute(1);
+            m_RadianceTexture->bindCompute(2);
+            m_VisibilityTexture->bindCompute(3);
+        }
+
+        m_isEvenFrame = !m_isEvenFrame;
 
         // dispatch the compute shader
         m_DDGI_PopulateProbesShader->dispatchCompute(twidth / 8, theight / 8, 1);
@@ -253,6 +308,8 @@ namespace Rapture {
 
         bufferMetadata.positionAttributeOffsetBytes = vao->getBufferLayout().getAttribute(AttributeType::POSITION).offset; 
         bufferMetadata.texCoordAttributeOffsetBytes = vao->getBufferLayout().getAttribute(AttributeType::TEXCOORD_0).offset;
+        bufferMetadata.normalAttributeOffsetBytes = vao->getBufferLayout().getAttribute(AttributeType::NORMAL).offset;
+        bufferMetadata.tangentAttributeOffsetBytes = vao->getBufferLayout().getAttribute(AttributeType::TANGENT).offset;
         bufferMetadata.vertexStrideBytes = vao->getBufferLayout().vertexSize;           
         bufferMetadata.indexType = vao->getIndexBuffer()->getIndexType();                   
 

@@ -219,8 +219,12 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     m_ddgi->populateProbes(activeScene);
 
     auto radianceTexture = m_ddgi->getRadianceTexture();
-    Rapture::Entity ddgiEntity = activeScene->createEntity("DDGI");
+    Rapture::Entity ddgiEntity = activeScene->createEntity("DDGI_Radiance");
     ddgiEntity.addComponent<Rapture::ComputeTextureComponent>(nullptr, radianceTexture);
+
+    auto visibilityTexture = m_ddgi->getVisibilityTexture();
+    Rapture::Entity ddgiVisibilityEntity = activeScene->createEntity("DDGI_Visibility");
+    ddgiVisibilityEntity.addComponent<Rapture::ComputeTextureComponent>(nullptr, visibilityTexture);
 
     Rapture::PrimitiveConfig sphereConfig;
     sphereConfig.useTexCoords = true;

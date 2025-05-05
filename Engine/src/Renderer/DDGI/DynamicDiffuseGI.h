@@ -21,6 +21,9 @@ struct BufferMetadata {
 
     alignas(4) uint32_t positionAttributeOffsetBytes; // Offset of position *within* the stride
     alignas(4) uint32_t texCoordAttributeOffsetBytes;
+    alignas(4) uint32_t normalAttributeOffsetBytes;
+    alignas(4) uint32_t tangentAttributeOffsetBytes;
+    
     alignas(4) uint32_t vertexStrideBytes;            // Stride of the vertex buffer in bytes
     alignas(4) uint32_t indexType;                    // GL_UNSIGNED_INT (5125) or GL_UNSIGNED_SHORT (5123)
 
@@ -49,6 +52,11 @@ struct ProbeInfo {
     alignas(16) glm::vec3 probeOrigin; // will probably be camera position
 };
 
+struct DirectionalLightBufferInfo {
+    alignas(16) glm::vec3 direction;
+    alignas(4) float intensity;
+};
+
 struct DebugData {
     uint32_t leafHits;
     uint32_t triangleHits;
@@ -64,7 +72,20 @@ public:
     void populateProbes(std::shared_ptr<Scene> scene);
     void populateProbesCompute();
 
-    std::shared_ptr<Texture2D> getRadianceTexture() { return m_RadianceTexture; }
+    std::shared_ptr<Texture2D> getRadianceTexture() { 
+        if (m_isEvenFrame) {
+            return m_RadianceTexture;
+        } else {
+            return m_PrevRadianceTexture;
+        }
+    }
+    std::shared_ptr<Texture2D> getVisibilityTexture() { 
+        if (m_isEvenFrame) {
+            return m_VisibilityTexture;
+        } else {
+            return m_PrevVisibilityTexture;
+        }
+    }
 
     std::vector<glm::vec3>& getDebugProbePositions() { return m_DebugProbePositions; }
 
@@ -86,10 +107,21 @@ private:
 
     std::shared_ptr<ShaderStorageBuffer> m_DebugBuffer;
 
+    // is actually irradiance but iam retarted, will need to update this everywhere :(
     std::shared_ptr<Texture2D> m_RadianceTexture;
     std::shared_ptr<Texture2D> m_VisibilityTexture;
 
+    std::shared_ptr<Texture2D> m_PrevRadianceTexture;
+    std::shared_ptr<Texture2D> m_PrevVisibilityTexture;
+
     std::vector<glm::vec3> m_DebugProbePositions;
+
+    std::shared_ptr<UniformBuffer> m_SunLightBuffer;
+
+    // used to alternate between the textures each frame
+    bool m_isEvenFrame;
+
+    float m_Hysteresis;
 
     uint32_t m_meshCount;
     uint32_t m_probesPerRow; // Number of probes along the X-axis of the atlas texture
