@@ -29,6 +29,9 @@ layout (binding = 1, rg16f) uniform restrict writeonly image2D probeDepthAtlas;
 layout (binding = 2, r11f_g11f_b10f) uniform restrict readonly image2D prevProbeAtlas;
 layout (binding = 3, rg16f) uniform restrict readonly image2D prevProbeDepthAtlas;
 
+// Skybox Cubemap
+layout (binding = 4) uniform samplerCube u_skyboxCubemap;
+
 // output of the builder; it is necessary to allocate the (empty) buffer
 struct LBVHNode {
     int left;
@@ -737,6 +740,10 @@ void main() {
          // --- Debug Views (Optional - Add #ifdef blocks if needed) ---
         // e.g., finalColor = vec3(0.0, 1.0, 0.0); // Green for hit
 
+    } else {
+        // Ray missed all geometry, sample from the skybox cubemap
+        // The ray direction is already normalized from octDecode
+        calculatedIrradiance = texture(u_skyboxCubemap, ray.direction).rgb;
     }
 
 

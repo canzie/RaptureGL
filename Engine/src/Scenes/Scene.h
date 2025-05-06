@@ -40,8 +40,8 @@ namespace Rapture
         SkyBox(std::vector<std::filesystem::path> texturePaths)
         {
             this->texturePaths = texturePaths;
-            //texture = TextureLibrary::loadCubemap(texturePaths);
             auto [asset, handle] = AssetManager::importAsset<Texture2D>(texturePaths);
+            texture = asset;
             skybox = Cube(true);
             skybox.getMaterial()->setTexture("skybox", asset, handle);
         }
@@ -49,8 +49,9 @@ namespace Rapture
         void setTexturePaths(std::vector<std::filesystem::path> texturePaths)
         {
             this->texturePaths = texturePaths;
-            //texture = TextureLibrary::loadCubemap(texturePaths);
             auto [asset, handle] = AssetManager::importAsset<Texture2D>(texturePaths);
+            texture = asset;
+
             skybox.getMaterial()->setTexture("skybox", asset, handle);
         }
         

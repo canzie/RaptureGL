@@ -66,6 +66,8 @@ private:
     uint32_t m_rendererID = 0;
     GLenum m_internalFormat = GL_RGBA8;
     GLenum m_dataFormat = GL_RGBA;
+
+    bool m_isCubemap = false;
     
     // Bindless texture data
     uint64_t m_textureHandle = 0;

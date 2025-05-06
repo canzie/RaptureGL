@@ -1,3 +1,4 @@
+
 #version 420 core
 
 #extension GL_ARB_bindless_texture : require
@@ -21,14 +22,10 @@ layout(location = 0) out vec4 FragColor;
 in vec2 TexCoord;
 
 // G-buffer textures
-layout(binding = 0) uniform sampler2D u_gAlbedo;
+layout(binding = 3) uniform sampler2D u_gPositionDepth; // Renamed variable, still vec4
 layout(binding = 1) uniform sampler2D u_gNormal;
+layout(binding = 0) uniform sampler2D u_gAlbedo;
 layout(binding = 2) uniform sampler2D u_gMaterialProps; // metallic, roughness, ao
-layout(binding = 3) uniform sampler2D u_gPositionDepth; // World Pos (rgb), Linear View Depth (a)
-
-// DDGI textures
-layout(binding = 4) uniform sampler2D probeAtlas;         // Irradiance
-layout(binding = 5) uniform sampler2D probeDepthAtlas;    // Distance, Distance^2
 
 precision highp float;
 
@@ -76,21 +73,7 @@ layout(std430, binding = 0) buffer ShadowDataLayout {
     ShadowBufferData shadowData[];
 };
 
-// DDGI probe info
-layout(std140, binding = 1) uniform ProbeInfoUBO { // Changed binding to 1
-    uvec3 probeGridDimensions;
-    uvec2 probeResolution; // Resolution of each probe texture (e.g., 8x8) - Assuming same for both atlases for now
-    vec3 probeSpacing;
-    vec3 probeOrigin;
-} u_ProbeInfo;
-
-// Need probes per row for atlas coord calculation
-uniform uint u_probesPerRow;
-uniform vec2 u_atlasSize;    // Total pixel dimensions of the probe atlases
-
 #define PI 3.14159265359
-#define INFINITY_FLOAT 0x7FFFFFFF // Match compute shader infinity
-#define epsilon 0.0001
 
 // --------------------------------
 // Lighting calculation functions
@@ -355,149 +338,6 @@ float calculateShadow(vec3 fragPosWorld, float fragDepthView, vec3 normal, vec3 
     }
 }
 
-// DDGI helper functions
-
-// Octahedral encoding for mapping a 3D direction vector to a 2D UV coordinate
-// From "A Survey of Octahedral Mappings" and common DDGI implementations
-vec2 octEncode(vec3 n) {
-    n /= (abs(n.x) + abs(n.y) + abs(n.z)); // Project to octahedron
-    vec2 encoded;
-    if (n.z >= 0.0) {
-        encoded = n.xy;
-    } else {
-        encoded.x = (1.0 - abs(n.y)) * (n.x >= 0.0 ? 1.0 : -1.0);
-        encoded.y = (1.0 - abs(n.x)) * (n.y >= 0.0 ? 1.0 : -1.0);
-    }
-    return encoded * 0.5 + 0.5; // Map from [-1, 1] to [0, 1]
-}
-
-// Calculates the UV coordinates within a probe atlas for a given probe and sample direction
-vec2 getProbeSpecificAtlasUV(uvec3 probeIndex3D, vec2 sampleDirOctEncodedUV, uvec2 singleProbeResolution) {
-    // 1. Convert 3D probe index to linear 1D index
-    uint linearIdx = probeIndex3D.z * (u_ProbeInfo.probeGridDimensions.x * u_ProbeInfo.probeGridDimensions.y) +
-                     probeIndex3D.y * u_ProbeInfo.probeGridDimensions.x +
-                     probeIndex3D.x;
-
-    // 2. Convert linear 1D index to 2D atlas grid coordinates (which probe tile)
-    uint atlasGridX = linearIdx % u_probesPerRow;
-    uint atlasGridY = linearIdx / u_probesPerRow;
-
-    // 3. Top-left texel of this specific probe's data in the atlas
-    vec2 probeTexelOrigin = vec2(atlasGridX * singleProbeResolution.x,
-                                 atlasGridY * singleProbeResolution.y);
-
-    // 4. Texel coordinate within this probe based on the octahedral encoded sample direction
-    // sampleDirOctEncodedUV is already [0,1], scale by probe resolution
-    vec2 localTexelOffset = sampleDirOctEncodedUV * vec2(singleProbeResolution); // Can go up to singleProbeResolution
-
-    // 5. Final texel coordinate in the atlas (center of the texel)
-    vec2 atlasTexelCoord = probeTexelOrigin + localTexelOffset;
-
-    // 6. Convert to normalized UV coordinates for texture sampling
-    // Add 0.5 to sample texel centers if localTexelOffset was integer-based.
-    // Since localTexelOffset can be fractional up to singleProbeResolution,
-    // we effectively want to sample across the probe's area.
-    // For direct texel lookup, it would be floor(localTexelOffset) + 0.5
-    // Given sampleDirOctEncodedUV is continuous [0,1], this directly maps to the probe's normalized space.
-    return atlasTexelCoord / u_atlasSize;
-}
-
-vec3 calculateIndirectDiffuseLighting(vec3 worldPos, vec3 worldNormal, vec3 viewDir) {
-    vec3 indirectDiffuse = vec3(0.0);
-    float totalWeight = 0.0;
-
-    vec3 totalGridPhysicalSize = vec3(u_ProbeInfo.probeGridDimensions) * u_ProbeInfo.probeSpacing;
-    // Min corner of the AABB containing all probe *centers*
-    vec3 gridAABBMinCorner = u_ProbeInfo.probeOrigin - (totalGridPhysicalSize / 2.0f);
-    // World position of the center of the probe at grid index (0,0,0)
-    vec3 probeZeroCenterPos = gridAABBMinCorner + u_ProbeInfo.probeSpacing / 2.0f;
-
-    // Fragment's position relative to the center of probe (0,0,0), scaled by probe spacing
-    vec3 fragPosRelativeNorm = (worldPos - probeZeroCenterPos) / u_ProbeInfo.probeSpacing;
-    ivec3 baseProbeCellIndex = ivec3(floor(fragPosRelativeNorm));
-    vec3 trilinearFactors = fract(fragPosRelativeNorm);
-
-    for (int i = 0; i < 8; ++i) { // Iterate over the 8 probes of the cell
-        // Get index of current corner probe (dx, dy, dz are 0 or 1)
-        ivec3 cornerOffset = ivec3(i % 2, (i / 2) % 2, i / 4);
-        uvec3 currentProbeGridIndex = uvec3(clamp(baseProbeCellIndex + cornerOffset,
-                                                ivec3(0),
-                                                ivec3(u_ProbeInfo.probeGridDimensions) - 1));
-
-        // World position of the current probe
-        vec3 currentProbeWorldPos = probeZeroCenterPos + vec3(currentProbeGridIndex) * u_ProbeInfo.probeSpacing;
-
-        // --- Trilinear interpolation weight for this probe ---
-        float currentTrilinearWeight = 1.0;
-        currentTrilinearWeight *= (cornerOffset.x == 0) ? (1.0 - trilinearFactors.x) : trilinearFactors.x;
-        currentTrilinearWeight *= (cornerOffset.y == 0) ? (1.0 - trilinearFactors.y) : trilinearFactors.y;
-        currentTrilinearWeight *= (cornerOffset.z == 0) ? (1.0 - trilinearFactors.z) : trilinearFactors.z;
-
-        if (currentTrilinearWeight < 0.0001) continue;
-
-        // --- Direction and Distance to Probe ---
-        vec3 dirFragToProbe = normalize(currentProbeWorldPos - worldPos);
-        float distFragToProbe = length(currentProbeWorldPos - worldPos);
-
-        // --- Irradiance Sampling ---
-        // Sample irradiance based on surface normal (-N for incoming light)
-        vec2 octIrradSampleDir = octEncode(-worldNormal);
-        vec2 irradAtlasUV = getProbeSpecificAtlasUV(currentProbeGridIndex, octIrradSampleDir, u_ProbeInfo.probeResolution);
-        vec3 probeIrradiance = texture(probeAtlas, irradAtlasUV).rgb;
-
-        // --- Visibility (Depth) Sampling & Chebyshev Test ---
-        // Sample depth map from probe's perspective towards the fragment
-        vec2 octDepthSampleDir = octEncode(-dirFragToProbe); // Direction from probe to fragment
-        vec2 depthAtlasUV = getProbeSpecificAtlasUV(currentProbeGridIndex, octDepthSampleDir, u_ProbeInfo.probeResolution);
-        vec2 depthMoments = texture(probeDepthAtlas, depthAtlasUV).rg; // .x = depth, .y = depth^2
-
-        float mu = depthMoments.x;
-        float m2 = depthMoments.y;
-        // Clamp variance to be non-negative, and add a small epsilon to prevent division by zero if variance is exactly zero.
-        float variance = max(0.0, m2 - mu * mu) + 0.00001;
-
-        float visibilityFactor = 1.0;
-        if (mu < distFragToProbe) { // If fragment is further than average depth seen by probe
-             // One-sided Chebyshev: P(X >= d) <= var / (var + (d - mu)^2)
-             // visibility = 1.0 - P(occluded) = 1.0 - ( (d > mu) ? (var / (var + (d-mu)^2)) : 0.0 )
-             // Simplified: if d > mu, then it's less likely to be visible.
-             // The paper implies: (d <= mu) ? 1.0 : sigma_sq / (sigma_sq + (d - mu)*(d - mu))
-            visibilityFactor = variance / (variance + pow(distFragToProbe - mu, 2.0));
-        }
-        // Ensure visibility is clamped, especially if mu or distFragToProbe are INF
-        if (isinf(mu) || isinf(distFragToProbe)) { // If probe saw infinity or frag is infinitely far
-            visibilityFactor = (isinf(mu) && isinf(distFragToProbe)) ? 1.0 : 0.0; // Only visible if both are infinite (effectively)
-        }
-         visibilityFactor = clamp(visibilityFactor, 0.0, 1.0);
-
-
-        // --- Backface Weight ---
-        // Reduce influence of probes "behind" the surface normal
-        float backfaceDot = dot(worldNormal, dirFragToProbe);
-        float backfaceWeight = smoothstep(0.0, 0.3, backfaceDot); // Probes aligned with normal get full weight
-
-        // --- Combine Weights ---
-        float finalWeight = currentTrilinearWeight * visibilityFactor * backfaceWeight;
-
-        indirectDiffuse += probeIrradiance * finalWeight;
-        totalWeight += finalWeight;
-    }
-
-    if (totalWeight > 0.001) {
-        indirectDiffuse /= totalWeight;
-    } else {
-        indirectDiffuse = vec3(0.0); // Or a very dim ambient if no probes contribute
-    }
-    
-    // Hysteresis can be applied here if desired, by blending with previous frame's indirectDiffuse
-    // For now, return raw calculated value
-
-    return indirectDiffuse;
-}
-
-// --------------------------------
-// Main Shading Logic
-// --------------------------------
 void main() {
     // Sample G-buffer textures
     vec4 gPosDepth = texture(u_gPositionDepth, TexCoord); // Sample vec4
@@ -526,8 +366,6 @@ void main() {
     vec3 Lo = vec3(0.0);
     int debugCascadeIndex = -1; // Store the cascade index for debugging
     
-    vec3 kD_direct = vec3(0.0); // kD for direct lighting calculation
-
     // Process each light
     for (uint i = 0u; i < u_LightCount; i++) {
         // Get light properties
@@ -548,34 +386,43 @@ void main() {
             attenuation = 1.0; // No distance attenuation
         }
         else { // Point or Spot light
-            lightDirWorld = normalize(lightPos - FragPos); 
+            lightDirWorld = normalize(lightPos - FragPos); // Direction from fragment to light
             attenuation = calculateAttenuation(lightPos, FragPos, lightRange);
             
             if (lightType == LIGHT_TYPE_SPOT) {
                 // Apply spot light cone effect
                 attenuation *= calculateSpotEffect(
-                    lightDirWorld,            
-                    normalize(light.direction.xyz), 
+                    lightDirWorld,             // Use normalized direction TO the light
+                    normalize(light.direction.xyz), // Ensure spot direction is normalized
                     light.coneAngles.x, 
                     light.coneAngles.y
                 );
             }
         }
 
-        shadowFactor = 1.0; 
-        int currentCascadeIndex = -1; 
+
+        // Look for a shadow matching this light's index
+        shadowFactor = 1.0; // Default: fully lit (no shadow)
+        int currentCascadeIndex = -1; // Cascade index for the current light's shadow
         for (uint j = 0u; j < shadowCount; j++) {
             ShadowBufferData shadowInfo = shadowData[j];
+            
+            // Check if this shadow data is for the current light
             if (shadowInfo.lightIndex == i && shadowInfo.type > 0) {
+                // Calculate shadow using the shadow info for this light
+                // Pass the correct FragDepthView
                 shadowFactor = calculateShadow(FragPos, FragDepthView, N, lightDirWorld, shadowInfo, currentCascadeIndex);
+
+                // Store the cascade index from the first shadow-casting light for debug purposes
                 if (debugCascadeIndex == -1 && shadowFactor < 1.0) {
                      debugCascadeIndex = currentCascadeIndex;
                 }
-                break; 
+                break; // Found the shadow info for this light, so break out of the loop
             }
         }
         
 #if DEBUG_SPOTLIGHTS
+        // Debug visualization for spotlight remains the same, check attenuation
         if (lightType == LIGHT_TYPE_SPOT && attenuation > 0.0) { 
            float spotEffectValue = calculateSpotEffect(lightDirWorld, normalize(light.direction.xyz), light.coneAngles.x, light.coneAngles.y);
            if (spotEffectValue < 0.01) { // Outside
@@ -585,14 +432,15 @@ void main() {
            } else { // Umbra
                 lightColor = vec3(0.0, 1.0, 0.0); // Green
            }
-           attenuation = 1.0; 
+           attenuation = 1.0; // Override attenuation for debug viz
         }
 #endif
 
         // Skip lights with negligible contribution (after shadow and attenuation)
         if (attenuation * shadowFactor < 0.001) continue;
         
-        vec3 H = normalize(V + lightDirWorld); 
+        // Compute lighting vectors
+        vec3 H = normalize(V + lightDirWorld); // Halfway vector
         float NdotL = max(dot(N, lightDirWorld), 0.0);
 
         // Skip if light is behind the surface
@@ -606,39 +454,24 @@ void main() {
         // Calculate specular term
         vec3 numerator = NDF * G * F;
         float denominator = 4.0 * NdotV * NdotL;
-        vec3 specular = numerator / max(denominator, 0.0001); 
+        vec3 specular = numerator / max(denominator, 0.0001); // Add epsilon
         
+        // Energy conservation: light not reflected is refracted (diffuse)
         vec3 kS = F;
-        // kD_direct is the diffuse reflection fraction for direct light
-        kD_direct = vec3(1.0) - kS;
-        kD_direct *= (1.0 - Metallic);
+        vec3 kD = vec3(1.0) - kS;
         
-        vec3 radiance = lightColor * lightIntensity * attenuation; 
-        Lo += (kD_direct * Albedo.rgb / PI + specular) * radiance * NdotL * shadowFactor; 
+        // Metallic surfaces don't have diffuse lighting
+        kD *= (1.0 - Metallic);
+        
+        // Calculate final light contribution for this light source
+        // Modulate by NdotL, attenuation, and shadow factor
+        vec3 radiance = lightColor * lightIntensity * attenuation; // Base radiance
+        Lo += (kD * Albedo.rgb / PI + specular) * radiance * NdotL * shadowFactor; // Apply NdotL and shadowFactor here
     }
     
-    // ===============================================
-    // --- Indirect Diffuse Lighting (DDGI) Start ---
-    // ===============================================
-    vec3 indirectDiffuseIntensity = calculateIndirectDiffuseLighting(FragPos, N, V);
-    
-    // kD for indirect light is the same fraction of light available for diffuse reflection
-    vec3 kD_indirect = kD_direct; // Or recalculate: vec3 kS_indirect = F0; vec3 kD_indirect = (vec3(1.0) - kS_indirect) * (1.0 - Metallic);
-                                  // For diffuse indirect, F0 is often used for kS if not calculating full specular bounces.
-                                  // For simplicity, let's assume the direct kD is representative enough for the diffuse response to indirect light.
-                                  // More accurately, for diffuse indirect, we only care about the diffuse properties.
-
-    vec3 indirectDiffuseContribution = (kD_indirect * Albedo.rgb / PI) * indirectDiffuseIntensity * AO;
-    // ===============================================
-    // --- Indirect Diffuse Lighting (DDGI) End   ---
-    // ===============================================
-
     // Add ambient lighting (modulated by AO)
-    vec3 ambient = vec3(0.02) * Albedo.rgb * AO; // Small base ambient
-    vec3 finalColor = ambient + Lo + indirectDiffuseContribution;
-    //finalColor = indirectDiffuseContribution;
-    //finalColor = ambient + Lo;
-
+    vec3 ambient = vec3(0.02) * Albedo.rgb * AO;
+    vec3 finalColor = ambient + Lo;
 
 #if DEBUG_CASCADES
     // Apply cascade visualization tint if enabled and a cascade was determined
@@ -648,6 +481,7 @@ void main() {
         else if (debugCascadeIndex == 1) cascadeColorTint = vec3(0.5, 1.0, 0.5); // Green tint
         else if (debugCascadeIndex == 2) cascadeColorTint = vec3(0.5, 0.5, 1.0); // Blue tint
         else if (debugCascadeIndex == 3) cascadeColorTint = vec3(1.0, 1.0, 0.5); // Yellow tint
+        // Apply tint multiplicatively
         finalColor *= cascadeColorTint;
     }
 #endif
@@ -660,4 +494,3 @@ void main() {
     
     FragColor = vec4(finalColor, Albedo.a); // Use albedo alpha
 }
-

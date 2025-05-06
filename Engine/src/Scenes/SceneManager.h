@@ -7,7 +7,7 @@
 #include <memory>
 #include <functional>
 #include <vector>
-
+#include "../Sorting/SpatialSorting/BVH/LBVH/LBVH.h"
 #include "../Logger/Log.h"
 
 namespace Rapture {
@@ -60,9 +60,17 @@ public:
             if (oldScene) {
                 GameEvents::onSceneDeactivated().invoke(oldScene);
             }
-            
+
+            // generate the lbvh on scene activation here, since it will be used by multiple systems
+            // nvm if the scene is still empty. the result is also empty ...
+            //LBVHManager::init(m_activeScene, false);
+
             // Notify listeners about scene activation
             GameEvents::onSceneActivated().invoke(m_activeScene);
+            
+
+
+
         }
     }
     

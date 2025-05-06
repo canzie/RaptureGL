@@ -29,7 +29,6 @@ namespace Rapture
     std::shared_ptr<GBuffer> DeferredRenderer::s_gBuffer = nullptr;
     std::shared_ptr<Framebuffer> DeferredRenderer::s_lightingBuffer = nullptr;
     std::shared_ptr<Quad> DeferredRenderer::s_fullscreenQuad = nullptr;
-    std::shared_ptr<Framebuffer> DeferredRenderer::s_indirectLightingBuffer = nullptr;
 
     std::shared_ptr<UniformBuffer> DeferredRenderer::s_cameraUBO = nullptr;
     std::shared_ptr<UniformBuffer> DeferredRenderer::s_lightsUBO = nullptr;
@@ -43,9 +42,6 @@ namespace Rapture
     std::weak_ptr<Shader> DeferredRenderer::s_lightingPassShader;
     AssetHandle DeferredRenderer::s_lightingPassShaderHandle;
 
-    std::weak_ptr<Shader> DeferredRenderer::s_indirectLightingPassShader;
-    AssetHandle DeferredRenderer::s_indirectLightingPassShaderHandle;
-
     // Shadow mapping static members
     bool DeferredRenderer::s_shadowMapDirty = true;
     bool DeferredRenderer::s_isShadowPass = false;
@@ -55,6 +51,8 @@ namespace Rapture
     glm::mat4 DeferredRenderer::s_cameraViewMatrixCache = glm::mat4(1.0f);
 
     BoundFramebufferType DeferredRenderer::s_currentFramebufferType = BoundFramebufferType::NONE;
+
+    std::shared_ptr<DynamicDiffuseGI> DeferredRenderer::s_ddgi = nullptr;
 
     void DeferredRenderer::init()
     {
@@ -85,7 +83,6 @@ namespace Rapture
         };
         s_lightingBuffer = Framebuffer::create(lightingBufferSpec);
 
-        s_indirectLightingBuffer = Framebuffer::create(lightingBufferSpec);
 
 
         auto& app = Application::getInstance();
@@ -98,10 +95,6 @@ namespace Rapture
         }
         auto shaderPath = project->getConfig().shaderPath;
 
-        auto [indShader, indHandle] = AssetManager::importAsset<Shader>(shaderPath / "RadianceCascadingCS/indirectLightingPass.vs.glsl");
-        s_indirectLightingPassShader = indShader;
-        s_indirectLightingPassShaderHandle = indHandle;
-
         
         
         s_cameraUBO = std::make_shared<UniformBuffer>(sizeof(CameraUniform), BufferUsage::Stream, nullptr, BASE_BINDING_POINT_IDX);
@@ -112,11 +105,12 @@ namespace Rapture
         s_lightingPassShader = shader;
         s_lightingPassShaderHandle = handle;
 
-        setupFullscreenQuad();
 
-        //auto hierarchy = RadianceCascadeHierarchy();
-        
-        //hierarchy.buildCascades(settings);
+
+        setupFullscreenQuad();
+        s_ddgi = std::make_shared<DynamicDiffuseGI>();
+
+
 
 
 
@@ -141,15 +135,14 @@ namespace Rapture
         s_lightingPassShader.reset();
         s_lightingPassShaderHandle = 0;
 
-        s_indirectLightingPassShader.reset();
-        s_indirectLightingPassShaderHandle = 0;
-        s_indirectLightingBuffer.reset();
 
         // Reset cache flags
         s_lightsDirty = true;
         s_shadowMapDirty = true;
         s_cachedLightEntities.clear();
         s_cachedLightCount = 0;
+
+        s_ddgi.reset();
 
     }
 
@@ -202,9 +195,9 @@ namespace Rapture
                 } else if (std::holds_alternative<SSRCommand>(cmd)) {
 
                 } else if (std::holds_alternative<RadianceCascadesCommand>(cmd)) {
-                    radianceCascadesCompute(std::get<RadianceCascadesCommand>(cmd));
+                    GE_RENDER_ERROR("Radiance cascades not implemented");
                 } else if (std::holds_alternative<IndirectLightingPassCommand>(cmd)) {
-                    indirectLightingPassRender(std::get<IndirectLightingPassCommand>(cmd));
+                    GE_RENDER_ERROR("Indirect lighting pass not implemented");
                 } else {
                     GE_RENDER_ERROR("Unknown command type in deferred queue");
                 }
@@ -249,14 +242,15 @@ namespace Rapture
 
 			
 			s_cameraUBO->setData(&cameraData, sizeof(CameraUniform));
-		    s_cameraUBO->bindBase();
         }
 
-
+        // this will only do something
+        s_ddgi->populateProbes(s);
 
         // Setup lights (uses caching)
         setupLightsUniforms(s);
         s_lightsUBO->bindBase();
+		s_cameraUBO->bindBase();
 
         // Update shadow matrices for all lights with shadow maps
         updateShadowMatrix(s);
@@ -706,10 +700,16 @@ namespace Rapture
 
         }
 
-        {
-            RAPTURE_PROFILE_SCOPE("Bind G-Buffer Textures");
-            s_gBuffer->bindTextures();
-        }
+        
+        s_gBuffer->bindTextures();
+        s_ddgi->getRadianceTexture()->bind(4);
+        s_ddgi->getVisibilityTexture()->bind(5);
+        s_ddgi->getProbeInfoBuffer()->bindBase(1);
+
+        auto atlasRes = glm::vec2(s_ddgi->getRadianceTexture()->getWidth(), s_ddgi->getRadianceTexture()->getHeight());
+
+        boundShader->setVec2("u_atlasSize", atlasRes);
+
 
         {
             RAPTURE_PROFILE_SCOPE("wait for Shadow SSBO");
@@ -725,10 +725,10 @@ namespace Rapture
         }
 
 
-        {
-            RAPTURE_PROFILE_SCOPE("Unbind G-Buffer Textures");
-            s_gBuffer->unbindTextures();
-        }
+        
+        s_gBuffer->unbindTextures();
+        s_ddgi->getRadianceTexture()->unbind();
+        s_ddgi->getVisibilityTexture()->unbind();
 
 
         {
@@ -799,129 +799,7 @@ namespace Rapture
             GE_CORE_ERROR("ShadowPassRender: Unhandled shadow map variant type");
         }
     }
-    inline void DeferredRenderer::radianceCascadesCompute(const RadianceCascadesCommand & cmd)
-    {
-        
-        RAPTURE_PROFILE_FUNCTION();
-        RAPTURE_PROFILE_GPU_SCOPE("RadianceCascadesCompute_MultiDispatch");
-
-        // --- Basic Validation ---
-        if (!cmd.radianceCascadesShader) {
-            GE_RENDER_ERROR("DeferredRenderer::radianceCascadesCompute - Shader is null");
-            return;
-        }
-
-        if (!cmd.cascadeHierarchy) {
-            GE_RENDER_ERROR("DeferredRenderer::radianceCascadesCompute - Cascade hierarchy is null");
-            return;
-        }
-        if (!cmd.cascadeSSBO) {
-            GE_RENDER_ERROR("DeferredRenderer::radianceCascadesCompute - Cascade SSBO is null");
-            return;
-        }
-
-        cmd.radianceCascadesShader->bind();
-        cmd.cascadeSSBO->bindBase(0); // Bind SSBO to binding point 0
-
-
-        //s_gBuffer->bindTexturesCompute();
-        s_gBuffer->bindTextures();
-        s_lightingBuffer->bindTextures(5);
-
-
-
-        // Consider adding a try-catch block for extra safety during debugging
-        auto& cascades = cmd.cascadeHierarchy->getCascades();
-        for (size_t i = 0; i < cascades.size(); ++i) {
-            const RadianceCascade& cascade = cascades[i];
-
-            // Bind the specific cascade's atlas texture as a writable image
-            std::shared_ptr<Texture2D> atlasTexture = cascade.getAtlasTexture(); // Assuming this getter exists
-            if (!atlasTexture) {
-                GE_CORE_WARN("Cascade {} has no atlas texture, skipping dispatch.", i);
-                continue;
-            }
-
-            atlasTexture->bindCompute(6);
-
-            // Set the uniform for the current cascade index
-            cmd.radianceCascadesShader->setInt("u_CurrentCascadeIndex", static_cast<int>(i));
-            cmd.radianceCascadesShader->setInt("u_screenDimensionsX", static_cast<int>(s_gBuffer->getSpecification().width));
-            cmd.radianceCascadesShader->setInt("u_screenDimensionsY", static_cast<int>(s_gBuffer->getSpecification().height));
-
-            // Calculate dispatch size based on atlas dimensions
-            glm::ivec2 atlasPixelDim = { atlasTexture->getWidth(), atlasTexture->getHeight() };
-            if (atlasPixelDim.x == 0 || atlasPixelDim.y == 0) {
-                GE_CORE_WARN("Cascade {} has zero dimensions ({}, {}), skipping dispatch.", i, atlasPixelDim.x, atlasPixelDim.y);
-                continue;
-            }
-
-            const uint32_t localSizeX = 16; // Must match shader
-            const uint32_t localSizeY = 16; // Must match shader
-            const uint32_t localSizeZ = 1; // Must match shader
-            uint32_t numGroupsX = (atlasPixelDim.x + localSizeX - 1) / localSizeX;
-            uint32_t numGroupsY = (atlasPixelDim.y + localSizeY - 1) / localSizeY;
-            uint32_t numGroupsZ = 1;
-
-            // Dispatch compute shader
-            cmd.radianceCascadesShader->dispatchCompute(numGroupsX, numGroupsY, numGroupsZ);
-
-            // Memory barrier needed? Between dispatches for the same image?
-            // Or maybe one barrier after all dispatches?
-            // For writing to the same image texture, need a barrier
-
-        }
-
-        // Unbind resources
-        // gBuffer textures...
-        cmd.radianceCascadesShader->unBind();
-        s_gBuffer->unbindTextures();
-        // Need a memory barrier before using the atlas textures for sampling elsewhere
-        glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-
-        
-    }
-
-    inline void DeferredRenderer::indirectLightingPassRender(const IndirectLightingPassCommand &cmd)
-    {
-        RAPTURE_PROFILE_FUNCTION();
-        RAPTURE_PROFILE_GPU_SCOPE("IndirectLightingPassRender");
-
-
-        auto shader = s_indirectLightingPassShader.lock();
-
-        if (!shader) {
-            GE_RENDER_ERROR("DeferredRenderer::indirectLightingPassRender - Shader is null");
-            return;
-        }
-
-        shader->bind();
-
-        s_indirectLightingBuffer->bind();
-        s_gBuffer->bindTextures();
-
-        auto hierarchy = cmd.cascadeHierarchy;
-        auto ssbo = cmd.cascadeSSBO;
-
-
-        ssbo->bindBase(0);
-        
-
-
-        shader->setInt("u_NumCascades", static_cast<int>(hierarchy->getNumCascades()));
-        shader->setInt("u_screenDimensionsX", static_cast<int>(s_gBuffer->getSpecification().width));
-        shader->setInt("u_screenDimensionsY", static_cast<int>(s_gBuffer->getSpecification().height));
-        shader->setVec3("u_CameraPosition", s_cameraPosition);
-
-        ssbo->barrier();
-
-        renderFullscreenQuad(shader);
-
-        s_gBuffer->unbindTextures();
-        shader->unBind();
-        s_indirectLightingBuffer->unbind();
-        s_currentFramebufferType = BoundFramebufferType::NONE;
-    }
+    
 
     void DeferredRenderer::setupFullscreenQuad()
     {

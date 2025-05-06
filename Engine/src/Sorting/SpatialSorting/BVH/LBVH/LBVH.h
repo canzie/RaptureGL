@@ -107,7 +107,7 @@ class LBVHManager {
     public:
         static void init(std::shared_ptr<Scene> scene, bool generateBVHDebugData=true);
         static void shutdown();
-
+        static bool isInitialized();
 
         static std::shared_ptr<LBVH> getLBVH();
         static std::vector<std::pair<glm::vec3, glm::vec3>> getBoxes(uint32_t start, uint32_t end);

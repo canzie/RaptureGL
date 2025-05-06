@@ -161,13 +161,22 @@ OpenGLTexture2D::~OpenGLTexture2D()
 void OpenGLTexture2D::bind(uint32_t slot) const
 {
     RAPTURE_PROFILE_GPU_SCOPE("OpenGLTexture2D::bind");
-    glActiveTexture(GL_TEXTURE0 + slot);
-    glBindTexture(GL_TEXTURE_2D, m_rendererID);
+    if (m_isCubemap) {
+        glActiveTexture(GL_TEXTURE0 + slot);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, m_rendererID);
+    } else {
+        glActiveTexture(GL_TEXTURE0 + slot);
+        glBindTexture(GL_TEXTURE_2D, m_rendererID);
+    }
 }
 
 void OpenGLTexture2D::unbind() const
 {
-    glBindTexture(GL_TEXTURE_2D, 0);
+    if (m_isCubemap) {
+        glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
 }
 
 void OpenGLTexture2D::bindCompute(uint32_t slot) const
@@ -390,7 +399,8 @@ OpenGLTexture2D::OpenGLTexture2D(const std::vector<std::string>& filepaths)
 
     m_width = width;
     m_height = height;
-    
+    m_isCubemap = true;
+
     // Generate handle for bindless textures if supported
     if (GLCapabilities::hasBindlessTextures()) {
         generateTextureHandle();

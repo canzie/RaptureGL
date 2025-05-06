@@ -10,6 +10,7 @@
 #include "../../Scenes/Scene.h"
 #include "../../Scenes/Entity.h"
 #include "../../Buffers/VertexArray.h"
+#include "../../Textures/Texture.h"
 
 #include <cstdint>
 
@@ -23,7 +24,7 @@ struct BufferMetadata {
     alignas(4) uint32_t texCoordAttributeOffsetBytes;
     alignas(4) uint32_t normalAttributeOffsetBytes;
     alignas(4) uint32_t tangentAttributeOffsetBytes;
-    
+
     alignas(4) uint32_t vertexStrideBytes;            // Stride of the vertex buffer in bytes
     alignas(4) uint32_t indexType;                    // GL_UNSIGNED_INT (5125) or GL_UNSIGNED_SHORT (5123)
 
@@ -46,10 +47,10 @@ struct MeshInfo {
 };
 
 struct ProbeInfo {
-    alignas(16) glm::uvec3 probeGridDimensions; // Number of probes in each dimension (X, Y, Z)
-    alignas(8) glm::uvec2 probeResolution; // Resolution of each probe texture (e.g., 8x8)
-    alignas(16) glm::vec3 probeSpacing;
-    alignas(16) glm::vec3 probeOrigin; // will probably be camera position
+    alignas(16) glm::uvec3 probeGridDimensions = glm::uvec3(32, 16, 32); // Number of probes in each dimension (X, Y, Z)
+    alignas(8) glm::uvec2 probeResolution = glm::uvec2(8, 8); // Resolution of each probe texture (e.g., 8x8)
+    alignas(16) glm::vec3 probeSpacing = glm::vec3(1.0f, 1.0f, 1.0f);
+    alignas(16) glm::vec3 probeOrigin = glm::vec3(0.0f, 0.0f, 0.0f); // will probably be camera position
 };
 
 struct DirectionalLightBufferInfo {
@@ -70,7 +71,7 @@ public:
     ~DynamicDiffuseGI();
 
     void populateProbes(std::shared_ptr<Scene> scene);
-    void populateProbesCompute();
+    void populateProbesCompute(std::shared_ptr<Texture2D> skyboxTexture=nullptr);
 
     std::shared_ptr<Texture2D> getRadianceTexture() { 
         if (m_isEvenFrame) {
@@ -89,13 +90,19 @@ public:
 
     std::vector<glm::vec3>& getDebugProbePositions() { return m_DebugProbePositions; }
 
+    ProbeInfo& getProbeConfig() { return m_ProbeConfig; }
+    std::shared_ptr<UniformBuffer> getProbeInfoBuffer() { return m_ProbeInfoBuffer; }
+
 private:
     int createBufferMetadata(std::shared_ptr<VertexArray> vao);
     int getBufferMetadataIndex(uint32_t vaoID);
     void readDebugBuffer();
+    void initTextures();
 
 private:
     std::shared_ptr<Shader> m_DDGI_PopulateProbesShader;
+
+    ProbeInfo m_ProbeConfig;
 
     // (vaoID, BufferMetadata)
     // we need to retain the order of the buffermetadata, when using a map we can lose this order and the buffermetadata indices might not match the ssbo
@@ -120,6 +127,8 @@ private:
 
     // used to alternate between the textures each frame
     bool m_isEvenFrame;
+
+    bool m_isPopulated;
 
     float m_Hysteresis;
 

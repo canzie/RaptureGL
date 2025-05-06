@@ -309,6 +309,11 @@ namespace Rapture {
         GE_CORE_INFO("LBVHManager shutdown.");
     }
 
+    bool LBVHManager::isInitialized()
+    {
+        return s_isInitialized;
+    }
+
     // Add the new static function implementation
     void LBVHManager::printTreeStructure(uint32_t meshIndex) {
     }

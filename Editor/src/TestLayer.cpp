@@ -215,14 +215,27 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
 	CameraController::setMousePosition(pos.first, pos.second);
 
     Rapture::LBVHManager::init(activeScene, false);
-    m_ddgi = std::make_shared<Rapture::DynamicDiffuseGI>();
-    m_ddgi->populateProbes(activeScene);
+
+    m_ddgi = Rapture::DeferredRenderer::getDDGI();
+
+    if (!m_ddgi){
+        Rapture::GE_ERROR("DynamicDiffuseGI is not initialized");
+        return;
+    }
 
     auto radianceTexture = m_ddgi->getRadianceTexture();
+    if (!radianceTexture){
+        Rapture::GE_ERROR("Radiance texture is not initialized");
+        return;
+    }
     Rapture::Entity ddgiEntity = activeScene->createEntity("DDGI_Radiance");
     ddgiEntity.addComponent<Rapture::ComputeTextureComponent>(nullptr, radianceTexture);
 
     auto visibilityTexture = m_ddgi->getVisibilityTexture();
+    if (!visibilityTexture){
+        Rapture::GE_ERROR("Visibility texture is not initialized");
+        return;
+    }
     Rapture::Entity ddgiVisibilityEntity = activeScene->createEntity("DDGI_Visibility");
     ddgiVisibilityEntity.addComponent<Rapture::ComputeTextureComponent>(nullptr, visibilityTexture);
 
@@ -433,15 +446,13 @@ void TestLayer::onUpdate(float ts)
         //Rapture::Renderer::drawBoundingBox(*m_selectedEntity);
     }
 
-    m_ddgi->populateProbesCompute();
-
 
     //Rapture::Renderer::drawAllBoundingBoxes(activeScene);
     //Rapture::Renderer::drawDebugFrustum();
     //Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesSubset(), Rapture::LBVHManager::getTransformsSubset());
     
-    Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesAtDepth(), Rapture::LBVHManager::getTransformsAtDepth());
-    Rapture::Renderer::drawInstancedSpheres(*m_debugProbeSphere, m_ddgi->getDebugProbePositions());
+    //Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesAtDepth(), Rapture::LBVHManager::getTransformsAtDepth());
+    //Rapture::Renderer::drawInstancedSpheres(*m_debugProbeSphere, m_ddgi->getDebugProbePositions());
 
     // Draw the debug ray if active
     if (m_showDebugRay && m_debugRayLine) {
