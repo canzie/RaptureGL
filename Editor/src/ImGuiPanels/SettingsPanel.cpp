@@ -10,7 +10,7 @@
 #include <cstring>
 
 #include "Sorting/SpatialSorting/BVH/LBVH/LBVH.h"
-
+#include "Renderer/Deferred Shading/DeferredRenderer.h"
 
 // Platform-specific file dialog includes
 #ifdef _WIN32
@@ -291,29 +291,9 @@ void SettingsPanel::renderSceneSettings()
     
     // BVH Visualization Range Slider
 
-        ImGui::Separator();
+
         ImGui::Text("BVH Visualization Range:");
         
-        int minVal = 0;
-        int maxVal = static_cast<int>(Rapture::LBVHManager::getTransforms().size() - 1);
-        
-        // Use DragIntRange2 for the slider
-        ImGui::DragIntRange2("Node Range", &m_bvhDisplayRangeMin, &m_bvhDisplayRangeMax, 1.0f, minVal, maxVal);
-        
-        // Clamp values just in case
-        m_bvhDisplayRangeMin = std::max(minVal, m_bvhDisplayRangeMin);
-        m_bvhDisplayRangeMax = std::min(maxVal, m_bvhDisplayRangeMax);
-        if (m_bvhDisplayRangeMin > m_bvhDisplayRangeMax) {
-            m_bvhDisplayRangeMin = m_bvhDisplayRangeMax; // Ensure min <= max
-        }
-        ImGui::SameLine();
-        ImGui::Text("(%d nodes)", maxVal + 1);
-
-        // Draw the selected range of BVH nodes
-        int start = std::max(0, m_bvhDisplayRangeMin);
-        int end = std::min(static_cast<int>(Rapture::LBVHManager::getTransforms().size()), m_bvhDisplayRangeMax + 1); // end is exclusive
-        
-        Rapture::LBVHManager::setInterval(start, end);
 
         ImGui::DragInt("Depth Level", &m_bvhDisplayDepth, 0.1f, 0, 32);
 
@@ -321,13 +301,32 @@ void SettingsPanel::renderSceneSettings()
         Rapture::LBVHManager::setDepthLevel(m_bvhDisplayDepth);
 
 
-        ImGui::Separator();
 
 
 
-    
+    ImGui::Separator();
+        ImGui::Text("DDGI Debug Settings:");
+
+        Rapture::DebugConfig* debugConfig = Rapture::DeferredRenderer::getDDGIDebugConfig();
+
+        ImGui::Checkbox("Show Diffuse", &debugConfig->showDiffuse);
+
+        ImGui::Checkbox("Show Direct", &debugConfig->showDirect);
+
+        ImGui::Checkbox("Show Direct Ambient", &debugConfig->showDirectAmbient);
+
+        ImGui::Checkbox("Show Final", &debugConfig->showFinal);
+
+        ImGui::Checkbox("Show Diffuse Intensity", &debugConfig->showDiffuseIntensity);
+
+
+
+
+
     // Skybox Settings
     ImGui::Separator();
+
+
     
     if (ImGui::CollapsingHeader("Skybox", ImGuiTreeNodeFlags_DefaultOpen)) {
         Rapture::SkyBox& skybox = m_activeScene->getSkyBox();

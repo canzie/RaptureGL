@@ -47,10 +47,10 @@ struct MeshInfo {
 };
 
 struct ProbeInfo {
-    alignas(16) glm::uvec3 probeGridDimensions = glm::uvec3(32, 16, 32); // Number of probes in each dimension (X, Y, Z)
-    alignas(8) glm::uvec2 probeResolution = glm::uvec2(8, 8); // Resolution of each probe texture (e.g., 8x8)
-    alignas(16) glm::vec3 probeSpacing = glm::vec3(1.0f, 1.0f, 1.0f);
-    alignas(16) glm::vec3 probeOrigin = glm::vec3(0.0f, 0.0f, 0.0f); // will probably be camera position
+    alignas(16) glm::uvec3 probeGridDimensions = glm::uvec3(4, 2, 4); // Number of probes in each dimension (X, Y, Z)
+    alignas(8) glm::uvec2 probeResolution = glm::uvec2(256, 256); // Resolution of each probe texture (e.g., 8x8)
+    alignas(16) glm::vec3 probeSpacing = glm::vec3(2.0f, 2.0f, 2.0f);
+    alignas(16) glm::vec3 probeOrigin = glm::vec3(0.0f, 2.0f, 0.0f); // will probably be camera position
 };
 
 struct DirectionalLightBufferInfo {
@@ -59,10 +59,9 @@ struct DirectionalLightBufferInfo {
 };
 
 struct DebugData {
-    uint32_t leafHits;
-    uint32_t triangleHits;
-    float closestHit;
-    uint32_t closestHitMeshIndex;
+    alignas(4) uint32_t meshIndex;
+    alignas(16) glm::mat4 transform;
+    alignas(4) uint32_t bufferMetadataIDX;
 };
 
 class DynamicDiffuseGI {

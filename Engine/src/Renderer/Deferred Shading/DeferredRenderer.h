@@ -23,6 +23,15 @@ namespace Rapture
         SHADOW_MAP
     };
 
+    struct DebugConfig {
+        alignas(4) bool debugDDGI;
+        alignas(4) bool showDiffuse;
+        alignas(4) bool showDirect;
+        alignas(4) bool showDirectAmbient;
+        alignas(4) bool showFinal;
+        alignas(4) bool showDiffuseIntensity;
+    };
+
 
     class DeferredRenderer
     {
@@ -51,6 +60,8 @@ namespace Rapture
         static std::shared_ptr<ShadowMap> getShadowMap() { return nullptr; }
 
         static std::shared_ptr<DynamicDiffuseGI> getDDGI() { return s_ddgi; }
+
+        static DebugConfig* getDDGIDebugConfig() { return &s_debugConfig; }
 
 
 
@@ -98,6 +109,10 @@ namespace Rapture
         static std::shared_ptr<DynamicDiffuseGI> s_ddgi;
 
         static BoundFramebufferType s_currentFramebufferType;
+
+        static DebugConfig s_debugConfig;
+
+        static std::shared_ptr<UniformBuffer> s_debugConfigUBO;
 
     };
 }

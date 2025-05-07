@@ -33,7 +33,6 @@ layout(binding = 5) uniform sampler2D probeDepthAtlas;    // Distance, Distance^
 precision highp float;
 
 
-
 // Camera position for specular calculations
 uniform vec3 u_CameraPosition;
 
@@ -91,6 +90,17 @@ uniform vec2 u_atlasSize;    // Total pixel dimensions of the probe atlases
 #define PI 3.14159265359
 #define INFINITY_FLOAT 0x7FFFFFFF // Match compute shader infinity
 #define epsilon 0.0001
+
+layout(std140, binding = 3) uniform debugConfig {
+    bool debugDDGI;
+    bool showDiffuse;
+    bool showDirect;
+    bool showDirectAmbient;
+    bool showFinal;
+    bool showDiffuseIntensity;
+
+} u_debugConfig;
+
 
 // --------------------------------
 // Lighting calculation functions
@@ -402,32 +412,85 @@ vec2 getProbeSpecificAtlasUV(uvec3 probeIndex3D, vec2 sampleDirOctEncodedUV, uve
     return atlasTexelCoord / u_atlasSize;
 }
 
+vec3[8] get8ProbeLocations(vec3 worldPos) {
+    vec3 probeLocations[8];
+
+    // Calculate total grid size and starting corner position
+    vec3 totalGridSize = vec3(u_ProbeInfo.probeGridDimensions) * u_ProbeInfo.probeSpacing;
+    vec3 gridStartPos = u_ProbeInfo.probeOrigin - (totalGridSize / 2.0f) + (u_ProbeInfo.probeSpacing / 2.0f);
+
+    // Get normalized position within grid
+    vec3 positionInGrid = (worldPos - gridStartPos) / u_ProbeInfo.probeSpacing;
+    
+    // Get base probe indices (floor to get lower corner)
+    ivec3 baseProbeIndex = ivec3(floor(positionInGrid));
+
+    // Loop through 8 corners of the cube containing the position
+    for (int i = 0; i < 8; i++) {
+        // Convert loop index to corner offsets (0 or 1 in each dimension)
+        ivec3 cornerOffset = ivec3(
+            i & 1,           // x: 0,1,0,1,0,1,0,1
+            (i >> 1) & 1,    // y: 0,0,1,1,0,0,1,1
+            (i >> 2) & 1     // z: 0,0,0,0,1,1,1,1
+        );
+        
+        // Clamp probe indices to grid boundaries
+        ivec3 probeIndex = clamp(
+            baseProbeIndex + cornerOffset,
+            ivec3(0),
+            ivec3(u_ProbeInfo.probeGridDimensions) - ivec3(1)
+        );
+        
+        // Calculate world position of this probe
+        probeLocations[i] = gridStartPos + vec3(probeIndex) * u_ProbeInfo.probeSpacing;
+    }
+
+    return probeLocations;
+}
+
+vec3 getProbeWorldPosition(vec3 worldPos) {
+    vec3 totalGridSize = vec3(u_ProbeInfo.probeGridDimensions) * u_ProbeInfo.probeSpacing;
+    vec3 gridStartPos = u_ProbeInfo.probeOrigin - (totalGridSize / 2.0f) + (u_ProbeInfo.probeSpacing / 2.0f);
+    vec3 positionInGrid = (worldPos - gridStartPos) / u_ProbeInfo.probeSpacing;
+    return gridStartPos + vec3(floor(positionInGrid)) * u_ProbeInfo.probeSpacing;
+}
+
+
+
+float trilinear(vec3 a, vec3 b) {
+    // Calculate normalized distances along each axis
+    vec3 delta = abs(b - a);
+    
+    // Multiply the components to get trilinear weight
+    return delta.x * delta.y * delta.z;
+}
+
+
+
+
 vec3 calculateIndirectDiffuseLighting(vec3 worldPos, vec3 worldNormal, vec3 viewDir) {
     vec3 indirectDiffuse = vec3(0.0);
     float totalWeight = 0.0;
 
+    float normalBias = 0.01;
+    vec3 biasedWorldPos = worldPos + worldNormal * normalBias;
+
     vec3 totalGridPhysicalSize = vec3(u_ProbeInfo.probeGridDimensions) * u_ProbeInfo.probeSpacing;
-    // Min corner of the AABB containing all probe *centers*
     vec3 gridAABBMinCorner = u_ProbeInfo.probeOrigin - (totalGridPhysicalSize / 2.0f);
-    // World position of the center of the probe at grid index (0,0,0)
     vec3 probeZeroCenterPos = gridAABBMinCorner + u_ProbeInfo.probeSpacing / 2.0f;
 
-    // Fragment's position relative to the center of probe (0,0,0), scaled by probe spacing
-    vec3 fragPosRelativeNorm = (worldPos - probeZeroCenterPos) / u_ProbeInfo.probeSpacing;
+    vec3 fragPosRelativeNorm = (biasedWorldPos - probeZeroCenterPos) / u_ProbeInfo.probeSpacing;
     ivec3 baseProbeCellIndex = ivec3(floor(fragPosRelativeNorm));
     vec3 trilinearFactors = fract(fragPosRelativeNorm);
 
-    for (int i = 0; i < 8; ++i) { // Iterate over the 8 probes of the cell
-        // Get index of current corner probe (dx, dy, dz are 0 or 1)
+    for (int i = 0; i < 8; ++i) {
         ivec3 cornerOffset = ivec3(i % 2, (i / 2) % 2, i / 4);
         uvec3 currentProbeGridIndex = uvec3(clamp(baseProbeCellIndex + cornerOffset,
                                                 ivec3(0),
                                                 ivec3(u_ProbeInfo.probeGridDimensions) - 1));
 
-        // World position of the current probe
         vec3 currentProbeWorldPos = probeZeroCenterPos + vec3(currentProbeGridIndex) * u_ProbeInfo.probeSpacing;
 
-        // --- Trilinear interpolation weight for this probe ---
         float currentTrilinearWeight = 1.0;
         currentTrilinearWeight *= (cornerOffset.x == 0) ? (1.0 - trilinearFactors.x) : trilinearFactors.x;
         currentTrilinearWeight *= (cornerOffset.y == 0) ? (1.0 - trilinearFactors.y) : trilinearFactors.y;
@@ -435,50 +498,36 @@ vec3 calculateIndirectDiffuseLighting(vec3 worldPos, vec3 worldNormal, vec3 view
 
         if (currentTrilinearWeight < 0.0001) continue;
 
-        // --- Direction and Distance to Probe ---
-        vec3 dirFragToProbe = normalize(currentProbeWorldPos - worldPos);
-        float distFragToProbe = length(currentProbeWorldPos - worldPos);
+        vec3 dirFragToProbe = normalize(currentProbeWorldPos - biasedWorldPos);
+        vec3 dirProbeToFrag = -dirFragToProbe; // Direction from probe to fragment
+        float distFragToProbe = length(currentProbeWorldPos - biasedWorldPos);
 
         // --- Irradiance Sampling ---
-        // Sample irradiance based on surface normal (-N for incoming light)
-        vec2 octIrradSampleDir = octEncode(-worldNormal);
+        vec2 octIrradSampleDir = octEncode(dirProbeToFrag);
         vec2 irradAtlasUV = getProbeSpecificAtlasUV(currentProbeGridIndex, octIrradSampleDir, u_ProbeInfo.probeResolution);
-        vec3 probeIrradiance = texture(probeAtlas, irradAtlasUV).rgb;
+        vec3 probeRadiance = texture(probeAtlas, irradAtlasUV).rgb;
+        float cosineTerm = max(0.0, dot(worldNormal, dirProbeToFrag));
+        vec3 probeIrradiance = probeRadiance * cosineTerm;
 
-        // --- Visibility (Depth) Sampling & Chebyshev Test ---
-        // Sample depth map from probe's perspective towards the fragment
-        vec2 octDepthSampleDir = octEncode(-dirFragToProbe); // Direction from probe to fragment
+        // --- Visibility Sampling ---
+        vec2 octDepthSampleDir = octEncode(dirProbeToFrag);
         vec2 depthAtlasUV = getProbeSpecificAtlasUV(currentProbeGridIndex, octDepthSampleDir, u_ProbeInfo.probeResolution);
-        vec2 depthMoments = texture(probeDepthAtlas, depthAtlasUV).rg; // .x = depth, .y = depth^2
+        vec2 depthMoments = texture(probeDepthAtlas, depthAtlasUV).rg;
 
         float mu = depthMoments.x;
         float m2 = depthMoments.y;
-        // Clamp variance to be non-negative, and add a small epsilon to prevent division by zero if variance is exactly zero.
         float variance = max(0.0, m2 - mu * mu) + 0.00001;
 
         float visibilityFactor = 1.0;
-        if (mu < distFragToProbe) { // If fragment is further than average depth seen by probe
-             // One-sided Chebyshev: P(X >= d) <= var / (var + (d - mu)^2)
-             // visibility = 1.0 - P(occluded) = 1.0 - ( (d > mu) ? (var / (var + (d-mu)^2)) : 0.0 )
-             // Simplified: if d > mu, then it's less likely to be visible.
-             // The paper implies: (d <= mu) ? 1.0 : sigma_sq / (sigma_sq + (d - mu)*(d - mu))
+        if (mu < distFragToProbe) {
             visibilityFactor = variance / (variance + pow(distFragToProbe - mu, 2.0));
         }
-        // Ensure visibility is clamped, especially if mu or distFragToProbe are INF
-        if (isinf(mu) || isinf(distFragToProbe)) { // If probe saw infinity or frag is infinitely far
-            visibilityFactor = (isinf(mu) && isinf(distFragToProbe)) ? 1.0 : 0.0; // Only visible if both are infinite (effectively)
+        if (isinf(mu) || isinf(distFragToProbe)) {
+            visibilityFactor = (isinf(mu) && isinf(distFragToProbe)) ? 1.0 : 0.0;
         }
-         visibilityFactor = clamp(visibilityFactor, 0.0, 1.0);
+        visibilityFactor = clamp(visibilityFactor, 0.0, 1.0);
 
-
-        // --- Backface Weight ---
-        // Reduce influence of probes "behind" the surface normal
-        float backfaceDot = dot(worldNormal, dirFragToProbe);
-        float backfaceWeight = smoothstep(0.0, 0.3, backfaceDot); // Probes aligned with normal get full weight
-
-        // --- Combine Weights ---
-        float finalWeight = currentTrilinearWeight * visibilityFactor * backfaceWeight;
-
+        float finalWeight = currentTrilinearWeight * visibilityFactor;
         indirectDiffuse += probeIrradiance * finalWeight;
         totalWeight += finalWeight;
     }
@@ -486,11 +535,8 @@ vec3 calculateIndirectDiffuseLighting(vec3 worldPos, vec3 worldNormal, vec3 view
     if (totalWeight > 0.001) {
         indirectDiffuse /= totalWeight;
     } else {
-        indirectDiffuse = vec3(0.0); // Or a very dim ambient if no probes contribute
+        indirectDiffuse = vec3(0.0);
     }
-    
-    // Hysteresis can be applied here if desired, by blending with previous frame's indirectDiffuse
-    // For now, return raw calculated value
 
     return indirectDiffuse;
 }
@@ -621,13 +667,9 @@ void main() {
     // --- Indirect Diffuse Lighting (DDGI) Start ---
     // ===============================================
     vec3 indirectDiffuseIntensity = calculateIndirectDiffuseLighting(FragPos, N, V);
-    
-    // kD for indirect light is the same fraction of light available for diffuse reflection
-    vec3 kD_indirect = kD_direct; // Or recalculate: vec3 kS_indirect = F0; vec3 kD_indirect = (vec3(1.0) - kS_indirect) * (1.0 - Metallic);
-                                  // For diffuse indirect, F0 is often used for kS if not calculating full specular bounces.
-                                  // For simplicity, let's assume the direct kD is representative enough for the diffuse response to indirect light.
-                                  // More accurately, for diffuse indirect, we only care about the diffuse properties.
+    //vec3 indirectDiffuseIntensity = getIrradiance(FragPos, N, V);
 
+    vec3 kD_indirect = vec3(1.0); 
     vec3 indirectDiffuseContribution = (kD_indirect * Albedo.rgb / PI) * indirectDiffuseIntensity * AO;
     // ===============================================
     // --- Indirect Diffuse Lighting (DDGI) End   ---
@@ -635,9 +677,26 @@ void main() {
 
     // Add ambient lighting (modulated by AO)
     vec3 ambient = vec3(0.02) * Albedo.rgb * AO; // Small base ambient
-    vec3 finalColor = ambient + Lo + indirectDiffuseContribution;
-    //finalColor = indirectDiffuseContribution;
-    //finalColor = ambient + Lo;
+    vec3 finalColor = Lo + indirectDiffuseContribution;
+
+    if (u_debugConfig.showDiffuseIntensity) {
+        finalColor = indirectDiffuseIntensity;
+    }
+    else if (u_debugConfig.showDiffuse) {
+        finalColor = indirectDiffuseContribution;
+    }
+    else if (u_debugConfig.showDirect) {
+        finalColor = Lo;
+    }
+    else if (u_debugConfig.showDirectAmbient) {
+        finalColor = ambient + Lo;
+    }
+    else if (u_debugConfig.showFinal) {
+        finalColor = finalColor;
+    }
+
+
+    finalColor = max(finalColor, vec3(0.0));
 
 
 #if DEBUG_CASCADES

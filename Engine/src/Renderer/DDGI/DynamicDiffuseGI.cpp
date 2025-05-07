@@ -66,6 +66,10 @@ namespace Rapture {
             return;
             //LBVHManager::init(scene, false);
         }
+
+        ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true}); // Add a memory barrier before reading
+
+
         auto meshBVHNodes = LBVHManager::getLBVH()->getAllCPUBVHNodes();
 
         // get the needed buffer metadata
@@ -91,7 +95,6 @@ namespace Rapture {
 
 
         
-
         // get the mesh info data for the buffer
         for (auto entity : view)
         {
@@ -117,6 +120,9 @@ namespace Rapture {
                 if (bufferMetadataIDX == -1) {
                     bufferMetadataIDX = createBufferMetadata(meshData.vao);
                 }
+
+
+
 
                 auto materialHandle = material.material;
                 auto albedoTextureParameter = materialHandle->getParameter(ParameterID::TEXTURE_ALBEDO_BINDLESS);
@@ -190,7 +196,7 @@ namespace Rapture {
         // sun light ubo
         m_SunLightBuffer = std::make_shared<UniformBuffer>(sizeof(DirectionalLightBufferInfo), BufferUsage::Static, &directionalLightBufferInfo);
 
-
+        m_DebugBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(DebugData) * meshInfos.size(), BufferUsage::Dynamic, nullptr);
 
         m_isPopulated = true;
 
@@ -216,6 +222,7 @@ namespace Rapture {
         m_ProbeInfoBuffer->bindBase(0); // UBO
         m_SunLightBuffer->bindBase(1); // UBO
 
+        m_DebugBuffer->bindBase(4); // SSBO
 
         m_MeshInfoBuffer->bindBase(3); // SSBO
         m_BufferMetadataBuffer->bindBase(2); // SSBO
@@ -284,8 +291,8 @@ namespace Rapture {
         bufferMetadataIDX = m_BufferMetadataMap.size();
         m_BufferMetadataMap.push_back(std::make_pair(vao->getID(), bufferMetadata));
 
-        GE_CORE_TRACE("DynamicDiffuseGI::createBufferMetadata - BufferMetadata created for VAO ID: {0} | Handles: {1} {2} {3} {4} {5} {6}", 
-        vao->getID(), bufferMetadata.VBOHandle, bufferMetadata.IBOHandle, bufferMetadata.indexType, bufferMetadata.positionAttributeOffsetBytes, bufferMetadata.texCoordAttributeOffsetBytes, bufferMetadata.vertexStrideBytes);
+        GE_CORE_TRACE("DynamicDiffuseGI::createBufferMetadata - BufferMetadata created for VAO ID: {0} | idx {1} | Handles: VBO:{2} IBO:{3} | indexType:{4} | posAttrOff:{5} | texCoordAttrOff:{6} | vertexStride:{7}", 
+        vao->getID(), bufferMetadataIDX, bufferMetadata.VBOHandle, bufferMetadata.IBOHandle, bufferMetadata.indexType, bufferMetadata.positionAttributeOffsetBytes, bufferMetadata.texCoordAttributeOffsetBytes, bufferMetadata.vertexStrideBytes);
         return bufferMetadataIDX;
     }
 
@@ -310,15 +317,15 @@ namespace Rapture {
 
         ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true}); // Add a memory barrier before reading
             
-        uint32_t bufferSize = m_RadianceTexture->getHeight() * m_RadianceTexture->getWidth() * sizeof(DebugData);
+        uint32_t bufferSize = m_meshCount;
 
         std::vector<DebugData> debugData(bufferSize);
 
         // Map the buffer to read data
-        void* mappedData = m_DebugBuffer->map(0, bufferSize);
+        void* mappedData = m_DebugBuffer->map(0, bufferSize * sizeof(DebugData));
         if (mappedData) {
             // Copy the data from the mapped buffer to the CPU vector
-            memcpy(debugData.data(), mappedData, bufferSize);
+            memcpy(debugData.data(), mappedData, bufferSize * sizeof(DebugData));
             // Unmap the buffer now that we're done reading
             m_DebugBuffer->unmap();
         } else {
@@ -330,10 +337,14 @@ namespace Rapture {
 
 
         for (int i = 0; i < debugData.size(); i++) {
-            if (debugData[i].leafHits != 0) {
-                uint32_t probeIndex = uint32_t(i / 64);
-                GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Probe {0} - Leaf Hits: {1}, Triangle Hits: {2}, Closest Hit: {3}, Closest Hit Mesh Index: {4}", probeIndex, debugData[i].leafHits, debugData[i].triangleHits, debugData[i].closestHit, debugData[i].closestHitMeshIndex);
-            }
+
+            GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Mesh Index: {0}", debugData[i].meshIndex);
+            GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Transform: {0} {1} {2} {3}", debugData[i].transform[0][0], debugData[i].transform[0][1], debugData[i].transform[0][2], debugData[i].transform[0][3]);
+            GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Transform: {0} {1} {2} {3}", debugData[i].transform[1][0], debugData[i].transform[1][1], debugData[i].transform[1][2], debugData[i].transform[1][3]);
+            GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Transform: {0} {1} {2} {3}", debugData[i].transform[2][0], debugData[i].transform[2][1], debugData[i].transform[2][2], debugData[i].transform[2][3]);
+            GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Transform: {0} {1} {2} {3}", debugData[i].transform[3][0], debugData[i].transform[3][1], debugData[i].transform[3][2], debugData[i].transform[3][3]);
+
+            //GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Probe {0} - Mesh Index: {1}, Trans form: {2}", debugData[i].meshIndex, debugData[i].transform);
         }
 
         debugData.clear();

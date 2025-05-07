@@ -52,6 +52,8 @@ namespace Rapture
 
     BoundFramebufferType DeferredRenderer::s_currentFramebufferType = BoundFramebufferType::NONE;
 
+    DebugConfig DeferredRenderer::s_debugConfig = {false, false, false, false, false, false};
+    std::shared_ptr<UniformBuffer> DeferredRenderer::s_debugConfigUBO = nullptr;
     std::shared_ptr<DynamicDiffuseGI> DeferredRenderer::s_ddgi = nullptr;
 
     void DeferredRenderer::init()
@@ -99,6 +101,9 @@ namespace Rapture
         
         s_cameraUBO = std::make_shared<UniformBuffer>(sizeof(CameraUniform), BufferUsage::Stream, nullptr, BASE_BINDING_POINT_IDX);
         s_lightsUBO = std::make_shared<UniformBuffer>(sizeof(LightsUniform), BufferUsage::Stream, nullptr, LIGHTS_BINDING_POINT_IDX);
+        
+        s_debugConfigUBO = std::make_shared<UniformBuffer>(sizeof(DebugConfig), BufferUsage::Stream, nullptr, 3);
+
         s_shadowSSBO = std::make_shared<ShaderStorageBuffer>(sizeof(ShadowStorageLayout), BufferUsage::Stream, nullptr);
         // Load deferred shaders
         auto [shader, handle] = AssetManager::importAsset<Shader>(shaderPath / "DeferredLightingPass.vert.glsl");
@@ -256,6 +261,8 @@ namespace Rapture
         updateShadowMatrix(s);
 
 
+        s_debugConfigUBO->setData(&s_debugConfig, sizeof(DebugConfig));
+        s_debugConfigUBO->bindBase();
 
         // the 2 queues should be made at the same time, this only happens when they are called after each other,
         // the other methods are no async so they would be blocking the main thread, so it cannot ask for the other queue
