@@ -8,7 +8,7 @@ Debug/
 Release/
 x64/
 x86/
-Editor/assets/
+
 Engine/vendor/GLFW/
 
 # CMake generated files
