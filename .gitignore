@@ -5,7 +5,6 @@ assets/
 bin/
 out/
 cmake-build-*/
-Debug/
 Release/
 x64/
 x86/
