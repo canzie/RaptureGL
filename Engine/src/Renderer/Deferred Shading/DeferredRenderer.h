@@ -30,6 +30,14 @@ namespace Rapture
         alignas(4) bool showDirectAmbient;
         alignas(4) bool showFinal;
         alignas(4) bool showDiffuseIntensity;
+
+        alignas(4) bool debug_DDGI_TrilinearWeightSum;
+        alignas(4) bool debug_DDGI_BackfaceWeightSum;
+        alignas(4) bool debug_DDGI_VisibilityFactorSum;
+        alignas(4) bool debug_DDGI_FinalProbeWeightSum;
+        alignas(4) bool debug_DDGI_RawIndirectSum;
+        alignas(4) bool debug_DDGI_TotalWeight;
+        alignas(4) bool debug_DDGI_ProbeIrradianceSum;
     };
 
 

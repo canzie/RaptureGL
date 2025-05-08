@@ -319,6 +319,19 @@ void SettingsPanel::renderSceneSettings()
 
         ImGui::Checkbox("Show Diffuse Intensity", &debugConfig->showDiffuseIntensity);
 
+        ImGui::Checkbox("Show Trilinear Weight Sum", &debugConfig->debug_DDGI_TrilinearWeightSum);
+
+        ImGui::Checkbox("Show Backface Weight Sum", &debugConfig->debug_DDGI_BackfaceWeightSum);
+
+        ImGui::Checkbox("Show Visibility Factor Sum", &debugConfig->debug_DDGI_VisibilityFactorSum);
+        
+        ImGui::Checkbox("Show Final Probe Weight Sum", &debugConfig->debug_DDGI_FinalProbeWeightSum);
+
+        ImGui::Checkbox("Show Raw Indirect Sum", &debugConfig->debug_DDGI_RawIndirectSum);
+
+        ImGui::Checkbox("Show Total Weight", &debugConfig->debug_DDGI_TotalWeight);
+
+        ImGui::Checkbox("Show Probe Irradiance Sum", &debugConfig->debug_DDGI_ProbeIrradianceSum);
 
 
 

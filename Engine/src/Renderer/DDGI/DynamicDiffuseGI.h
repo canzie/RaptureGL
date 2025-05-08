@@ -11,6 +11,7 @@
 #include "../../Scenes/Entity.h"
 #include "../../Buffers/VertexArray.h"
 #include "../../Textures/Texture.h"
+#include "../../Sorting/SpatialSorting/BVH/LBVH/LBVH.h"
 
 #include <cstdint>
 
@@ -44,13 +45,14 @@ struct MeshInfo {
     alignas(4) uint32_t indexOffsetBytes;
 
     alignas(16) glm::mat4 Transform;
+    alignas(16) glm::mat4 InvTransform;
 };
 
 struct ProbeInfo {
-    alignas(16) glm::uvec3 probeGridDimensions = glm::uvec3(4, 2, 4); // Number of probes in each dimension (X, Y, Z)
-    alignas(8) glm::uvec2 probeResolution = glm::uvec2(256, 256); // Resolution of each probe texture (e.g., 8x8)
-    alignas(16) glm::vec3 probeSpacing = glm::vec3(2.0f, 2.0f, 2.0f);
-    alignas(16) glm::vec3 probeOrigin = glm::vec3(0.0f, 2.0f, 0.0f); // will probably be camera position
+    alignas(16) glm::uvec3 probeGridDimensions = glm::uvec3(32, 32, 16); // Number of probes in each dimension (X, Y, Z)
+    alignas(8) glm::uvec2 probeResolution = glm::uvec2(8, 8); // Resolution of each probe texture (e.g., 8x8)
+    alignas(16) glm::vec3 probeSpacing = glm::vec3(1.0f, 1.0f, 1.0f);
+    alignas(16) glm::vec3 probeOrigin = glm::vec3(0.0f, 0.0f, 0.0f); // will probably be camera position
 };
 
 struct DirectionalLightBufferInfo {
@@ -58,10 +60,22 @@ struct DirectionalLightBufferInfo {
     alignas(4) float intensity;
 };
 
+struct Ray {
+    alignas(16) glm::vec3 origin;
+    alignas(16) glm::vec3 direction;
+    alignas(16) glm::vec3 invDir;
+};
+
+struct Triangle {
+    alignas(16) glm::vec3 v0;
+    alignas(16) glm::vec3 v1;
+    alignas(16) glm::vec3 v2;
+};
+
 struct DebugData {
-    alignas(4) uint32_t meshIndex;
-    alignas(16) glm::mat4 transform;
-    alignas(4) uint32_t bufferMetadataIDX;
+
+    alignas(4) uint32_t idx;
+
 };
 
 class DynamicDiffuseGI {

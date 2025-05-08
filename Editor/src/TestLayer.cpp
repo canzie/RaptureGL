@@ -443,7 +443,7 @@ void TestLayer::onUpdate(float ts)
     //Rapture::Renderer::setupCameraUniforms(activeScene);
     Rapture::Renderer::drawSprites(activeScene);
     if (m_selectedEntity) {
-        //Rapture::Renderer::drawBoundingBox(*m_selectedEntity);
+        Rapture::Renderer::drawBoundingBox(*m_selectedEntity);
     }
 
 
@@ -451,7 +451,7 @@ void TestLayer::onUpdate(float ts)
     //Rapture::Renderer::drawDebugFrustum();
     //Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesSubset(), Rapture::LBVHManager::getTransformsSubset());
     
-    Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesAtDepth(), Rapture::LBVHManager::getTransformsAtDepth());
+    //Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesAtDepth(), Rapture::LBVHManager::getTransformsAtDepth());
     //Rapture::Renderer::drawInstancedSpheres(*m_debugProbeSphere, m_ddgi->getDebugProbePositions());
 
     // Draw the debug ray if active

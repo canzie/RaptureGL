@@ -172,6 +172,8 @@ void RadixSort::updateMortonCodes(const MeshBufferData &meshBufferData)
     ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true});
     m_MortonShader->unBind();
 
+    
+
 }
 
 void RadixSort::logBufferOutput(const std::shared_ptr<ShaderStorageBuffer> &buffer, uint32_t numElements)

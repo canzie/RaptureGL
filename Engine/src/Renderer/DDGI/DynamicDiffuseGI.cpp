@@ -1,9 +1,10 @@
 #include "DynamicDiffuseGI.h"
 
 #include "../../Scenes/Components/Components.h"
-#include "../../Sorting/SpatialSorting/BVH/LBVH/LBVH.h"
+//#include "../../Sorting/SpatialSorting/BVH/LBVH/LBVH.h"
 
 #include "../../WindowContext/Application.h"
+#include <glm/gtx/string_cast.hpp>
 
 namespace Rapture {
 
@@ -28,12 +29,50 @@ namespace Rapture {
         auto project = app.getProject();
         auto shaderPath = project->getConfig().shaderPath;
 
-        auto [shader, handle] = AssetManager::importAsset<Shader>(shaderPath / "DDGI/PopulateProbesDDGI2.cs.glsl");
+        auto [shader, handle] = AssetManager::importAsset<Shader>(shaderPath / "DDGI/PopulateProbesDDGI3.cs.glsl");
         m_DDGI_PopulateProbesShader = shader;
 
         initTextures();
 
     }
+
+    // Returns true if there's an intersection, and outputs the barycentric coordinates and distance
+bool intersectTriangle(Ray ray, Triangle tri, glm::vec2* barycentricUV, float* t) {
+    
+
+    // Calculate edges
+    glm::vec3 edge1 = tri.v1 - tri.v0;
+    glm::vec3 edge2 = tri.v2 - tri.v0;
+    
+    glm::vec3 normalVec = glm::cross(edge1, edge2);
+    glm::vec3 ao = ray.origin - tri.v0;
+    glm::vec3 dao = glm::cross(ao, ray.direction);
+
+    float determinant = -glm::dot(ray.direction, normalVec);
+    float invDet = 1.0f/determinant;
+
+    float dst = glm::dot(ao, normalVec) * invDet;
+    float u = glm::dot(edge2, dao) * invDet;
+    float v = -glm::dot(edge1, dao) * invDet;
+    float w = 1.0f - u - v;
+
+    *t = dst;
+    *barycentricUV = glm::vec2(u, v);
+
+    // Two-sided intersection test
+    if (glm::abs(determinant) < 0.00000001f) { // Ray is parallel to triangle plane or determinant is zero
+        return false;
+    }
+
+    // Check if hit is in front of ray and within triangle bounds.
+    // Using a small epsilon for barycentric coordinates and distance for robustness.
+    bool hitValid = (dst >= 0.00001f) &&                 // Hit must be in front of the ray (t > epsilon)
+                    (u >= -0.00001f) && (u <= 1.00001f) && // u must be approx in [0,1]
+                    (v >= -0.00001f) && (v <= 1.00001f) && // v must be approx in [0,1]
+                    ((u + v) <= 1.00001f);                // u + v must be approx <= 1 (ensures w approx >= 0)
+    
+    return hitValid;
+}
 
     DynamicDiffuseGI::~DynamicDiffuseGI()
     {
@@ -54,7 +93,7 @@ namespace Rapture {
 
         // get all the meshes in the scene
         auto& reg = scene->getRegistry();
-        auto view = reg.view<MeshComponent, TransformComponent, MaterialComponent>();
+        auto view = reg.view<MeshComponent, TransformComponent, MaterialComponent, TagComponent>();
 
         std::vector<MeshInfo> meshInfos;
         std::vector<BufferMetadata> bufferMetadata;
@@ -98,7 +137,9 @@ namespace Rapture {
         // get the mesh info data for the buffer
         for (auto entity : view)
         {
-            auto [mesh, transform, material] = view.get<MeshComponent, TransformComponent, MaterialComponent>(entity);
+            auto [mesh, transform, material, tag] = view.get<MeshComponent, TransformComponent, MaterialComponent, TagComponent>(entity);
+
+
 
             if (mesh.mesh)
             {
@@ -157,10 +198,14 @@ namespace Rapture {
                 meshInfo.NormalTextureHandle = normalTextureHandle;
                 meshInfo.MetallicRoughnessTextureHandle = roughnessTextureHandle;
                 meshInfo.Transform = transform.transformMatrix();
+                meshInfo.InvTransform = glm::inverse(meshInfo.Transform);
                 meshInfo.bufferMetadataIDX = bufferMetadataIDX;
                 meshInfo.vertexOffsetBytes = vertexOffsetBytes;
                 meshInfo.indexOffsetBytes = indexOffsetBytes;
                 meshInfos.push_back(meshInfo);
+
+
+
 
             }
 
@@ -196,7 +241,7 @@ namespace Rapture {
         // sun light ubo
         m_SunLightBuffer = std::make_shared<UniformBuffer>(sizeof(DirectionalLightBufferInfo), BufferUsage::Static, &directionalLightBufferInfo);
 
-        m_DebugBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(DebugData) * meshInfos.size(), BufferUsage::Dynamic, nullptr);
+        m_DebugBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(DebugData) * 4864 * 2, BufferUsage::Dynamic, nullptr);
 
         m_isPopulated = true;
 
@@ -317,7 +362,7 @@ namespace Rapture {
 
         ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true}); // Add a memory barrier before reading
             
-        uint32_t bufferSize = m_meshCount;
+        uint32_t bufferSize = 4864*2;
 
         std::vector<DebugData> debugData(bufferSize);
 
@@ -336,20 +381,54 @@ namespace Rapture {
 
 
 
-        for (int i = 0; i < debugData.size(); i++) {
+        uint32_t sameCount = 0;
+        uint32_t diffCount = 0;
+        uint32_t totals = 0;
 
-            GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Mesh Index: {0}", debugData[i].meshIndex);
-            GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Transform: {0} {1} {2} {3}", debugData[i].transform[0][0], debugData[i].transform[0][1], debugData[i].transform[0][2], debugData[i].transform[0][3]);
-            GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Transform: {0} {1} {2} {3}", debugData[i].transform[1][0], debugData[i].transform[1][1], debugData[i].transform[1][2], debugData[i].transform[1][3]);
-            GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Transform: {0} {1} {2} {3}", debugData[i].transform[2][0], debugData[i].transform[2][1], debugData[i].transform[2][2], debugData[i].transform[2][3]);
-            GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Transform: {0} {1} {2} {3}", debugData[i].transform[3][0], debugData[i].transform[3][1], debugData[i].transform[3][2], debugData[i].transform[3][3]);
+        std::vector<uint32_t> countersBVH(4864);
+        std::vector<uint32_t> countersAll(4864);
 
-            //GE_CORE_TRACE("DynamicDiffuseGI::readDebugBuffer - Probe {0} - Mesh Index: {1}, Trans form: {2}", debugData[i].meshIndex, debugData[i].transform);
+        for (int i = 0; i < bufferSize; i++) {
+            if (i < 4864) {
+                countersBVH[debugData[i].idx]++;
+            } else {
+                countersAll[debugData[i].idx]++;
+            }
         }
+
+        for (int i = 0; i < 4864; i++) {
+            if (countersBVH[i] == 1 && countersAll[i] != 1) {
+                GE_CORE_ERROR("DynamicDiffuseGI::readDebugBuffer - primitive {0} only present in BVH", i);
+            } else if (countersBVH[i] == 1 && countersAll[i] == 1) {
+                GE_CORE_INFO("DynamicDiffuseGI::readDebugBuffer - primitive {0} present in BVH and All", i);
+            } else if (countersBVH[i] != 1 && countersAll[i] == 1) {
+                GE_CORE_ERROR("DynamicDiffuseGI::readDebugBuffer - primitive {0} only present in All", i);
+            }
+
+        }
+
+        uint32_t totalinBVH = 0;
+        uint32_t totalinAll = 0;
+
+        for (int i = 0; i < 4864; i++) {
+            if (countersBVH[i] == 1) {
+                totalinBVH++;
+            }
+            if (countersAll[i] == 1) {
+                totalinAll++;
+            }
+        }
+
+        GE_CORE_INFO("DynamicDiffuseGI::readDebugBuffer - total in BVH: {0} | total in All: {1}", totalinBVH, totalinAll);
+
+
+
+        GE_CORE_INFO("DynamicDiffuseGI::readDebugBuffer - same: {0} | diff: {1} | total: {2}, ratio: {3}", sameCount, diffCount, totals, (float)(diffCount) / (float)totals);
 
         debugData.clear();
         
     }
+
     void DynamicDiffuseGI::initTextures()
     {
 

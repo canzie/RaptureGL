@@ -99,6 +99,15 @@ layout(std140, binding = 3) uniform debugConfig {
     bool showFinal;
     bool showDiffuseIntensity;
 
+    // --- New DDGI Debugging Flags ---
+    bool debug_DDGI_TrilinearWeightSum;    // Visualize sum of trilinear weights for the 8 probes
+    bool debug_DDGI_BackfaceWeightSum;     // Visualize sum of backface weights
+    bool debug_DDGI_VisibilityFactorSum;   // Visualize sum of visibility factors
+    bool debug_DDGI_FinalProbeWeightSum;   // Visualize sum of final combined probe weights
+    bool debug_DDGI_RawIndirectSum;        // Visualize sum of (probeIrradianceContribution * finalProbeWeight) before normalization
+    bool debug_DDGI_TotalWeight;           // Visualize the totalWeight variable used for normalization
+    bool debug_DDGI_ProbeIrradianceSum;    // Visualize sum of probeIrradianceContribution (radiance * cosine)
+
 } u_debugConfig;
 
 

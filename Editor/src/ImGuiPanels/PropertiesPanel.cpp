@@ -6,6 +6,7 @@
 #include "PanelComponents.h"
 
 #include "Scenes/Components/Transforms.h"
+#include "Mesh/Mesh.h"
 
 // Platform-specific file dialog includes
 #ifdef _WIN32
@@ -476,6 +477,23 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
         }
         catch (const std::exception& e) {
             Rapture::GE_CORE_ERROR("Error rendering transform component: {}", e.what());
+        }
+
+        // Edit Mesh component if it exists
+        try {
+            if (entity->hasComponent<Rapture::MeshComponent>() &&
+                ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen)) {
+                auto& meshComponent = entity->getComponent<Rapture::MeshComponent>();
+                if (meshComponent.mesh) {
+                    auto& meshData = meshComponent.mesh->getMeshData();
+                    ImGui::Text("Triangle Count: %zu", meshData.triangleCount);
+                } else {
+                    ImGui::Text("No mesh data available.");
+                }
+            }
+        }
+        catch (const std::exception& e) {
+            Rapture::GE_CORE_ERROR("Error rendering mesh component: {}", e.what());
         }
 
         // Add section for BoundingBox component
