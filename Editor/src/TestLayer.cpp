@@ -125,25 +125,26 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     }
 
     auto config = project->getConfig();
+    auto assetsPath = config.directory / "assets";
     auto path = config.directory / "Editor/assets/models/Sponza/Sponza.gltf";
     
     
 	//Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
 	auto loader = Rapture::ModelLoadersCache::getLoader(path.string(), activeScene);
     if (loader){
-        loader->loadModel("Sponza/Sponza.gltf");
+        loader->loadModel(path.string(), true);
         //loader->loadModel("sphere.gltf");
         //loader->loadModel("stanford_dragon_pbr/scene.gltf");
         //loader->loadModel("main1_sponza/NewSponza_Main_glTF_003.gltf");
     }
 
     std::vector<std::filesystem::path> cubemapPaths = {
-        "D:/downloads/skybox/skybox/right.jpg",
-        "D:/downloads/skybox/skybox/left.jpg",
-        "D:/downloads/skybox/skybox/top.jpg",
-        "D:/downloads/skybox/skybox/bottom.jpg",
-        "D:/downloads/skybox/skybox/front.jpg", 
-        "D:/downloads/skybox/skybox/back.jpg"
+        assetsPath / "skybox/cubemaps/1/right.png",
+        assetsPath / "skybox/cubemaps/1/left.png",
+        assetsPath / "skybox/cubemaps/1/top.png",
+        assetsPath / "skybox/cubemaps/1/bottom.png",
+        assetsPath / "skybox/cubemaps/1/front.png", 
+        assetsPath / "skybox/cubemaps/1/back.png"
     };
 
 
@@ -452,7 +453,7 @@ void TestLayer::onUpdate(float ts)
     //Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesSubset(), Rapture::LBVHManager::getTransformsSubset());
     
     //Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesAtDepth(), Rapture::LBVHManager::getTransformsAtDepth());
-    //Rapture::Renderer::drawInstancedSpheres(*m_debugProbeSphere, m_ddgi->getDebugProbePositions());
+    Rapture::Renderer::drawInstancedSpheres(*m_debugProbeSphere, m_ddgi->getDebugProbePositions());
 
     // Draw the debug ray if active
     if (m_showDebugRay && m_debugRayLine) {

@@ -690,7 +690,6 @@ namespace Rapture
 	void Renderer::drawBoundingBox(Entity entity)
 	{
 		if (!entity || !entity.hasComponent<BoundingBoxComponent>()) {
-			GE_RENDER_ERROR("Entity missing BoundingBoxComponent in drawBoundingBox");
 			return;
 		}
 		

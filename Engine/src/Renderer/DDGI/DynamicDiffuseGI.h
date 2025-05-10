@@ -13,6 +13,8 @@
 #include "../../Textures/Texture.h"
 #include "../../Sorting/SpatialSorting/BVH/LBVH/LBVH.h"
 
+#include "../ShadowMapping/CascadedShadowMapping.h"
+
 #include <cstdint>
 
 
@@ -49,28 +51,22 @@ struct MeshInfo {
 };
 
 struct ProbeInfo {
-    alignas(16) glm::uvec3 probeGridDimensions = glm::uvec3(32, 32, 16); // Number of probes in each dimension (X, Y, Z)
+    alignas(16) glm::uvec3 probeGridDimensions = glm::uvec3(16, 8, 16); // Number of probes in each dimension (X, Y, Z)
     alignas(8) glm::uvec2 probeResolution = glm::uvec2(8, 8); // Resolution of each probe texture (e.g., 8x8)
-    alignas(16) glm::vec3 probeSpacing = glm::vec3(1.0f, 1.0f, 1.0f);
-    alignas(16) glm::vec3 probeOrigin = glm::vec3(0.0f, 0.0f, 0.0f); // will probably be camera position
+    alignas(16) glm::vec3 probeSpacing = glm::vec3(1.5f, 2.0f, 1.5f);
+    alignas(16) glm::vec3 probeOrigin = glm::vec3(0.0f, 5.0f, 0.0f); // will probably be camera position
 };
 
-struct DirectionalLightBufferInfo {
-    alignas(16) glm::vec3 direction;
-    alignas(4) float intensity;
+struct SunProperties {
+    alignas(16) glm::mat4 sunLightSpaceMatrix;    // Light-space matrices for each cascade
+    alignas(16) glm::vec3 sunDirectionWorld;                       // Normalized direction FROM fragment TO sun
+
+    alignas(4) uint32_t sunCascadeCount;                          // Number of active cascades for the sun
+    alignas(4) float sunIntensity;
+    alignas(8) uint64_t sunShadowTextureArrayHandle; // Bindless handle for sampler2DArrayShadow
 };
 
-struct Ray {
-    alignas(16) glm::vec3 origin;
-    alignas(16) glm::vec3 direction;
-    alignas(16) glm::vec3 invDir;
-};
 
-struct Triangle {
-    alignas(16) glm::vec3 v0;
-    alignas(16) glm::vec3 v1;
-    alignas(16) glm::vec3 v2;
-};
 
 struct DebugData {
 
@@ -111,11 +107,14 @@ private:
     int getBufferMetadataIndex(uint32_t vaoID);
     void readDebugBuffer();
     void initTextures();
+    void updateSunProperties(std::shared_ptr<Scene> scene);
 
 private:
     std::shared_ptr<Shader> m_DDGI_PopulateProbesShader;
 
     ProbeInfo m_ProbeConfig;
+
+    SunProperties m_SunShadowProps;
 
     // (vaoID, BufferMetadata)
     // we need to retain the order of the buffermetadata, when using a map we can lose this order and the buffermetadata indices might not match the ssbo
@@ -123,9 +122,12 @@ private:
     
     std::shared_ptr<ShaderStorageBuffer> m_MeshInfoBuffer;
     std::shared_ptr<ShaderStorageBuffer> m_BufferMetadataBuffer;
-    std::shared_ptr<UniformBuffer> m_ProbeInfoBuffer;
 
     std::shared_ptr<ShaderStorageBuffer> m_DebugBuffer;
+
+    std::shared_ptr<UniformBuffer> m_SunLightBuffer;
+    std::shared_ptr<UniformBuffer> m_ProbeInfoBuffer;
+
 
     // is actually irradiance but iam retarted, will need to update this everywhere :(
     std::shared_ptr<Texture2D> m_RadianceTexture;
@@ -136,7 +138,6 @@ private:
 
     std::vector<glm::vec3> m_DebugProbePositions;
 
-    std::shared_ptr<UniformBuffer> m_SunLightBuffer;
 
     // used to alternate between the textures each frame
     bool m_isEvenFrame;

@@ -1383,66 +1383,7 @@ void PropertiesPanel::renderCascadedShadowComponent(std::shared_ptr<Rapture::Ent
     }
     ImGui::SameLine();
     HelpMarker("Controls how much the cascade splits are spread out. Lower values mean more logarithmic spread, higher values mean more linear spread.");
-    
-    // Shadow map preview using drawTextureGrid
-    ImGui::Separator();
-    ImGui::Text("Cascade Shadow Map Previews:");
-    
-    if (csmComp.cascadedShadowMapping) {
-        try {
-            // Get the shadow map texture IDs for all cascades
-            std::vector<uint64_t> textureIDs = csmComp.cascadedShadowMapping->getCascadeTextureHandles();
-            
-            if (!textureIDs.empty()) {
-                // Prepare data for drawTextureGrid
-                std::vector<TextureDisplayData> texVec;
-                for (size_t i = 0; i < textureIDs.size(); ++i) {
-                    if (textureIDs[i] > 0) {
-                        TextureDisplayData texData;
-                        texData.textureID = textureIDs[i];
-                        texData.label = "Cascade " + std::to_string(i + 1);
-                        texData.width = static_cast<float>(csmComp.width);
-                        texData.height = static_cast<float>(csmComp.height);
-                        texVec.push_back(texData);
-                    } else {
-                        // Optionally handle invalid IDs here, maybe add a placeholder?
-                        Rapture::GE_CORE_WARN("Invalid texture ID for cascade {}", i + 1);
-                    }
-                }
-
-                // Draw the grid, aiming for 2 columns
-                if (!texVec.empty()) {
-                     drawTextureGrid(texVec, 2, 312.0f); // Max item width 312, 2 columns
-                }
-                 else {
-                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "No valid cascade textures to display");
-                }
-
-            } else {
-                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "No cascade textures available");
-            }
-        }
-        catch (const std::exception& e) {
-            Rapture::GE_CORE_ERROR("Error displaying cascade shadow maps: {}", e.what());
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Error displaying cascade shadow maps");
-        }
-    } else {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Cascaded shadow maps not initialized");
         
-        // Add a button to create the shadow map
-        if (ImGui::Button("Create Shadow Maps")) {
-            try {
-                csmComp.cascadedShadowMapping = std::make_shared<Rapture::CascadedShadowMapping>(
-                    csmComp.width, csmComp.height, csmComp.numCascades);
-                csmComp.isActive = true;
-                Rapture::GE_CORE_INFO("Created cascaded shadow maps with resolution {}x{} and {} cascades", 
-                                      csmComp.width, csmComp.height, csmComp.numCascades);
-            }
-            catch (const std::exception& e) {
-                Rapture::GE_CORE_ERROR("Failed to create cascaded shadow maps: {}", e.what());
-            }
-        }
-    }
 }
 
 void PropertiesPanel::renderComputeTextureComponent(std::shared_ptr<Rapture::Entity> entity) {
@@ -1508,7 +1449,7 @@ void PropertiesPanel::renderComputeTextureComponent(std::shared_ptr<Rapture::Ent
                 ImGui::Text("Preview:");
                 try {
                     TextureDisplayData texData;
-                    texData.textureID = (ImTextureID)rendererID;
+                    texData.textureID = (uint64_t)rendererID;
                     texData.label = "Preview";
                     texData.width = static_cast<float>(width);
                     texData.height = static_cast<float>(height);

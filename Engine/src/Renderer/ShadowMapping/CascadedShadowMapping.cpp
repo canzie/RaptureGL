@@ -12,10 +12,11 @@
 
 namespace Rapture {
 
+    uint8_t CascadedShadowMapping::MAX_CASCADES = 4;
+
     CascadedShadowMapping::CascadedShadowMapping(uint32_t width, uint32_t height, uint8_t numCascades, float lambda)
         : m_Width(width), m_Height(height), 
-        m_NumCascades(numCascades), m_Lambda(lambda), 
-        m_overallViewMatrix(glm::mat4(1.0f)), m_overallProjectionMatrix(glm::mat4(1.0f))
+        m_NumCascades(numCascades), m_Lambda(lambda)
     {
        GE_CORE_INFO("CascadedShadowMapping: Creating with {0} cascades at {1}x{2} resolution", 
             m_NumCascades, m_Width, m_Height);
@@ -192,64 +193,44 @@ namespace Rapture {
         return splitDepths;
     }
 
-    std::vector<uint64_t> CascadedShadowMapping::getCascadeTextureHandles() const
+    uint64_t CascadedShadowMapping::getCascadeTextureHandle() const
     {
-        std::vector<uint64_t> handles(m_NumCascades, 0);
+        uint64_t arrayHandle = 0;
         
         if (!m_ShadowMap) {
             GE_CORE_ERROR("CascadedShadowMapping::getCascadeTextureHandles: Shadow map is null");
-            return handles;
+            return arrayHandle;
         }
-                
-        try {
-            // If we're using a texture array
-            if (m_ShadowMap->hasDepthTextureArray()) {
-                // With a texture array, we only have one handle for all cascades
-                // The layer index is used in the shader to access individual cascades
-                uint64_t arrayHandle = m_ShadowMap->getDepthTextureArrayHandle();
-                if (arrayHandle == 0) {
-                    GE_CORE_ERROR("CascadedShadowMapping: Received invalid handle (0) for depth texture array");
-                } else {
-                    // Fill all slots with the same handle - will be accessed by layer in shader
-                    std::fill(handles.begin(), handles.end(), arrayHandle);
-                }
-            } 
+
+        if (m_ShadowMap->hasDepthTextureArray()) {
+            arrayHandle = m_ShadowMap->getDepthTextureArrayHandle();
         }
-        catch (const std::exception& e) {
-            GE_CORE_ERROR("CascadedShadowMapping: Exception while retrieving texture handles: {0}", e.what());
+
+        if (arrayHandle == 0) {
+            GE_CORE_ERROR("CascadedShadowMapping: Received invalid handle (0) for depth texture array");
         }
-        
-        return handles;
+
+        return arrayHandle;
     }
 
-    std::vector<uint32_t> CascadedShadowMapping::getCascadeTextureIDs() const
+    uint32_t CascadedShadowMapping::getCascadeTextureID() const
     {
-        std::vector<uint32_t> textureIDs(m_NumCascades, 0);
+        uint32_t arrayID = 0;
         
         if (!m_ShadowMap) {
-            GE_CORE_ERROR("CascadedShadowMapping::getCascadeTextureIDs: Shadow map is null");
-            return textureIDs;
+            GE_CORE_ERROR("CascadedShadowMapping::getCascadeTextureHandles: Shadow map is null");
+            return arrayID;
         }
-        
-        try {
-            // If we're using a texture array
-            if (m_ShadowMap->hasDepthTextureArray()) {
-                // With a texture array, we only have one ID for all cascades
-                // The layer index is used in the shader to access individual cascades
-                uint32_t arrayID = m_ShadowMap->getDepthTextureArrayID();
-                if (arrayID == 0) {
-                    GE_CORE_ERROR("CascadedShadowMapping: Received invalid ID (0) for depth texture array");
-                } else {
-                    // Fill all slots with the same ID - will be accessed by layer in shader
-                    std::fill(textureIDs.begin(), textureIDs.end(), arrayID);
-                }
-            } 
+
+        if (m_ShadowMap->hasDepthTextureArray()) {
+            arrayID = m_ShadowMap->getDepthTextureArrayID();
         }
-        catch (const std::exception& e) {
-            GE_CORE_ERROR("CascadedShadowMapping: Exception while retrieving texture IDs: {0}", e.what());
+
+        if (arrayID == 0) {
+            GE_CORE_ERROR("CascadedShadowMapping: Received invalid ID (0) for depth texture array");
         }
-        
-        return textureIDs;
+
+        return arrayID;
     }
 
     /**

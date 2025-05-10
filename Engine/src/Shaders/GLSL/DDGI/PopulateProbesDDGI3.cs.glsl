@@ -16,7 +16,7 @@
 // #define DEBUG_VIEW_BVH_HIT_NODE       // Visualize if BVH trace found a leaf node (Green=hit, Red=miss)
 // #define DEBUG_VIEW_TRIANGLE_HIT       // Visualize if triangle intersection succeeded (Green=hit, Red=miss)
 //#define DEBUG_VIEW_ALBEDO             // Default: Visualize sampled albedo color
-#define DEBUG_OUTPUT_BUFFER
+// #define DEBUG_OUTPUT_BUFFER
 
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
@@ -97,20 +97,6 @@ layout(std430, binding = 3) readonly buffer SceneInfo {
 } u_sceneInfo;
 
 
-#ifdef DEBUG_OUTPUT_BUFFER
-
-struct t2 {
-    vec3 v0;
-    vec3 v1;
-    vec3 v2;
-};
-
-struct Ray {
-    vec3 origin;
-    vec3 direction;
-    vec3 invDir;
-};
-
 struct Triangle {
     vec3 v0;
     vec3 v1;
@@ -126,13 +112,22 @@ struct Triangle {
     vec2 uv2; // Texture coordinates
 };
 
-struct DebugData {
-    uint primitiveIndex;
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+    vec3 invDir;
 };
 
-layout(std430, binding = 4) writeonly buffer debugBuffer {
-    DebugData u_debugData[];
-};
+
+#ifdef DEBUG_OUTPUT_BUFFER
+
+    struct DebugData {
+        uint primitiveIndex;
+    };
+
+    layout(std430, binding = 4) writeonly buffer debugBuffer {
+        DebugData u_debugData[];
+    };
 #endif
 
 // --- Light Definitions ---
@@ -625,99 +620,94 @@ vec3 samplePreviousProbes(vec3 hitPosition, vec3 worldNormal) {
     return indirectRadiance * max(0.0, dot(worldNormal, dirToProbe));
 }
 
+// Add these constants at the top with other defines
+#define NUM_RAYS 256
+#define GOLDEN_RATIO 1.618033988749895
+
+// Add this function before main()
+vec3 fibonacciSpherePoint(uint i, uint n) {
+    float phi = 2.0 * PI * float(i) / GOLDEN_RATIO;
+    float cosTheta = 1.0 - 2.0 * float(i) / float(n);
+    float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+    
+    return vec3(
+        cos(phi) * sinTheta,
+        sin(phi) * sinTheta,
+        cosTheta
+    );
+}
+
 void main() {
     // texel in the atlas
     ivec2 globalIndex2D = ivec2(gl_GlobalInvocationID.xy);
 
-
-
     // get the probe related to the texel
-    // DEBUG: OK
     vec3 probeIndex = texelToProbeIndex(globalIndex2D, probeResolution, probeGridDimensions, u_probesPerRow);
 
     // Check if the calculated probeIndex is outside the valid grid dimensions
     if (probeIndex.x >= probeGridDimensions.x ||
         probeIndex.y >= probeGridDimensions.y ||
         probeIndex.z >= probeGridDimensions.z) {
-        // This texel does not correspond to a valid probe.
-        // Set output to black and return early.
         imageStore(probeAtlas, globalIndex2D, vec4(0.0, 0.0, 0.0, 1.0));
-        // Also set a default/invalid value for the depth atlas
-        // Using (0,0) for mean distance and squared mean distance signifies no valid data
         imageStore(probeDepthAtlas, globalIndex2D, vec4(0.0, 0.0, 0.0, 0.0)); 
-        return; // Stop processing for this invalid probe
+        return;
     }
 
-    //get probe position
-    // Calculate the total size of the grid and the starting offset
+    // Calculate probe position
     vec3 totalGridSize = vec3(probeGridDimensions) * probeSpacing;
-    vec3 startOffset = probeOrigin - (totalGridSize / 2.0f) + (probeSpacing / 2.0f); // Offset by half spacing to center probes
-    // Calculate the position based on the starting offset and index
+    vec3 startOffset = probeOrigin - (totalGridSize / 2.0f) + (probeSpacing / 2.0f);
     vec3 probePosition = startOffset + probeIndex * probeSpacing;
-
-    //vec3 maxProbePosition = probeOrigin + probeGridDimensions * probeSpacing;
-
 
     // Calculate LOCAL texel coordinates within the current probe tile
     ivec2 localTexelCoord = globalIndex2D % ivec2(probeResolution);
-    // Normalize local coordinates to [0, 1) for octDecode input
-    vec2 normLocalTexCoord = vec2(localTexelCoord) / vec2(probeResolution);
+    
+    // Calculate which ray this texel should process
+    // We want to distribute NUM_RAYS across all texels in the probe
+    uint totalTexelsInProbe = uint(probeResolution.x * probeResolution.y);
+    uint rayIndex = uint(localTexelCoord.y * probeResolution.x + localTexelCoord.x);
+    
+    // If this texel is beyond our ray count, return early
+    if (rayIndex >= NUM_RAYS) {
+        imageStore(probeAtlas, globalIndex2D, vec4(0.0, 0.0, 0.0, 1.0));
+        imageStore(probeDepthAtlas, globalIndex2D, vec4(0.0, 0.0, 0.0, 0.0));
+        return;
+    }
 
-    // Decode ray direction using correctly normalized local coordinates
-    // DEBUG: OK
-    vec3 rayDirection = octDecode(normLocalTexCoord); 
+    // Generate ray direction using Fibonacci sphere
+    vec3 rayDirection = fibonacciSpherePoint(rayIndex, NUM_RAYS);
     vec3 invDir = 1.0 / rayDirection;
 
-
-
     Ray ray = Ray(probePosition, rayDirection, invDir);
-    BVHNode hitNode; // Renamed from 'result' to avoid conflict
-    vec3 calculatedIrradiance = vec3(0.0); // Store the calculated light energy here
-
-    // Structure to store the closest hit information found across all meshes
     HitInfo closestHitInfo;
     closestHitInfo.hit = false;
     closestHitInfo.t = INFINITY_FLOAT;
 
-    imageStore(probeAtlas, globalIndex2D, vec4(0.0, 0.0, 1.0, 1.0));
-
-
-
+    // Trace against all meshes
     for (int i = 0; i < u_meshCount; i++) {
-        
         MeshInfo meshInfo = u_sceneInfo.MeshInfos[i];
-
         uint rootIndex = meshInfo.RootIndex;
 
-        // --- Transform Ray to Mesh Local Space for BVH Traversal ---
+        // Transform Ray to Mesh Local Space for BVH Traversal
         mat4 invTransform = meshInfo.InvTransform;
-
         vec3 localRayOrigin = (invTransform * vec4(ray.origin, 1.0)).xyz;
         vec3 localRayDirection = (invTransform * vec4(ray.direction, 0.0)).xyz;
         vec3 localInvDir = 1.0 / localRayDirection;
         Ray localRay = Ray(localRayOrigin, localRayDirection, localInvDir);
-        // -----------------------------------------------------------
 
-        imageStore(probeAtlas, globalIndex2D, vec4(1.0, 0.0, 1.0, 1.0));
-
-
-        // Trace using the local space ray against the local space BVH AABBs
-        //if (traceBVH(localRay, rootIndex, hitNode)) {
-
-        HitInfo result;
-        result = traceBVH(ray, localRay, rootIndex, meshInfo);
+        HitInfo result = traceBVH(ray, localRay, rootIndex, meshInfo);
         result.meshIndex = i;
-    
+
         if (result.hit && result.t < closestHitInfo.t && result.t < probeSpacing.x * 2.0) {
             closestHitInfo = result;
-            
         }
-
-
     }
-    
+
+    vec3 rayIrradiance;
+    float rayDistance;
+    float rayDistanceSquared;
+
+    // Process hit or miss
     if (closestHitInfo.hit) {
-        
         vec2 uv = interpolateUV(closestHitInfo.barycentricUV, closestHitInfo.tri);
         vec3 worldNormal = interpolateNormal(closestHitInfo.barycentricUV, closestHitInfo.tri);
         vec3 worldTangent = interpolateTangent(closestHitInfo.barycentricUV, closestHitInfo.tri);
@@ -730,57 +720,26 @@ void main() {
         );
 
         vec3 albedo = sampleAlbedo(closestHitInfo.meshIndex, uv);
-        float NdotL = max(0.0, dot(worldShadingNormal, -normalize(u_SunLight.direction))); // Light direction points TO the light
+        float NdotL = max(0.0, dot(worldShadingNormal, -normalize(u_SunLight.direction)));
 
         vec3 indirectLighting = samplePreviousProbes(closestHitInfo.hitPosition, worldShadingNormal);
-        calculatedIrradiance = (albedo / PI) * (u_SunLight.intensity * NdotL + indirectLighting);
-
-
+        rayIrradiance = (albedo / PI) * (u_SunLight.intensity * NdotL + indirectLighting);
+        rayDistance = closestHitInfo.t;
+        rayDistanceSquared = closestHitInfo.t * closestHitInfo.t;
     } else {
-        vec3 skyColor = texture(u_skyboxCubemap, ray.direction).rgb;
-
+        vec3 skyColor = vec3(1.0, 0.889, 0.669);
         float luminance = dot(skyColor, vec3(0.299, 0.587, 0.114));
-        // Desaturate by blending with luminance (e.g., 50% desaturation)
-        float desaturationFactor = 0.9; // Adjust between 0 (full color) and 1 (grayscale)
-        calculatedIrradiance = mix(skyColor, vec3(luminance), desaturationFactor);
-     
+        float desaturationFactor = 0.9;
+        rayIrradiance = mix(skyColor, vec3(luminance), desaturationFactor);
+        
+        float skyDistance = 10000.0;
+        rayDistance = skyDistance;
+        rayDistanceSquared = skyDistance * skyDistance;
     }
 
-    vec2 currentDepthData;
-    if (closestHitInfo.hit) {
-        float hitDistance = closestHitInfo.t;
-        // Clamp distance to avoid potential issues with huge numbers if geometry is very far
-        hitDistance = min(hitDistance, 10000.0); // Adjust max distance as needed
-        currentDepthData = vec2(hitDistance, hitDistance * hitDistance);
-    } else {
-        // Use defined infinity for miss
-        currentDepthData = vec2(INFINITY_FLOAT, INFINITY_FLOAT);
-    }
-
-    // --- Hysteresis for Depth/Visibility ---
-    vec2 oldDepthData = imageLoad(prevProbeDepthAtlas, globalIndex2D).rg;
-    vec2 finalDepthData;
-
-    // Handle potential NaN/Inf from previous frames or initial state
-    // If old data is invalid (e.g., Inf), use current data directly. Otherwise, blend.
-    if (isinf(oldDepthData.x) || isnan(oldDepthData.x)) {
-         finalDepthData = currentDepthData;
-    } else {
-         // Blend using mix: mix(newValue, oldValue, hysteresisFactor)
-         // Ensure currentDepthData is not Inf before mixing if old data was valid
-         if(isinf(currentDepthData.x)) {
-            finalDepthData = currentDepthData; // If new hit is Inf, override directly
-         } else {
-            finalDepthData = mix(currentDepthData, oldDepthData, u_hysteresis);
-         }
-    }
-
-    imageStore(probeAtlas, globalIndex2D, vec4(calculatedIrradiance, 1.0));
-
-    imageStore(probeDepthAtlas, globalIndex2D, vec4(finalDepthData, 0.0, 0.0));
-
-
-
+    // Store the ray's contribution directly
+    imageStore(probeAtlas, globalIndex2D, vec4(rayIrradiance, 1.0));
+    imageStore(probeDepthAtlas, globalIndex2D, vec4(rayDistance, rayDistanceSquared, 0.0, 0.0));
 }
 
 

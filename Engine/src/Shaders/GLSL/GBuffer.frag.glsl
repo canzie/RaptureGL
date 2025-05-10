@@ -57,8 +57,7 @@ vec3 getNormalFromMapNoTangent()
 {
     vec3 tangentNormal = vec3(0.0);
     if (normalMap != 0) {
-        sampler2D normalSampler = sampler2D(normalMap);
-        tangentNormal = texture(normalSampler, fs_in.TexCoord).xyz * 2.0 - 1.0;
+        tangentNormal = texture(sampler2D(normalMap), fs_in.TexCoord).xyz * 2.0 - 1.0;
     } else if ((flags & NORMAL_MAP_FLAG) != 0) {
         tangentNormal = texture(u_NormalMap, fs_in.TexCoord).xyz * 2.0 - 1.0;
     }
@@ -81,8 +80,7 @@ vec3 getNormalFromMap()
 {
     vec3 tangentNormal = vec3(0.0);
     if (normalMap != 0) {
-        sampler2D normalSampler = sampler2D(normalMap);
-        tangentNormal = texture(normalSampler, fs_in.TexCoord).xyz * 2.0 - 1.0;
+        tangentNormal = texture(sampler2D(normalMap), fs_in.TexCoord).xyz * 2.0 - 1.0;
     } else if ((flags & NORMAL_MAP_FLAG) != 0) {
         tangentNormal = texture(u_NormalMap, fs_in.TexCoord).xyz * 2.0 - 1.0;
     }
@@ -156,13 +154,18 @@ void main() {
         // Check if tangent data exists by checking if it's not a zero vector
         if (length(fs_in.Tangent) > 0.01) {
             normal = getNormalFromMap();
+            if (length(normal) < 0.01) {
+                normal = vec3(1.0, 1.0, 1.0);
+            }
         } else {
             normal = getNormalFromMapNoTangent();
-        }    } else {
+        
+        }    
+    } else {
         normal = normalize(fs_in.Normal);
     }
 
-    gNormal = normal;
+    gNormal = abs(normal);
     
     // Albedo and specular
     gAlbedoSpec = vec4(albedo, 1.0);

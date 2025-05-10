@@ -525,11 +525,11 @@ namespace Rapture
                     }
                 } else {
                     // Legacy mode: Get individual texture handles for each cascade
-                    auto cascadeTextureHandles = csmMap->getCascadeTextureHandles();
+                    auto cascadeTextureHandle = csmMap->getCascadeTextureHandle();
                     
                     // Store separate texture handles for each cascade
                     for (uint32_t i = 0; i < shadowData.cascadeCount && i < MAX_CASCADES; i++) {
-                        shadowData.textureIDs[i] = cascadeTextureHandles[i];
+                        shadowData.textureIDs[i] = cascadeTextureHandle;
                     }
                 }
 

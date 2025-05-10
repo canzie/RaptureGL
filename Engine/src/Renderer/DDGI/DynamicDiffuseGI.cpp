@@ -29,50 +29,13 @@ namespace Rapture {
         auto project = app.getProject();
         auto shaderPath = project->getConfig().shaderPath;
 
-        auto [shader, handle] = AssetManager::importAsset<Shader>(shaderPath / "DDGI/PopulateProbesDDGI3.cs.glsl");
+        auto [shader, handle] = AssetManager::importAsset<Shader>(shaderPath / "DDGI/PopulateProbesDDGI2.cs.glsl");
         m_DDGI_PopulateProbesShader = shader;
 
         initTextures();
 
     }
 
-    // Returns true if there's an intersection, and outputs the barycentric coordinates and distance
-bool intersectTriangle(Ray ray, Triangle tri, glm::vec2* barycentricUV, float* t) {
-    
-
-    // Calculate edges
-    glm::vec3 edge1 = tri.v1 - tri.v0;
-    glm::vec3 edge2 = tri.v2 - tri.v0;
-    
-    glm::vec3 normalVec = glm::cross(edge1, edge2);
-    glm::vec3 ao = ray.origin - tri.v0;
-    glm::vec3 dao = glm::cross(ao, ray.direction);
-
-    float determinant = -glm::dot(ray.direction, normalVec);
-    float invDet = 1.0f/determinant;
-
-    float dst = glm::dot(ao, normalVec) * invDet;
-    float u = glm::dot(edge2, dao) * invDet;
-    float v = -glm::dot(edge1, dao) * invDet;
-    float w = 1.0f - u - v;
-
-    *t = dst;
-    *barycentricUV = glm::vec2(u, v);
-
-    // Two-sided intersection test
-    if (glm::abs(determinant) < 0.00000001f) { // Ray is parallel to triangle plane or determinant is zero
-        return false;
-    }
-
-    // Check if hit is in front of ray and within triangle bounds.
-    // Using a small epsilon for barycentric coordinates and distance for robustness.
-    bool hitValid = (dst >= 0.00001f) &&                 // Hit must be in front of the ray (t > epsilon)
-                    (u >= -0.00001f) && (u <= 1.00001f) && // u must be approx in [0,1]
-                    (v >= -0.00001f) && (v <= 1.00001f) && // v must be approx in [0,1]
-                    ((u + v) <= 1.00001f);                // u + v must be approx <= 1 (ensures w approx >= 0)
-    
-    return hitValid;
-}
 
     DynamicDiffuseGI::~DynamicDiffuseGI()
     {
@@ -86,7 +49,8 @@ bool intersectTriangle(Ray ray, Triangle tri, glm::vec2* barycentricUV, float* t
             
             auto skyboxTexture = skybox.texture;
 
-            
+            updateSunProperties(scene);
+
             populateProbesCompute(skyboxTexture);
             return;
         }
@@ -218,16 +182,7 @@ bool intersectTriangle(Ray ray, Triangle tri, glm::vec2* barycentricUV, float* t
             bufferMetadataOnly.push_back(bufferMetadataPair.second);
         }
 
-        auto lightView = reg.view<LightComponent, TransformComponent>();
-        DirectionalLightBufferInfo directionalLightBufferInfo = {glm::vec3(0.0f), 0.0f};
 
-        for (auto entity : lightView) {
-            auto [lightComp, transformComp] = lightView.get<LightComponent, TransformComponent>(entity);
-            if (lightComp.type == LightType::Directional) {
-                directionalLightBufferInfo.direction = transformComp.rotation();
-                directionalLightBufferInfo.intensity = lightComp.intensity;
-            }
-        }
 
         // create all buffers and texture(s)
         // probe ubo
@@ -239,7 +194,7 @@ bool intersectTriangle(Ray ray, Triangle tri, glm::vec2* barycentricUV, float* t
         m_BufferMetadataBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(BufferMetadata) * bufferMetadataOnly.size(), BufferUsage::Static, bufferMetadataOnly.data());
 
         // sun light ubo
-        m_SunLightBuffer = std::make_shared<UniformBuffer>(sizeof(DirectionalLightBufferInfo), BufferUsage::Static, &directionalLightBufferInfo);
+        m_SunLightBuffer = std::make_shared<UniformBuffer>(sizeof(SunProperties), BufferUsage::Stream, &m_SunShadowProps);
 
         m_DebugBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(DebugData) * 4864 * 2, BufferUsage::Dynamic, nullptr);
 
@@ -299,7 +254,8 @@ bool intersectTriangle(Ray ray, Triangle tri, glm::vec2* barycentricUV, float* t
         m_isEvenFrame = !m_isEvenFrame;
 
         // dispatch the compute shader
-        m_DDGI_PopulateProbesShader->dispatchCompute(twidth / 8, theight / 8, 1);
+        //m_DDGI_PopulateProbesShader->dispatchCompute(twidth / 8, theight / 8, 1);
+        m_DDGI_PopulateProbesShader->dispatchCompute(m_ProbeConfig.probeGridDimensions.x, m_ProbeConfig.probeGridDimensions.y, m_ProbeConfig.probeGridDimensions.z);
 
         // unbind shader
         m_ProbeInfoBuffer->unbind();
@@ -492,6 +448,43 @@ bool intersectTriangle(Ray ray, Triangle tri, glm::vec2* barycentricUV, float* t
 
         m_PrevRadianceTexture->makeResident();
         m_PrevVisibilityTexture->makeResident();
+
+    }
+    void DynamicDiffuseGI::updateSunProperties(std::shared_ptr<Scene> scene)
+    {
+        auto& reg = scene->getRegistry();
+        auto lightView = reg.view<LightComponent, TransformComponent>();
+        
+
+        for (auto entity : lightView) {
+            auto [lightComp, transformComp] = lightView.get<LightComponent, TransformComponent>(entity);
+            if (lightComp.type == LightType::Directional) {
+                Entity ent = Entity(entity, scene.get());
+
+                auto csm = ent.tryGetComponent<CascadedShadowComponent>();
+                if (csm) {
+                    uint32_t lastCascadeIndex = csm->numCascades-1;
+                    m_SunShadowProps.sunCascadeCount = csm->numCascades;
+                    m_SunShadowProps.sunLightSpaceMatrix = csm->cascadedShadowMapping->getViewProjectionMatrices()[lastCascadeIndex];
+                    m_SunShadowProps.sunShadowTextureArrayHandle = csm->cascadedShadowMapping->getCascadeTextureHandle();
+                } else {
+                    GE_CORE_WARN("DynamicDiffuseGI::populateProbes - Entity has no cascaded shadow mapping component");
+                    // If no CSM, ensure cascade count is 0 so shader returns shadowFactor = 1.0
+                    m_SunShadowProps.sunCascadeCount = 0;
+                    m_SunShadowProps.sunShadowTextureArrayHandle = 0;
+                }
+
+
+                glm::quat rotationQuat = transformComp.transforms.getRotationQuat();
+                m_SunShadowProps.sunDirectionWorld = glm::normalize(rotationQuat * glm::vec3(0, 0, -1));
+
+                m_SunShadowProps.sunIntensity = lightComp.intensity;
+
+                break;
+            }
+        }
+
+        m_SunLightBuffer->setData(&m_SunShadowProps, sizeof(SunProperties));
 
     }
 }

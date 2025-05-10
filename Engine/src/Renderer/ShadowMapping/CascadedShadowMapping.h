@@ -48,15 +48,17 @@ namespace Rapture {
         inline uint8_t getNumCascades() const { return m_NumCascades; }
         inline std::shared_ptr<Framebuffer> getShadowMap() const { return m_ShadowMap; }
 
-        std::vector<uint64_t> getCascadeTextureHandles() const;
-        std::vector<uint32_t> getCascadeTextureIDs() const;
+        uint64_t getCascadeTextureHandle() const;
+        uint32_t getCascadeTextureID() const;
         std::vector<glm::mat4> getViewProjectionMatrices() { return m_ViewProjectionMatrices; }
         
         float getLambda() const { return m_Lambda; }
         void setLambda(float lambda) { m_Lambda = std::clamp(lambda, 0.0f, 1.0f); }
 
-        glm::mat4 getOverallViewMatrix() const { return m_overallViewMatrix; }
-        glm::mat4 getOverallProjectionMatrix() const { return m_overallProjectionMatrix; }
+
+
+    public:
+        static uint8_t MAX_CASCADES;
 
     private:
         // Extracts view frustum corners for a specific cascade depth slice
@@ -74,9 +76,7 @@ namespace Rapture {
         float m_Lambda;
         std::vector<glm::mat4> m_ViewProjectionMatrices;
 
-        // can be used for creating a frustum to do frustum culling
-        glm::mat4 m_overallViewMatrix = glm::mat4(1.0f);
-        glm::mat4 m_overallProjectionMatrix = glm::mat4(1.0f);
+
     };
 
 }

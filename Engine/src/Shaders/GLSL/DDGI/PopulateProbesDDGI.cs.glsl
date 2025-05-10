@@ -16,7 +16,7 @@
 // #define DEBUG_VIEW_BVH_HIT_NODE       // Visualize if BVH trace found a leaf node (Green=hit, Red=miss)
 // #define DEBUG_VIEW_TRIANGLE_HIT       // Visualize if triangle intersection succeeded (Green=hit, Red=miss)
 //#define DEBUG_VIEW_ALBEDO             // Default: Visualize sampled albedo color
-#define DEBUG_OUTPUT_BUFFER
+// #define DEBUG_OUTPUT_BUFFER
 
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
@@ -97,20 +97,6 @@ layout(std430, binding = 3) readonly buffer SceneInfo {
 } u_sceneInfo;
 
 
-#ifdef DEBUG_OUTPUT_BUFFER
-
-struct t2 {
-    vec3 v0;
-    vec3 v1;
-    vec3 v2;
-};
-
-struct Ray {
-    vec3 origin;
-    vec3 direction;
-    vec3 invDir;
-};
-
 struct Triangle {
     vec3 v0;
     vec3 v1;
@@ -126,18 +112,22 @@ struct Triangle {
     vec2 uv2; // Texture coordinates
 };
 
-struct DebugData {
-    t2 triangle;
-    Ray ray;
-    BVHNode bvhNode;
-    uint idx;
-    bool didhit;
-    bool hitTri;
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+    vec3 invDir;
 };
 
-layout(std430, binding = 4) writeonly buffer debugBuffer {
-    DebugData u_debugData[];
-};
+
+#ifdef DEBUG_OUTPUT_BUFFER
+
+    struct DebugData {
+        uint primitiveIndex;
+    };
+
+    layout(std430, binding = 4) writeonly buffer debugBuffer {
+        DebugData u_debugData[];
+    };
 #endif
 
 // --- Light Definitions ---
@@ -168,7 +158,8 @@ struct HitInfo {
     vec2 barycentricUV; // Barycentric coords at hit point
     uint primitiveIndex; // Index within the mesh's index buffer (e.g., first index of the triangle)
     uint meshIndex;      // Index into u_sceneInfo.MeshInfos array
-    Triangle triangle;
+    Triangle tri;
+    vec3 hitPosition;
 };
 
 
@@ -244,7 +235,9 @@ Triangle getTriangle(MeshInfo meshInfo, uint primitiveIndex) {
     float t0z = *((float *)(vboBasePtr + tangentStartByteOffset[0] + 8)); // Offset 20 is 4-byte aligned
     vec3 t0_local = vec3(t0x, t0y, t0z);
 
-    vec2 uv0 = *((vec2 *)(vboBasePtr + textureStartByteOffset[0])); // Offset 40 is 8-byte aligned (OK for vec2)
+    float uv0x = *((float *)(vboBasePtr + textureStartByteOffset[0] + 0));
+    float uv0y = *((float *)(vboBasePtr + textureStartByteOffset[0] + 4));
+    vec2 uv0  = vec2(uv0x, uv0y);
     
     // --- Vertex 1 ---
     float v1x = *((float *)(vboBasePtr + positionStartByteOffset[1] + 0));
@@ -262,7 +255,9 @@ Triangle getTriangle(MeshInfo meshInfo, uint primitiveIndex) {
     float t1z = *((float *)(vboBasePtr + tangentStartByteOffset[1] + 8)); // Offset 20 is 4-byte aligned
     vec3 t1_local = vec3(t1x, t1y, t1z);
 
-    vec2 uv1  = *((vec2 *)(vboBasePtr + textureStartByteOffset[1]));
+    float uv1x = *((float *)(vboBasePtr + textureStartByteOffset[1] + 0));
+    float uv1y = *((float *)(vboBasePtr + textureStartByteOffset[1] + 4));
+    vec2 uv1  = vec2(uv1x, uv1y);
 
     // --- Vertex 2 ---
     float v2x = *((float *)(vboBasePtr + positionStartByteOffset[2] + 0));
@@ -280,7 +275,9 @@ Triangle getTriangle(MeshInfo meshInfo, uint primitiveIndex) {
     float t2z = *((float *)(vboBasePtr + tangentStartByteOffset[2] + 8)); // Offset 20 is 4-byte aligned
     vec3 t2_local = vec3(t2x, t2y, t2z);
 
-    vec2 uv2  = *((vec2 *)(vboBasePtr + textureStartByteOffset[2]));
+    float uv2x = *((float *)(vboBasePtr + textureStartByteOffset[2] + 0));
+    float uv2y = *((float *)(vboBasePtr + textureStartByteOffset[2] + 4));
+    vec2 uv2  = vec2(uv2x, uv2y);
 
     
     tri.v0 = (meshInfo.Transform * vec4(v0_local, 1.0)).xyz;
@@ -313,6 +310,12 @@ bool intersectTriangle(Ray ray, Triangle tri, out vec2 barycentricUV, out float 
     vec3 edgeAC = tri.v2 - tri.v0;
     
     vec3 normalVec = cross(edgeAB, edgeAC);
+
+    // Backface culling: if the ray hits from behind, ignore intersection
+    //if (dot(ray.direction, normalVec) > 0.0) {
+    //    return false;
+    //}
+    
     vec3 ao = ray.origin - tri.v0;
     vec3 dao = cross(ao, ray.direction);
 
@@ -328,7 +331,7 @@ bool intersectTriangle(Ray ray, Triangle tri, out vec2 barycentricUV, out float 
     barycentricUV = vec2(u, v);
 
     // Two-sided intersection test
-    if (abs(determinant) < 0.00000001) { // Ray is parallel to triangle plane or determinant is zero
+    if (abs(determinant) < 0.000001) { // Ray is parallel to triangle plane or determinant is zero
         return false;
     }
 
@@ -359,14 +362,14 @@ vec3 interpolateNormal(vec2 barycentricUV, Triangle tri) {
     float v = barycentricUV.y;
     float w = 1.0 - u - v;  // Third barycentric coordinate
 
-    return normalize(tri.n0 * w + tri.n1 * u + tri.n2 * v); 
+    return tri.n0 * w + tri.n1 * u + tri.n2 * v; 
 }
 
 vec3 interpolateTangent(vec2 barycentricUV, Triangle tri) {
     float u = barycentricUV.x;
     float v = barycentricUV.y;
     float w = 1.0 - u - v;
-    return normalize(tri.t0 * w + tri.t1 * u + tri.t2 * v);
+    return tri.t0 * w + tri.t1 * u + tri.t2 * v;
 }
 
 vec2 octEncode(vec3 n) {
@@ -387,175 +390,6 @@ vec3 octDecode(vec2 f) {
     n.x += (n.x >= 0.0 ? -t : t);
     n.y += (n.y >= 0.0 ? -t : t);
     return normalize(n);
-}
-
-
-
-bool RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax, out float tmin_out) {
-    vec3 tMin = (aabbMin - ray.origin) * ray.invDir;
-	vec3 tMax = (aabbMax - ray.origin) * ray.invDir;
-
-	//vec3 t1 = min(tMin, tMax);
-	//vec3 t2 = max(tMin, tMax);
-
-    vec3 t1 = vec3(
-        min(tMin.x, tMax.x),
-        min(tMin.y, tMax.y),
-        min(tMin.z, tMax.z)
-    );
-    vec3 t2 = vec3(
-        max(tMin.x, tMax.x),
-        max(tMin.y, tMax.y),
-        max(tMin.z, tMax.z)
-    );
-
-	float tNear = max(max(t1.x, t1.y), t1.z);
-	float tFar = min(min(t2.x, t2.y), t2.z);
-
-	bool hit = tFar >= tNear && tFar > 0;
-	tmin_out = hit ? tNear > 0 ? tNear : 0 : INFINITY_FLOAT;
-
-    return hit;
-
-    
-}
-
-#define INVALID_POINTER 0x0
-
-// Iteratively traverses the BVH for a given ray.
-// Returns the index of the first leaf node encountered whose AABB is intersected by the ray,
-// prioritizing traversal towards closer AABBs. Returns -1 if no leaf node AABB is hit.
-bool traceBVH(Ray ray, uint index, out BVHNode result) {
-    uint currentNodeIndex = 0; 
-
-    // stack
-    #define MAX_STACK_SIZE 128
-    uint nodeStack[MAX_STACK_SIZE];
-    uint stackPointer = 0;
-    nodeStack[stackPointer++] = index;
-
-
-    while (stackPointer > 0) {
-        currentNodeIndex = nodeStack[--stackPointer];
-        BVHNode node = u_lbvh.lbvh[currentNodeIndex];
-
-        float tHitCurrent;
-        if (RayBoundingBoxDst(ray, node.aabbMin, node.aabbMax, tHitCurrent)) {
-
-            if (node.left == INVALID_POINTER && node.right == INVALID_POINTER) {
-
-                result = node; // should check the triangle intersection here
-
-                return true;
-
-            } else {
-                uint childIndexA = node.left+index;
-                uint childIndexB = node.right+index;
-
-                BVHNode childA = u_lbvh.lbvh[childIndexA];
-                BVHNode childB = u_lbvh.lbvh[childIndexB];
-
-                float dstA;
-                float dstB;
-                bool hitA = RayBoundingBoxDst(ray, childA.aabbMin, childA.aabbMax, dstA);
-                bool hitB = RayBoundingBoxDst(ray, childB.aabbMin, childB.aabbMax, dstB);
-
-                // Determine order for stack push (process nearer first)
-                uint childIndexNear, childIndexFar;
-                bool nearHit, farHit;
-
-                if (hitA && hitB) {
-                    if (dstA < dstB) {
-                        childIndexNear = childIndexA; nearHit = true;
-                        childIndexFar = childIndexB; farHit = true;
-                    } else {
-                        childIndexNear = childIndexB; nearHit = true;
-                        childIndexFar = childIndexA; farHit = true;
-                    }
-                } else if (hitA) {
-                    childIndexNear = childIndexA; nearHit = true;
-                    childIndexFar = childIndexB; farHit = false; // Mark far as miss
-                } else if (hitB) {
-                    childIndexNear = childIndexB; nearHit = true;
-                    childIndexFar = childIndexA; farHit = false; // Mark far as miss
-                } else {
-                    continue; // Neither child hit
-                }
-
-                // Push far child first if hit and stack has space (avoids overflow)
-                if (farHit && stackPointer < MAX_STACK_SIZE) {
-                    nodeStack[stackPointer++] = childIndexFar;
-                }
-                // Push near child if hit and stack has space (avoids overflow)
-                if (nearHit && stackPointer < MAX_STACK_SIZE) {
-                    nodeStack[stackPointer++] = childIndexNear;
-                }
-            }
-        }
-    }
-
-    return false;
-}
-
-// Add this function to approximate indirect lighting
-vec3 samplePreviousProbes(vec3 hitPosition, vec3 worldNormal) {
-    // Simplified: Find the nearest probe and sample its irradiance
-    // In a full implementation, interpolate multiple nearby probes
-    vec3 gridCoord = (hitPosition - probeOrigin) / probeSpacing;
-    ivec3 nearestProbeIdx = ivec3(floor(gridCoord));
-    nearestProbeIdx = clamp(nearestProbeIdx, ivec3(0), ivec3(probeGridDimensions) - 1);
-
-    // Convert 3D probe index to 2D atlas position
-    uint linearIdx = nearestProbeIdx.z * probeGridDimensions.x * probeGridDimensions.y +
-                    nearestProbeIdx.y * probeGridDimensions.x + nearestProbeIdx.x;
-    ivec2 atlasBase = ivec2(
-        (linearIdx % u_probesPerRow) * probeResolution.x,
-        (linearIdx / u_probesPerRow) * probeResolution.y
-    );
-
-    // Direction from hit point to probe
-    vec3 probePos = probeOrigin + vec3(nearestProbeIdx) * probeSpacing;
-    vec3 dirToProbe = normalize(probePos - hitPosition);
-    vec2 octCoord = octEncode(dirToProbe);
-    ivec2 texelCoord = atlasBase + ivec2(octCoord * probeResolution);
-
-    // Sample previous irradiance
-    vec3 indirectRadiance = imageLoad(prevProbeAtlas, texelCoord).rgb;
-
-    // Basic visibility check using depth (optional refinement)
-    vec2 prevDepth = imageLoad(prevProbeDepthAtlas, texelCoord).rg;
-    float distToProbe = length(probePos - hitPosition);
-    float meanDist = prevDepth.x;
-    float variance = prevDepth.y - meanDist * meanDist;
-    float chebyshevWeight = variance / (variance + pow(distToProbe - meanDist, 2));
-    if (distToProbe > meanDist) indirectRadiance *= max(chebyshevWeight, 0.1);
-
-    // Return irradiance (radiance * cosine term approximated in shading)
-    return indirectRadiance * max(0.0, dot(worldNormal, dirToProbe));
-}
-
-// Placeholder: Samples albedo texture using bindless handle
-// Requires GL_ARB_bindless_texture
-vec3 sampleAlbedo(uint meshIndex, vec2 uv) {
-    MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIndex];
-    uint64_t albedoTextureHandle = meshInfo.AlbedoTextureHandle;
-    if (albedoTextureHandle == 0) {
-        return vec3(1.0, 0.0, 1.0); // Return constant grey for now
-    }
-
-    sampler2D albedoSampler = sampler2D(albedoTextureHandle);
-    return texture(albedoSampler, uv).rgb;
-}
-
-vec3 sampleNormal(uint meshIndex, vec2 uv) {
-    MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIndex];
-    uint64_t normalTextureHandle = meshInfo.NormalTextureHandle;
-    if (normalTextureHandle == 0) {
-        return vec3(0.0, 0.0, 0.0); // Return constant grey for now
-    }
-
-    sampler2D normalSampler = sampler2D(normalTextureHandle);
-    return texture(normalSampler, uv).rgb;
 }
 
 // Calculates the final world-space shading normal using interpolated TBN and normal map
@@ -595,6 +429,134 @@ vec3 calculateShadingNormal(
     return finalNormal;
 }
 
+bool RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax, out float tmin_out) {
+    vec3 tMin = (aabbMin - ray.origin) * ray.invDir;
+	vec3 tMax = (aabbMax - ray.origin) * ray.invDir;
+
+	//vec3 t1 = min(tMin, tMax);
+	//vec3 t2 = max(tMin, tMax);
+
+    vec3 t1 = vec3(
+        min(tMin.x, tMax.x),
+        min(tMin.y, tMax.y),
+        min(tMin.z, tMax.z)
+    );
+    vec3 t2 = vec3(
+        max(tMin.x, tMax.x),
+        max(tMin.y, tMax.y),
+        max(tMin.z, tMax.z)
+    );
+
+	float tNear = max(max(t1.x, t1.y), t1.z);
+	float tFar = min(min(t2.x, t2.y), t2.z);
+
+	bool hit = tFar >= tNear && tFar > 0;
+	tmin_out = hit ? tNear > 0 ? tNear : 0 : INFINITY_FLOAT;
+
+    return hit;
+
+    
+}
+
+#define INVALID_POINTER 0x0
+
+
+HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo) {
+    int currentNodeIndex = 0; 
+
+    HitInfo result;
+    result.hit = false;
+    result.t = INFINITY_FLOAT;
+    result.primitiveIndex = 0;
+    result.barycentricUV = vec2(0.0);
+
+    // stack
+    #define MAX_STACK_SIZE 128
+    int nodeStack[MAX_STACK_SIZE];
+    uint stackPointer = 0;
+    nodeStack[stackPointer++] = int(rootIndexOffset);
+
+
+    while (stackPointer > 0) {
+        currentNodeIndex = nodeStack[--stackPointer];
+        BVHNode node = u_lbvh.lbvh[currentNodeIndex];
+
+        if (node.left == INVALID_POINTER && node.right == INVALID_POINTER) {
+            Triangle tri = getTriangle(meshInfo, node.primitiveIdx);
+            vec2 barycentricUV;
+            float t;
+            bool hit = intersectTriangle(ray, tri, barycentricUV, t);
+            vec3 hitPosition = ray.origin + ray.direction * t;
+
+            if (hit && t < result.t) {
+                result.hit = true;
+                result.t = t;
+                result.primitiveIndex = node.primitiveIdx;
+                result.barycentricUV = barycentricUV;
+                result.tri = tri;
+            } 
+        }  else {
+            int childIndexA = int(node.left+rootIndexOffset);
+            int childIndexB = int(node.right+rootIndexOffset);
+            BVHNode childA = u_lbvh.lbvh[childIndexA];
+            BVHNode childB = u_lbvh.lbvh[childIndexB];
+
+            float dstA;
+            float dstB;
+            bool hitA = RayBoundingBoxDst(localRay, childA.aabbMin, childA.aabbMax, dstA);
+            bool hitB = RayBoundingBoxDst(localRay, childB.aabbMin, childB.aabbMax, dstB);
+            
+            bool isNearestA = dstA <= dstB;
+            float dstNear = isNearestA ? dstA : dstB;
+            float dstFar = isNearestA ? dstB : dstA;
+
+            int childIndexNear = isNearestA ? childIndexA : childIndexB;
+            int childIndexFar = isNearestA ? childIndexB : childIndexA;
+
+            if (dstFar < result.t) {
+                nodeStack[stackPointer++] = childIndexFar;
+            }
+
+            if (dstNear < result.t) {
+                nodeStack[stackPointer++] = childIndexNear;
+            }
+            
+
+
+        }
+
+        
+    }
+
+    return result;
+}
+
+
+// Placeholder: Samples albedo texture using bindless handle
+// Requires GL_ARB_bindless_texture
+vec3 sampleAlbedo(uint meshIndex, vec2 uv) {
+    MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIndex];
+    uint64_t albedoTextureHandle = meshInfo.AlbedoTextureHandle;
+    if (albedoTextureHandle == 0) {
+        return vec3(1.0, 0.0, 1.0); // Return constant grey for now
+    }
+
+    sampler2D albedoSampler = sampler2D(albedoTextureHandle);
+    return texture(albedoSampler, uv).rgb;
+}
+
+vec3 sampleNormal(uint meshIndex, vec2 uv) {
+    MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIndex];
+    uint64_t normalTextureHandle = meshInfo.NormalTextureHandle;
+    if (normalTextureHandle == 0) {
+        return vec3(0.0, 0.0, 0.0); // Return constant grey for now
+    }
+
+    sampler2D normalSampler = sampler2D(normalTextureHandle);
+    return texture(normalSampler, uv).rgb;
+}
+
+
 
 vec3 texelToProbeIndex(vec2 texelCoord, vec2 probeResolution, vec3 probeGridDimensions, uint probesPerRow) {
     // Calculate which probe grid cell the texel belongs to (in the 2D atlas layout)
@@ -620,6 +582,43 @@ vec2 normalizeTexelCoord(vec2 texelCoord, vec2 probeResolution) {
 }
 
 
+
+// Add this function to approximate indirect lighting
+vec3 samplePreviousProbes(vec3 hitPosition, vec3 worldNormal) {
+    // Simplified: Find the nearest probe and sample its irradiance
+    // In a full implementation, interpolate multiple nearby probes
+    vec3 gridCoord = (hitPosition - probeOrigin) / probeSpacing;
+    ivec3 nearestProbeIdx = ivec3(floor(gridCoord));
+    nearestProbeIdx = clamp(nearestProbeIdx, ivec3(0), ivec3(probeGridDimensions) - 1);
+
+    // Convert 3D probe index to 2D atlas position
+    uint linearIdx = nearestProbeIdx.z * probeGridDimensions.x * probeGridDimensions.y +
+                    nearestProbeIdx.y * probeGridDimensions.x + nearestProbeIdx.x;
+    ivec2 atlasBase = ivec2(
+        (linearIdx % u_probesPerRow) * probeResolution.x,
+        (linearIdx / u_probesPerRow) * probeResolution.y
+    );
+
+    // Direction from hit point to probe
+    vec3 probePos = probeOrigin + vec3(nearestProbeIdx) * probeSpacing;
+    vec3 dirToProbe = normalize(probePos - hitPosition);
+    vec2 octCoord = octEncode(dirToProbe);
+    ivec2 texelCoord = atlasBase + ivec2(octCoord * probeResolution);
+
+    // Sample previous irradiance
+    vec3 indirectRadiance = imageLoad(prevProbeAtlas, texelCoord).rgb;
+
+    // Basic visibility check using depth (optional refinement)
+    vec2 prevDepth = imageLoad(prevProbeDepthAtlas, texelCoord).rg;
+    float distToProbe = length(probePos - hitPosition);
+    float meanDist = prevDepth.x;
+    float variance = prevDepth.y - meanDist * meanDist;
+    float chebyshevWeight = variance / (variance + pow(distToProbe - meanDist, 2));
+    if (distToProbe > meanDist) indirectRadiance *= max(chebyshevWeight, 0.1);
+
+    // Return irradiance (radiance * cosine term approximated in shading)
+    return indirectRadiance * max(0.0, dot(worldNormal, dirToProbe));
+}
 
 void main() {
     // texel in the atlas
@@ -673,73 +672,108 @@ void main() {
     // Structure to store the closest hit information found across all meshes
     HitInfo closestHitInfo;
     closestHitInfo.hit = false;
-    closestHitInfo.t = INFINITY_FLOAT; // Initialize distance to max float (infinity)
-    
+    closestHitInfo.t = INFINITY_FLOAT;
+
     imageStore(probeAtlas, globalIndex2D, vec4(0.0, 0.0, 1.0, 1.0));
 
-    vec3 finalcolor = vec3(0.0);
 
-    bool the_one = probeIndex.x == 1 && probeIndex.y == 0 && probeIndex.z == 2;
-
-    if (!the_one) {
-        imageStore(probeAtlas, globalIndex2D, vec4(1.0, 0.0, 1.0, 1.0));
-        return;
-    }
+    float alpha_blend = 1.0 - u_hysteresis;
 
     for (int i = 0; i < u_meshCount; i++) {
         
         MeshInfo meshInfo = u_sceneInfo.MeshInfos[i];
 
-
         uint rootIndex = meshInfo.RootIndex;
 
         // --- Transform Ray to Mesh Local Space for BVH Traversal ---
         mat4 invTransform = meshInfo.InvTransform;
-        vec4 localRayOrigin4 = invTransform * vec4(ray.origin, 1.0);
-        vec3 localRayOrigin = localRayOrigin4.xyz / localRayOrigin4.w;
-        vec3 localRayDirection = normalize((invTransform * vec4(ray.direction, 0.0)).xyz);
+
+        vec3 localRayOrigin = (invTransform * vec4(ray.origin, 1.0)).xyz;
+        vec3 localRayDirection = (invTransform * vec4(ray.direction, 0.0)).xyz;
         vec3 localInvDir = 1.0 / localRayDirection;
         Ray localRay = Ray(localRayOrigin, localRayDirection, localInvDir);
         // -----------------------------------------------------------
 
+        imageStore(probeAtlas, globalIndex2D, vec4(1.0, 0.0, 1.0, 1.0));
+
+
         // Trace using the local space ray against the local space BVH AABBs
-        if (traceBVH(localRay, rootIndex, hitNode)) {
+        //if (traceBVH(localRay, rootIndex, hitNode)) {
 
-
-            Triangle tri = getTriangle(meshInfo, hitNode.primitiveIdx);
-
-            vec2 barycentricUV;
-            float t;
-
-            imageStore(probeAtlas, globalIndex2D, vec4(1.0, 0.0, 0.0, 1.0));
+        HitInfo result;
+        result = traceBVH(ray, localRay, rootIndex, meshInfo);
+        result.meshIndex = i;
+    
+        if (result.hit && result.t < closestHitInfo.t && result.t < probeSpacing.x * 2.0) {
+            closestHitInfo = result;
             
-
-            if (intersectTriangle(ray, tri, barycentricUV, t)) {
-                imageStore(probeAtlas, globalIndex2D, vec4(0.0, 1.0, 0.0, 1.0));
-
-                if (t < closestHitInfo.t ) {
-                    // Yes, this is the new closest hit.
-                    closestHitInfo.hit = true;
-                    closestHitInfo.t = t;
-                    closestHitInfo.barycentricUV = barycentricUV;
-                    closestHitInfo.primitiveIndex = hitNode.primitiveIdx; // Store primitive index relative to this mesh
-                    closestHitInfo.meshIndex = i;
-                    closestHitInfo.triangle = tri;
-                }
-            } 
-
         }
-    }
 
+
+    }
+    
     if (closestHitInfo.hit) {
-        // Get the mesh info for the mesh that contained the closest hit.
+        
+        vec2 uv = interpolateUV(closestHitInfo.barycentricUV, closestHitInfo.tri);
+        vec3 worldNormal = interpolateNormal(closestHitInfo.barycentricUV, closestHitInfo.tri);
+        vec3 worldTangent = interpolateTangent(closestHitInfo.barycentricUV, closestHitInfo.tri);
 
-        // Get the albedo color from the mesh
-        vec2 uv = interpolateUV(closestHitInfo.barycentricUV, closestHitInfo.triangle);
+        vec3 worldShadingNormal = calculateShadingNormal(
+            closestHitInfo.meshIndex,
+            uv,
+            worldNormal,
+            worldTangent
+        );
+
         vec3 albedo = sampleAlbedo(closestHitInfo.meshIndex, uv);
-        imageStore(probeAtlas, globalIndex2D, vec4(albedo, 1.0));
+        float NdotL = max(0.0, dot(worldShadingNormal, -normalize(u_SunLight.direction))); // Light direction points TO the light
+
+        vec3 indirectLighting = samplePreviousProbes(closestHitInfo.hitPosition, worldShadingNormal);
+        calculatedIrradiance = (albedo / PI) * (u_SunLight.intensity * NdotL + indirectLighting);
+
+
+    } else {
+        vec3 skyColor = texture(u_skyboxCubemap, ray.direction).rgb;
+
+        float luminance = dot(skyColor, vec3(0.299, 0.587, 0.114));
+        // Desaturate by blending with luminance (e.g., 50% desaturation)
+        float desaturationFactor = 0.9; // Adjust between 0 (full color) and 1 (grayscale)
+        calculatedIrradiance = mix(skyColor, vec3(luminance), desaturationFactor);
+        //calculatedIrradiance = vec3(0.9, 0.9, 0.9);
     }
 
+    vec2 currentDepthData;
+    if (closestHitInfo.hit) {
+        float hitDistance = closestHitInfo.t;
+        // Clamp distance to avoid potential issues with huge numbers if geometry is very far
+        hitDistance = min(hitDistance, 10000.0); // Adjust max distance as needed
+        currentDepthData = vec2(hitDistance, hitDistance * hitDistance);
+    } else {
+        // Use defined infinity for miss
+        currentDepthData = vec2(INFINITY_FLOAT, INFINITY_FLOAT);
+    }
+
+    // --- Hysteresis for Depth/Visibility ---
+    vec2 oldDepthData = imageLoad(prevProbeDepthAtlas, globalIndex2D).rg;
+    vec2 finalDepthData;
+
+    // Handle potential NaN/Inf from previous frames or initial state
+    // If old data is invalid (e.g., Inf), use current data directly. Otherwise, blend.
+    if (isinf(oldDepthData.x) || isnan(oldDepthData.x)) {
+         finalDepthData = currentDepthData;
+    } else {
+         // Blend using mix: mix(newValue, oldValue, hysteresisFactor)
+         // Ensure currentDepthData is not Inf before mixing if old data was valid
+         if(isinf(currentDepthData.x)) {
+            finalDepthData = currentDepthData; // If new hit is Inf, override directly
+         } else {
+            finalDepthData = mix(currentDepthData, oldDepthData, alpha_blend);
+         }
+    }
+
+    imageStore(probeAtlas, globalIndex2D, vec4(calculatedIrradiance, 1.0));
+
+    imageStore(probeDepthAtlas, globalIndex2D, vec4(finalDepthData, 0.0, 0.0));
 
 
 

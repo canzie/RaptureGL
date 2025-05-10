@@ -83,7 +83,8 @@ void main() {
     vs_out.Bitangent = mat3(u_model) * skinnedBitangent;
     
     // Ensure orthogonality in world space
-    vs_out.Normal = normalize(vs_out.Normal);
+
+    vs_out.Normal = abs(normalize(vs_out.Normal));
     vs_out.Tangent = normalize(vs_out.Tangent);
     // Re-orthogonalize tangent with respect to normal
     vs_out.Tangent = normalize(vs_out.Tangent - dot(vs_out.Tangent, vs_out.Normal) * vs_out.Normal);
