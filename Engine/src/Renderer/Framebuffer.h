@@ -74,11 +74,17 @@ namespace Rapture
 
 		void invalidate(bool isDepthBufferOnly = false);
 		
+        // standard binding
 		void bind(bool clear = true);
 		void unbind();
 
+        // binding for compute shader access
         void bindTexturesCompute(uint32_t startSlot);
+        // binds all of the color attachments, starting at the given slot
         void bindTextures(uint32_t startSlot);
+
+        // binds the depth texture (can be an array)
+        void bindDepthTexture(uint32_t slot);
 
         void disableDepthTesting();
 

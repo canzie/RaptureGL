@@ -9,6 +9,8 @@
 #include <fstream>
 #include <sstream>
 #include <regex>
+#include <set>
+#include <system_error>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -25,10 +27,21 @@ GLenum ShaderTypeToGL(ShaderType type);
 GLenum UniformTypeToGL(UniformType type);
 UniformType GLToUniformType(GLenum type);
 
-// Helper function to read shader source from a file path
-std::string readShaderSource(const std::filesystem::path& filepath) {
+// Forward declaration for recursive include processing
+static std::string processIncludesInString(
+    const std::string& sourceCode, 
+    const std::filesystem::path& currentFileCanonicalPath,
+    std::set<std::filesystem::path>& visitedFiles
+);
+
+// Helper to read a single file's content
+static std::string readFileContent(const std::filesystem::path& filepath, bool isTopLevelForLogging) {
     std::ifstream stream(filepath);
     if (!stream) {
+        if (!isTopLevelForLogging) {
+            GE_CORE_ERROR("OpenGLShader: Failed to open include file: {}", filepath.string());
+            return "// Error: Failed to open include file " + filepath.string() + "\n";
+        }
         GE_CORE_ERROR("OpenGLShader: Failed to open shader file: {}", filepath.string());
         return "";
     }
@@ -37,11 +50,109 @@ std::string readShaderSource(const std::filesystem::path& filepath) {
     ss << stream.rdbuf();
     stream.close();
     
-    std::string source = ss.str();
-    if (source.empty()) {
-         GE_CORE_WARN("OpenGLShader: Shader file is empty: {}", filepath.string());
+    std::string content = ss.str();
+
+    // Normalize line endings: remove all carriage returns (\r)
+    content.erase(std::remove(content.begin(), content.end(), '\r'), content.end());
+
+    // Strip UTF-8 BOM if present
+    if (content.size() >= 3 &&
+        static_cast<unsigned char>(content[0]) == 0xEF &&
+        static_cast<unsigned char>(content[1]) == 0xBB &&
+        static_cast<unsigned char>(content[2]) == 0xBF) {
+        content.erase(0, 3);
+        // GE_CORE_TRACE("OpenGLShader: Stripped UTF-8 BOM from: {}", filepath.string()); // Optional: log BOM stripping
     }
-    return source;
+
+    if (content.empty()) {
+         const char* fileType = isTopLevelForLogging ? "Shader" : "Included shader";
+         GE_CORE_WARN("OpenGLShader: {} file is empty: {}", fileType, filepath.string());
+    }
+
+    return content;
+}
+
+// Processes #include directives in a shader source string
+static std::string processIncludesInString(
+    const std::string& sourceCode, 
+    const std::filesystem::path& currentFileCanonicalPath,
+    std::set<std::filesystem::path>& visitedFiles
+) {
+    std::string processedOutput;
+    std::regex includeRegex(R"~(^\s*#include\s+"([^"]*\.glsl)"\s*$)~");
+    std::istringstream contentStream(sourceCode);
+    std::string line;
+
+    while (std::getline(contentStream, line)) {
+        std::smatch match;
+        if (std::regex_match(line, match, includeRegex)) {
+            std::string includedFilename = match[1].str();
+            std::filesystem::path includedRelativePath = currentFileCanonicalPath.parent_path() / includedFilename;
+            
+            std::error_code ec;
+            std::filesystem::path nextFileCanonicalPath = std::filesystem::canonical(includedRelativePath, ec);
+
+            if (ec) {
+                GE_CORE_ERROR("OpenGLShader: Failed to find or access include file {}: {}. Referenced from: {}", 
+                              includedRelativePath.string(), ec.message(), currentFileCanonicalPath.string());
+                processedOutput += "// Error: Could not resolve or access include file " + includedRelativePath.string() + "\n";
+                continue;
+            }
+
+            if (visitedFiles.count(nextFileCanonicalPath)) {
+                GE_CORE_WARN("OpenGLShader: Circular include detected: {} already being processed. Referenced from: {}", 
+                             nextFileCanonicalPath.string(), currentFileCanonicalPath.string());
+                processedOutput += "// Error: Circular include detected for " + nextFileCanonicalPath.string() + "\n";
+                continue;
+            }
+            
+            visitedFiles.insert(nextFileCanonicalPath);
+            
+            std::string includedRawContent = readFileContent(nextFileCanonicalPath, false /* isTopLevelForLogging */);
+            std::string fullyProcessedIncludedContent = processIncludesInString(includedRawContent, nextFileCanonicalPath, visitedFiles);
+            
+            processedOutput += fullyProcessedIncludedContent;
+            if (!fullyProcessedIncludedContent.empty() && fullyProcessedIncludedContent.back() != '\n') {
+                processedOutput += '\n';
+            }
+            
+            visitedFiles.erase(nextFileCanonicalPath);
+
+        } else {
+            processedOutput += line + '\n';
+        }
+    }
+
+    if (!sourceCode.empty() && sourceCode.back() != '\n' && !processedOutput.empty() && processedOutput.back() == '\n') {
+        processedOutput.pop_back();
+    }
+    
+    return processedOutput;
+}
+
+// Helper function to read shader source from a file path, processing includes
+std::string readShaderSource(const std::filesystem::path& filepath) {
+    std::error_code ec;
+    std::filesystem::path canonicalTopLevelPath = std::filesystem::canonical(filepath, ec);
+    if (ec) {
+        GE_CORE_ERROR("OpenGLShader: Failed to find or access shader file: {}. Error: {}", filepath.string(), ec.message());
+        return "";
+    }
+
+    std::string initialContent = readFileContent(canonicalTopLevelPath, true /* isTopLevelForLogging */);
+    
+    // If initialContent is empty (read error or empty file), readFileContent already logged.
+    // Proceed with processing, as an empty file might just wrap includes.
+    // The constructor handles empty strings from readShaderSource appropriately.
+
+    std::set<std::filesystem::path> visitedFiles;
+    visitedFiles.insert(canonicalTopLevelPath); 
+    std::string result = processIncludesInString(initialContent, canonicalTopLevelPath, visitedFiles);
+    // The top-level file is effectively "unvisited" when its processing is complete.
+    // No explicit erase here as visitedFiles is local to this call of readShaderSource for the top-level.
+    // The recursive calls manage their entries in the passed-around visitedFiles set.
+    
+    return result;
 }
 
 OpenGLShader::OpenGLShader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, const std::filesystem::path& geometryPath) 
@@ -220,6 +331,19 @@ OpenGLShader::~OpenGLShader()
 bool OpenGLShader::compile(const std::string& variantName) {
     RAPTURE_PROFILE_FUNCTION();
 
+    // Clean up previous compilation artifacts if any
+    if (m_programID) {
+        glDeleteProgram(m_programID);
+        m_programID = 0;
+    }
+    for (auto shaderID : m_shaderIDs) {
+        glDeleteShader(shaderID);
+    }
+    m_shaderIDs.clear();
+    m_uniformLocationCache.clear(); // Also clear uniform location cache
+    m_uniforms.clear(); // Clear reflected uniforms
+    m_samplers.clear(); // Clear reflected samplers
+
     const ShaderVariant* variant = nullptr;
     
     if (!variantName.empty()) {
@@ -357,16 +481,33 @@ bool OpenGLShader::reload()
 
     std::string OpenGLShader::processSource(const std::string& source, const ShaderVariant& variant)
     {
-        // Simple preprocessor for shader variants
         std::stringstream ss;
-        
-        // Add defines for this variant
-        for (const auto& define : variant.defines) {
-            ss << "#define " << define << std::endl;
+        size_t versionPos = source.find("#version");
+
+        if (versionPos != std::string::npos) {
+            size_t endOfVersionLine = source.find('\n', versionPos);
+            if (endOfVersionLine != std::string::npos) {
+                // #version line found, and it has a newline
+                ss << source.substr(0, endOfVersionLine + 1); // Include the #version line and its newline
+                for (const auto& define : variant.defines) {
+                    ss << "#define " << define << std::endl;
+                }
+                ss << source.substr(endOfVersionLine + 1); // Add the rest of the source
+            } else {
+                // #version line found, but it's the last line (no newline after it)
+                ss << source << std::endl; // Add the #version line and a newline
+                for (const auto& define : variant.defines) {
+                    ss << "#define " << define << std::endl;
+                }
+            }
+        } else {
+            // #version directive not found, prepend defines (fallback to old behavior)
+            GE_CORE_WARN("OpenGLShader::processSource: '#version' directive not found in shader source for variant '{0}'. Prepending defines.", variant.name);
+            for (const auto& define : variant.defines) {
+                ss << "#define " << define << std::endl;
+            }
+            ss << source;
         }
-        
-        // Add the original source
-        ss << source;
         
         return ss.str();
     }

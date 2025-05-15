@@ -340,13 +340,8 @@ namespace Rapture
             glm::vec3 lightDir;
             
             // Calculate light direction based on light type
-            if (light.type == LightType::Directional) {
+            if (light.type == LightType::Directional || light.type == LightType::Spot) {
                 // Calculate light direction from rotation
-                glm::quat rotationQuat = transform.transforms.getRotationQuat();
-                lightDir = glm::normalize(rotationQuat * glm::vec3(0, 0, -1)); // Forward vector
-            } 
-            else if (light.type == LightType::Spot) {
-                // Calculate spot light direction
                 glm::quat rotationQuat = transform.transforms.getRotationQuat();
                 lightDir = glm::normalize(rotationQuat * glm::vec3(0, 0, -1)); // Forward vector
             } 
@@ -374,11 +369,11 @@ namespace Rapture
         
         if (light.type == LightType::Directional) {
             // Get scene bounds or focus on camera frustum
-            glm::vec3 sceneCenter = s_cameraPosition; // Use camera position as center point
-            float sceneBounds = 50.0f; // Start with a reasonable size based on your scene scale
+            glm::vec3 sceneCenter = glm::vec3(s_cameraPosition.x, 0.0f, s_cameraPosition.z); // Use camera's XZ position, fixed Y
+            float sceneBounds = shadowComp.shadowMapSize; // Use configured shadow map size
             
             // Position the light based on scene center and direction
-            glm::vec3 shadowCamPos = sceneCenter - lightDir * (sceneBounds * 0.5f);
+            glm::vec3 shadowCamPos = sceneCenter - lightDir * (sceneBounds);
             
             // Create view matrix centered on the scene, not on the light entity
             viewMatrix = glm::lookAt(
@@ -388,9 +383,9 @@ namespace Rapture
             );
             
             // Use appropriate size for your scene
-            float orthoSize = sceneBounds;
+            float orthoSize = sceneBounds * 0.5f;
             // Use near/far planes that encompass your entire scene
-            lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1f, sceneBounds * 2.0f);
+            lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1f, sceneBounds);
         } else {
             // Perspective projection for spot/point light
             float aspect = 1.0f; // Shadow map is square
@@ -419,6 +414,11 @@ namespace Rapture
             // Update the frustum
             shadowComp.updateFrustum(viewMatrix, lightProj);
             
+            // dont save this shadow as it is not indeded to be used for the main lighting pass
+            if (!shadowComp.isMainShadow) {
+                continue;
+            }
+
             // Store shadow data for the shader
             ShadowBufferData& shadowData = shadowLayout.shadowData[shadowCount];
             shadowData.type = static_cast<int>(light.type);
@@ -713,9 +713,7 @@ namespace Rapture
         s_ddgi->getVisibilityTexture()->bind(5);
         s_ddgi->getProbeInfoBuffer()->bindBase(1);
 
-        auto atlasRes = glm::vec2(s_ddgi->getRadianceTexture()->getWidth(), s_ddgi->getRadianceTexture()->getHeight());
 
-        boundShader->setVec2("u_atlasSize", atlasRes);
 
 
         {

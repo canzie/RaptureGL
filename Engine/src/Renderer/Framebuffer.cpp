@@ -509,6 +509,30 @@ namespace Rapture
         
     }
 
+    void Framebuffer::bindDepthTexture(uint32_t slot)
+    {
+        if (m_depthAttachment)
+        {
+            // NOTE: could probably store the type instead
+            for (uint32_t i = 0; i < m_specification.attachments.size(); i++)
+            {
+                if (IsDepthFormat(m_specification.attachments[i].textureFormat))
+                {
+                    if (m_specification.attachments[i].isTextureArray)
+                    {
+                        glActiveTexture(GL_TEXTURE0 + slot);
+                        glBindTexture(GL_TEXTURE_2D_ARRAY, m_depthAttachment);
+                    }
+                    else
+                    {
+                        glActiveTexture(GL_TEXTURE0 + slot);
+                        glBindTexture(GL_TEXTURE_2D, m_depthAttachment);
+                    }
+                }
+            }
+        }
+    }
+
     void Framebuffer::disableDepthTesting()
     {
         // Disable depth testing and ensure proper depth buffer behavior

@@ -25,6 +25,8 @@ public:
 
     virtual void barrier() const override;
     
+    virtual void clear(glm::vec4 color) override;
+
     // Implement texture parameter setters
     virtual void setMinFilter(TextureFilter filter) override;
     virtual void setMagFilter(TextureFilter filter) override;

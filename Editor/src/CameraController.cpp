@@ -70,6 +70,7 @@ void CameraController::update(float ts)
     // Update camera view matrix
     auto& controller_comp = s_cameraEntity.getComponent<Rapture::CameraControllerComponent>();
     controller_comp.camera.updateViewMatrix(controller_comp.translation, controller_comp.cameraFront);
+    
 }
 
 void CameraController::handleMouseInput(float deltaTime)

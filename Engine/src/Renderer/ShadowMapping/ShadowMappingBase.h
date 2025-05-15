@@ -15,7 +15,7 @@ namespace Rapture {
 
     // gets used in the ubo for drawing to the shadowmap textures
     struct ShadowMapData {
-        glm::mat4 lightViewProjection[4];
+        alignas(16) glm::mat4 lightViewProjection[4];
     };
 
     class ShadowMapBase {

@@ -165,7 +165,7 @@ void main() {
         normal = normalize(fs_in.Normal);
     }
 
-    gNormal = abs(normal);
+    gNormal = normal;
     
     // Albedo and specular
     gAlbedoSpec = vec4(albedo, 1.0);

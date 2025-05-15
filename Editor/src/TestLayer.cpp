@@ -20,6 +20,8 @@
 #include "Timestep/Timestep.h"
 #include "Renderer/RadianceCascades/RadianceCascades.h"
 #include "Renderer/RadianceCascades/RadianceCascadesManager.h"
+#include "AssetsManager/AssetManager.h"
+
 
 #include "Sorting/SpatialSorting/BVH/LBVH/LBVH.h"
 
@@ -127,7 +129,7 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     auto config = project->getConfig();
     auto assetsPath = config.directory / "assets";
     auto path = config.directory / "Editor/assets/models/Sponza/Sponza.gltf";
-    
+    auto shaderPath = config.shaderPath;
     
 	//Rapture::glTF2Loader loader = Rapture::glTF2Loader(m_activeScene);
 	auto loader = Rapture::ModelLoadersCache::getLoader(path.string(), activeScene);
@@ -139,12 +141,12 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     }
 
     std::vector<std::filesystem::path> cubemapPaths = {
-        assetsPath / "skybox/cubemaps/1/right.png",
-        assetsPath / "skybox/cubemaps/1/left.png",
-        assetsPath / "skybox/cubemaps/1/top.png",
-        assetsPath / "skybox/cubemaps/1/bottom.png",
-        assetsPath / "skybox/cubemaps/1/front.png", 
-        assetsPath / "skybox/cubemaps/1/back.png"
+        assetsPath / "skybox/cubemaps/1/right.jpg",
+        assetsPath / "skybox/cubemaps/1/left.jpg",
+        assetsPath / "skybox/cubemaps/1/top.jpg",
+        assetsPath / "skybox/cubemaps/1/bottom.jpg",
+        assetsPath / "skybox/cubemaps/1/front.jpg", 
+        assetsPath / "skybox/cubemaps/1/back.jpg"
     };
 
 
@@ -195,6 +197,9 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
         glm::vec3(0.2f)                // Small scale to make the cube compact
     );
     sunLight.addComponent<Rapture::CascadedShadowComponent>(2048, 2048, 4 );
+    sunLight.addComponent<Rapture::ShadowComponent>(1024, 1024);
+    sunLight.getComponent<Rapture::ShadowComponent>().isMainShadow = false; // used for the DDGI probes
+
     sunLight.addComponent<Rapture::LightComponent>(
         glm::vec3(1.0f, 1.0f, 1.0f),  // Pure white color
         1.2f                         // High intensity
@@ -224,7 +229,7 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
         return;
     }
 
-    auto radianceTexture = m_ddgi->getRadianceTexture();
+    auto radianceTexture = m_ddgi->getRadianceTextureFlattened();
     if (!radianceTexture){
         Rapture::GE_ERROR("Radiance texture is not initialized");
         return;
@@ -232,13 +237,15 @@ void TestLayer::onNewActiveScene(std::shared_ptr<Rapture::Scene> scene)
     Rapture::Entity ddgiEntity = activeScene->createEntity("DDGI_Radiance");
     ddgiEntity.addComponent<Rapture::ComputeTextureComponent>(nullptr, radianceTexture);
 
-    auto visibilityTexture = m_ddgi->getVisibilityTexture();
+    auto visibilityTexture = m_ddgi->getVisibilityTextureFlattened();
     if (!visibilityTexture){
         Rapture::GE_ERROR("Visibility texture is not initialized");
         return;
     }
     Rapture::Entity ddgiVisibilityEntity = activeScene->createEntity("DDGI_Visibility");
     ddgiVisibilityEntity.addComponent<Rapture::ComputeTextureComponent>(nullptr, visibilityTexture);
+
+
 
     Rapture::PrimitiveConfig sphereConfig;
     sphereConfig.useTexCoords = true;
@@ -453,7 +460,7 @@ void TestLayer::onUpdate(float ts)
     //Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesSubset(), Rapture::LBVHManager::getTransformsSubset());
     
     //Rapture::Renderer::drawInstancedBoundingBoxes(Rapture::LBVHManager::getBoxesAtDepth(), Rapture::LBVHManager::getTransformsAtDepth());
-    Rapture::Renderer::drawInstancedSpheres(*m_debugProbeSphere, m_ddgi->getDebugProbePositions());
+    //Rapture::Renderer::drawInstancedSpheres(*m_debugProbeSphere, m_ddgi->getDebugProbePositions());
 
     // Draw the debug ray if active
     if (m_showDebugRay && m_debugRayLine) {

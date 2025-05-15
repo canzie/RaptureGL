@@ -17,6 +17,7 @@
 
 #include <cstdint>
 
+#include "ProbeVolumeGPU.h"
 
 namespace Rapture {
 
@@ -50,18 +51,13 @@ struct MeshInfo {
     alignas(16) glm::mat4 InvTransform;
 };
 
-struct ProbeInfo {
-    alignas(16) glm::uvec3 probeGridDimensions = glm::uvec3(16, 8, 16); // Number of probes in each dimension (X, Y, Z)
-    alignas(8) glm::uvec2 probeResolution = glm::uvec2(8, 8); // Resolution of each probe texture (e.g., 8x8)
-    alignas(16) glm::vec3 probeSpacing = glm::vec3(1.5f, 2.0f, 1.5f);
-    alignas(16) glm::vec3 probeOrigin = glm::vec3(0.0f, 5.0f, 0.0f); // will probably be camera position
-};
+
 
 struct SunProperties {
     alignas(16) glm::mat4 sunLightSpaceMatrix;    // Light-space matrices for each cascade
     alignas(16) glm::vec3 sunDirectionWorld;                       // Normalized direction FROM fragment TO sun
+    alignas(16) glm::vec3 sunColor;
 
-    alignas(4) uint32_t sunCascadeCount;                          // Number of active cascades for the sun
     alignas(4) float sunIntensity;
     alignas(8) uint64_t sunShadowTextureArrayHandle; // Bindless handle for sampler2DArrayShadow
 };
@@ -80,40 +76,38 @@ public:
     ~DynamicDiffuseGI();
 
     void populateProbes(std::shared_ptr<Scene> scene);
-    void populateProbesCompute(std::shared_ptr<Texture2D> skyboxTexture=nullptr);
+    void populateProbesCompute(std::shared_ptr<Scene> scene);
 
-    std::shared_ptr<Texture2D> getRadianceTexture() { 
-        if (m_isEvenFrame) {
-            return m_RadianceTexture;
-        } else {
-            return m_PrevRadianceTexture;
-        }
-    }
-    std::shared_ptr<Texture2D> getVisibilityTexture() { 
-        if (m_isEvenFrame) {
-            return m_VisibilityTexture;
-        } else {
-            return m_PrevVisibilityTexture;
-        }
-    }
+    std::shared_ptr<Texture2D> getRadianceTexture() { return m_RadianceTexture; } 
+    std::shared_ptr<Texture2D> getVisibilityTexture() { return m_VisibilityTexture; }
+    std::shared_ptr<Texture2D> getRadianceTextureFlattened() { return m_IrradianceTextureFlattened; } 
+    std::shared_ptr<Texture2D> getVisibilityTextureFlattened() { return m_DistanceTextureFlattened; } 
 
     std::vector<glm::vec3>& getDebugProbePositions() { return m_DebugProbePositions; }
 
-    ProbeInfo& getProbeConfig() { return m_ProbeConfig; }
     std::shared_ptr<UniformBuffer> getProbeInfoBuffer() { return m_ProbeInfoBuffer; }
+    uint32_t getProbesPerRow() { return m_probesPerRow; }
 
 private:
+
+    void castRays(std::shared_ptr<Scene> scene);
+    void blendTextures();
+
     int createBufferMetadata(std::shared_ptr<VertexArray> vao);
     int getBufferMetadataIndex(uint32_t vaoID);
     void readDebugBuffer();
     void initTextures();
     void updateSunProperties(std::shared_ptr<Scene> scene);
+    void initProbeInfoBuffer();
 
 private:
-    std::shared_ptr<Shader> m_DDGI_PopulateProbesShader;
+    std::shared_ptr<Shader> m_DDGI_ProbeTraceShader;
+    std::shared_ptr<Shader> m_DDGI_ProbeIrradianceBlendingShader;
+    std::shared_ptr<Shader> m_DDGI_ProbeDistanceBlendingShader;
+    std::shared_ptr<Shader> m_Flatten2dArrayShader;
 
-    ProbeInfo m_ProbeConfig;
-
+    ProbeVolume m_ProbeVolume;
+    
     SunProperties m_SunShadowProps;
 
     // (vaoID, BufferMetadata)
@@ -135,6 +129,12 @@ private:
 
     std::shared_ptr<Texture2D> m_PrevRadianceTexture;
     std::shared_ptr<Texture2D> m_PrevVisibilityTexture;
+
+    std::shared_ptr<Texture2D> m_RayDataTexture;
+
+    std::shared_ptr<Texture2D> m_IrradianceTextureFlattened;
+    std::shared_ptr<Texture2D> m_DistanceTextureFlattened;
+
 
     std::vector<glm::vec3> m_DebugProbePositions;
 

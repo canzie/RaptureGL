@@ -645,6 +645,11 @@ namespace Rapture {
     struct ShadowComponent
     {
         bool isActive = false;
+        // default is true, but if both a regular shadow and cs map is used only 1 should be used in the main shadow logic
+        // only use case for now is creating a general shadow map to be used for the lighting of the DDGI probes
+        // since the csm is optimized to only show the frustum, not the entire area around the camera.
+        bool isMainShadow = true;
+        
         std::shared_ptr<ShadowMap> shadowMap = nullptr;
         
         // Cache shadow map size

@@ -1372,6 +1372,8 @@ void PropertiesPanel::renderCascadedShadowComponent(std::shared_ptr<Rapture::Ent
     if (ImGui::Checkbox("Active", &isActive)) {
         csmComp.isActive = isActive;
     }
+
+
     
     // Display resolution and cascade count
     ImGui::Text("Resolution: %ux%u", csmComp.width, csmComp.height);

@@ -72,6 +72,8 @@ OpenGLTexture2D::OpenGLTexture2D(const std::string& path)
     else {
         GE_CORE_ERROR("OpenGLTexture2D::OpenGLTexture2D - Failed to load texture '{0}'", path);
     }
+
+    m_textureType = TextureType::TEXTURE2D;
 }
 
 OpenGLTexture2D::OpenGLTexture2D(uint32_t width, uint32_t height, uint32_t channels)
@@ -109,6 +111,8 @@ OpenGLTexture2D::OpenGLTexture2D(uint32_t width, uint32_t height, uint32_t chann
 
     glBindTexture(GL_TEXTURE_2D, 0);
     
+    m_textureType = TextureType::TEXTURE2D;
+
     GE_CORE_INFO("Created blank texture ({0}x{1})", m_width, m_height);
 }
 
@@ -128,24 +132,55 @@ OpenGLTexture2D::OpenGLTexture2D(TextureSpecification specification)
     m_width = specification.width;
     m_height = specification.height;
 
-    glGenTextures(1, &m_rendererID);
-    glBindTexture(GL_TEXTURE_2D, m_rendererID);
-    
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    
-    glTexImage2D(GL_TEXTURE_2D, 0, m_internalFormat, m_width, m_height, 0, m_dataFormat, TextureFormatToGLDataType(specification.format), nullptr);
+    if (specification.depth > 0) {
+        m_depth = specification.depth;
+        m_textureType = TextureType::TEXTURE2D_ARRAY;
+    }
+    else {
+        m_textureType = TextureType::TEXTURE2D;
+    }
+
+    if (m_textureType == TextureType::TEXTURE2D) {
+
+        glGenTextures(1, &m_rendererID);
+        glBindTexture(GL_TEXTURE_2D, m_rendererID);
+        
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        
+        glTexImage2D(GL_TEXTURE_2D, 0, m_internalFormat, m_width, m_height, 0, m_dataFormat, TextureFormatToGLDataType(specification.format), nullptr);
+        
+
+    }
+    else if (m_textureType == TextureType::TEXTURE2D_ARRAY) {
+        glGenTextures(1, &m_rendererID);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, m_rendererID);
+        
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, 
+                    m_internalFormat, 
+                    m_width, 
+                    m_height, 
+                    m_depth, 
+                    0, 
+                    m_dataFormat, 
+                    TextureFormatToGLDataType(specification.format),
+                    nullptr);
+        
+    }
     
     // Generate handle for bindless textures if supported
     if (GLCapabilities::hasBindlessTextures()) {
         generateTextureHandle();
     }
-
-
     
-    GE_CORE_INFO("Created blank texture ({0}x{1})", m_width, m_height);
+    GE_CORE_INFO("Created blank texture ({0}x{1}x{2})", m_width, m_height, m_depth);
 }
 
 OpenGLTexture2D::~OpenGLTexture2D()
@@ -161,22 +196,52 @@ OpenGLTexture2D::~OpenGLTexture2D()
 void OpenGLTexture2D::bind(uint32_t slot) const
 {
     RAPTURE_PROFILE_GPU_SCOPE("OpenGLTexture2D::bind");
-    if (m_isCubemap) {
+
+    switch (m_textureType) {
+        case TextureType::TEXTURE2D_CUBEMAP:
+            glActiveTexture(GL_TEXTURE0 + slot);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, m_rendererID);
+            break;
+        case TextureType::TEXTURE2D_ARRAY:
         glActiveTexture(GL_TEXTURE0 + slot);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, m_rendererID);
-    } else {
-        glActiveTexture(GL_TEXTURE0 + slot);
-        glBindTexture(GL_TEXTURE_2D, m_rendererID);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, m_rendererID);
+            break;
+        case TextureType::TEXTURE2D:
+            glActiveTexture(GL_TEXTURE0 + slot);
+            glBindTexture(GL_TEXTURE_2D, m_rendererID);
+            break;
+        default:
+            GE_CORE_ERROR("OpenGLTexture2D::bind - Unsupported texture type!");
+            return;
     }
+
+    m_activeSlot = slot;
 }
 
 void OpenGLTexture2D::unbind() const
 {
-    if (m_isCubemap) {
-        glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
-    } else {
-        glBindTexture(GL_TEXTURE_2D, 0);
+
+    if (m_activeSlot == 0)
+    {
+        return;
     }
+
+    switch (m_textureType) {
+        case TextureType::TEXTURE2D_CUBEMAP:
+            glActiveTexture(GL_TEXTURE0 + m_activeSlot);  // Reset to texture unit 0
+            glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+            break;
+        case TextureType::TEXTURE2D_ARRAY:
+            glActiveTexture(GL_TEXTURE0 + m_activeSlot);  // Reset to texture unit 0
+            glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+            break;
+        case TextureType::TEXTURE2D:
+            glActiveTexture(GL_TEXTURE0 + m_activeSlot);  // Reset to texture unit 0
+            glBindTexture(GL_TEXTURE_2D, 0);
+            break;
+    }
+
+    m_activeSlot = 0;
 }
 
 void OpenGLTexture2D::bindCompute(uint32_t slot) const
@@ -199,9 +264,28 @@ void OpenGLTexture2D::setData(void* data, uint32_t size)
         return;
     }
     
-    glBindTexture(GL_TEXTURE_2D, m_rendererID);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_width, m_height, m_dataFormat, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
+    switch (m_textureType) {
+        case TextureType::TEXTURE2D_CUBEMAP:
+            glBindTexture(GL_TEXTURE_CUBE_MAP, m_rendererID);
+            glTexSubImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, 0, 0, m_width, m_height, m_dataFormat, GL_UNSIGNED_BYTE, data);
+            //glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+            break;
+        case TextureType::TEXTURE2D_ARRAY:
+            glBindTexture(GL_TEXTURE_2D_ARRAY, m_rendererID);
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, m_width, m_height, m_depth, m_dataFormat, GL_UNSIGNED_BYTE, data);
+            glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+            break;
+        case TextureType::TEXTURE2D:
+            glBindTexture(GL_TEXTURE_2D, m_rendererID);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_width, m_height, m_dataFormat, GL_UNSIGNED_BYTE, data);
+            glGenerateMipmap(GL_TEXTURE_2D);
+            break;
+        default:
+            GE_CORE_ERROR("OpenGLTexture2D::setData: Unsupported texture type!");
+            return;
+    }
+
+
     
     // Re-generate the texture handle if bindless is supported
     if (GLCapabilities::hasBindlessTextures() && m_textureHandle != 0) {
@@ -222,14 +306,16 @@ void OpenGLTexture2D::setData(void* data, uint32_t size)
 
 void OpenGLTexture2D::barrier() const
 {
-    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 }
 
 void OpenGLTexture2D::setMinFilter(TextureFilter filter)
 {
-    glBindTexture(GL_TEXTURE_2D, m_rendererID);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, convertFilterToGL(filter));
-    glBindTexture(GL_TEXTURE_2D, 0);
+    GLenum texturetype = getTextureTypeGL();
+
+    glBindTexture(texturetype, m_rendererID);
+    glTexParameteri(texturetype, GL_TEXTURE_MIN_FILTER, convertFilterToGL(filter));
+    glBindTexture(texturetype, 0);
     
     // Re-generate handle if using bindless
     if (GLCapabilities::hasBindlessTextures() && m_textureHandle != 0) {
@@ -249,9 +335,10 @@ void OpenGLTexture2D::setMagFilter(TextureFilter filter)
         glFilter = GL_LINEAR;
     }
     
-    glBindTexture(GL_TEXTURE_2D, m_rendererID);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    GLenum texturetype = getTextureTypeGL();
+    glBindTexture(texturetype, m_rendererID);
+    glTexParameteri(texturetype, GL_TEXTURE_MAG_FILTER, glFilter);
+    glBindTexture(texturetype, 0);
     
     // Re-generate handle if using bindless
     if (GLCapabilities::hasBindlessTextures() && m_textureHandle != 0) {
@@ -264,9 +351,10 @@ void OpenGLTexture2D::setMagFilter(TextureFilter filter)
 
 void OpenGLTexture2D::setWrapS(TextureWrap wrap)
 {
-    glBindTexture(GL_TEXTURE_2D, m_rendererID);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, convertWrapToGL(wrap));
-    glBindTexture(GL_TEXTURE_2D, 0);
+    GLenum texturetype = getTextureTypeGL();
+    glBindTexture(texturetype, m_rendererID);
+    glTexParameteri(texturetype, GL_TEXTURE_WRAP_S, convertWrapToGL(wrap));
+    glBindTexture(texturetype, 0);
     
     // Re-generate handle if using bindless
     if (GLCapabilities::hasBindlessTextures() && m_textureHandle != 0) {
@@ -279,9 +367,10 @@ void OpenGLTexture2D::setWrapS(TextureWrap wrap)
 
 void OpenGLTexture2D::setWrapT(TextureWrap wrap)
 {
-    glBindTexture(GL_TEXTURE_2D, m_rendererID);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, convertWrapToGL(wrap));
-    glBindTexture(GL_TEXTURE_2D, 0);
+    GLenum texturetype = getTextureTypeGL();
+    glBindTexture(texturetype, m_rendererID);
+    glTexParameteri(texturetype, GL_TEXTURE_WRAP_T, convertWrapToGL(wrap));
+    glBindTexture(texturetype, 0);
     
     // Re-generate handle if using bindless
     if (GLCapabilities::hasBindlessTextures() && m_textureHandle != 0) {
@@ -335,20 +424,36 @@ void OpenGLTexture2D::generateTextureHandle()
         return;
     }
     
+    GLenum texturetype = getTextureTypeGL();
     // Make sure the texture is bound to generate a handle
-    glBindTexture(GL_TEXTURE_2D, m_rendererID);
+    glBindTexture(texturetype, m_rendererID);
     
     // Use regular GL command instead of ARB extension directly
     m_textureHandle = glGetTextureHandleARB(m_rendererID);
     
-    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindTexture(texturetype, 0);
     
     if (m_textureHandle == 0) {
         GE_CORE_ERROR("OpenGLTexture2D::generateTextureHandle - Failed to generate texture handle");
     }
 }
 
+GLenum OpenGLTexture2D::getTextureTypeGL() const
+{
 
+    switch (m_textureType) {
+        case TextureType::TEXTURE2D_CUBEMAP:
+            return GL_TEXTURE_CUBE_MAP;
+        case TextureType::TEXTURE2D_ARRAY:
+            return GL_TEXTURE_2D_ARRAY;
+        case TextureType::TEXTURE2D:
+            return GL_TEXTURE_2D;
+        default:
+            GE_CORE_ERROR("OpenGLTexture2D::getTextureTypeGL: Unsupported texture type!");
+            return 0;
+    }
+
+}
 
 OpenGLTexture2D::OpenGLTexture2D(const std::vector<std::string>& filepaths)
 {
@@ -399,7 +504,7 @@ OpenGLTexture2D::OpenGLTexture2D(const std::vector<std::string>& filepaths)
 
     m_width = width;
     m_height = height;
-    m_isCubemap = true;
+    m_textureType = TextureType::TEXTURE2D_CUBEMAP;
 
     // Generate handle for bindless textures if supported
     if (GLCapabilities::hasBindlessTextures()) {
@@ -410,6 +515,13 @@ OpenGLTexture2D::OpenGLTexture2D(const std::vector<std::string>& filepaths)
  
 }
 
+void OpenGLTexture2D::clear(glm::vec4 color)
+{
+    GLenum texturetype = getTextureTypeGL();
+    glBindTexture(texturetype, m_rendererID);
+    glClearTexImage(m_rendererID, 0, m_dataFormat, GL_FLOAT, &color[0]);
+    glBindTexture(texturetype, 0);
+}
 
 // Static methods for bindless texture functionality
 uint64_t OpenGLTexture2D::generateTextureHandleFromID(uint32_t textureID)
@@ -468,6 +580,7 @@ void OpenGLTexture2D::makeTextureNonResident(uint64_t textureHandle)
 }
 
 
+
 // Static factory methods
 std::shared_ptr<OpenGLTexture2D> OpenGLTexture2D::createFromPath(const std::string& path)
 {
@@ -523,5 +636,7 @@ std::shared_ptr<Texture2D> Texture2D::create(TextureSpecification specification)
 {
     return std::make_shared<OpenGLTexture2D>(specification);
 }
+
+
 
 } // namespace Rapture

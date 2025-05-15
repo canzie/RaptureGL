@@ -80,6 +80,13 @@ namespace Rapture {
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
     }
 
+    void OpenGLTexture3D::clear(glm::vec4 color)
+    {
+        glBindTexture(GL_TEXTURE_3D, m_rendererID);
+        glClearTexImage(m_rendererID, 0, m_dataFormat, GL_FLOAT, &color[0]);
+        glBindTexture(GL_TEXTURE_3D, 0);
+    }
+
     bool OpenGLTexture3D::makeResident()
     {
         if (!GLCapabilities::hasBindlessTextures()) {

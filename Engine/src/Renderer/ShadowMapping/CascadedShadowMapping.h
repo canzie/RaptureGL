@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include "ShadowMappingBase.h"
+#include "../../Textures/Texture.h"
 
 namespace Rapture {
 

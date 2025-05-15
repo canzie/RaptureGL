@@ -431,21 +431,7 @@ namespace Rapture {
                 if (csmComp.isActive) {
                     shadowMap = csmComp.cascadedShadowMapping;
                     //config.frustum = csmComp.frustum;
-                }
-            } else if (lightComp.castsShadow && shadowView.contains(entityHandle)) {
-                // add regular shadow maps
-                auto& shadowComp = shadowView.get<ShadowComponent>(entityHandle);
-                if (shadowComp.isActive) {
-                    // light frustum is bugged for now
-                    config.frustum = shadowComp.frustum;
-                    shadowMap = shadowComp.shadowMap;
-                    
-                }
-            }
-
-             
-            if (!std::holds_alternative<std::monostate>(shadowMap)) {
-                // setup start of 1 shadowpass
+                                // setup start of 1 shadowpass
                 ShadowPassCommand shadowPassStartCmd;
                 shadowPassStartCmd.shadowMap = shadowMap;
                 shadowPassStartCmd.lightType = lightComp.type;
@@ -463,6 +449,41 @@ namespace Rapture {
                 queue->add(shadowPassEndCmd);
 
                 if (s_shuttingDown) { request.resultQueue->markAsDone(); return; }
+
+                }
+            }if (lightComp.castsShadow && shadowView.contains(entityHandle)) {
+                // add regular shadow maps
+                auto& shadowComp = shadowView.get<ShadowComponent>(entityHandle);
+                if (shadowComp.isActive) {
+                    // light frustum is bugged for now
+                    config.frustum = shadowComp.frustum;
+                    shadowMap = shadowComp.shadowMap;
+
+                                  // setup start of 1 shadowpass
+                ShadowPassCommand shadowPassStartCmd;
+                shadowPassStartCmd.shadowMap = shadowMap;
+                shadowPassStartCmd.lightType = lightComp.type;
+                shadowPassStartCmd.commandType = CommandExectionPhase::BEGIN_PASS;
+                queue->add(shadowPassStartCmd);
+
+                // add the geometryqueue
+                buildGeometryQueue(request, config);
+
+                // notify end of the this shadowpass
+                ShadowPassCommand shadowPassEndCmd;
+                shadowPassEndCmd.shadowMap = shadowMap;
+                shadowPassEndCmd.lightType = lightComp.type;
+                shadowPassEndCmd.commandType = CommandExectionPhase::END_PASS;
+                queue->add(shadowPassEndCmd);
+
+                if (s_shuttingDown) { request.resultQueue->markAsDone(); return; }
+
+                }
+            }
+
+             
+            if (!std::holds_alternative<std::monostate>(shadowMap)) {
+
             }
         }
 

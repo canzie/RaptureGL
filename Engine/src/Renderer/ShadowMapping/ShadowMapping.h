@@ -28,6 +28,8 @@ namespace Rapture {
 
         void setWVPMatrix(const glm::mat4 viewproj);
 
+        glm::mat4 getWVPMatrix() { return m_ViewProjectionMatrix; }
+
         uint32_t getShadowMapID() { return m_ShadowMap->getDepthAttachmentRendererID(); }
         uint64_t getShadowMapHandle() { return m_ShadowMap->getDepthAttachmentTextureHandle(); }
         

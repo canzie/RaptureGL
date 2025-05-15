@@ -6,6 +6,8 @@
 #include "../../WindowContext/Application.h"
 #include <glm/gtx/string_cast.hpp>
 
+#include "../../Shaders/OpenGLShaders/OpenGLShader.h"
+
 namespace Rapture {
 
     DynamicDiffuseGI::DynamicDiffuseGI()
@@ -21,7 +23,8 @@ namespace Rapture {
         m_isEvenFrame(true),
         m_Hysteresis(0.96f),
         m_SunLightBuffer(nullptr),
-        m_isPopulated(false)
+        m_isPopulated(false),
+        m_RayDataTexture(nullptr)
     {
 
 
@@ -29,9 +32,34 @@ namespace Rapture {
         auto project = app.getProject();
         auto shaderPath = project->getConfig().shaderPath;
 
-        auto [shader, handle] = AssetManager::importAsset<Shader>(shaderPath / "DDGI/PopulateProbesDDGI2.cs.glsl");
-        m_DDGI_PopulateProbesShader = shader;
+        auto [traceShader, traceShaderHandle] = AssetManager::importAsset<Shader>(shaderPath / "DDGI/ProbeTraceRGS.cs.glsl");
+        m_DDGI_ProbeTraceShader = traceShader;
 
+        auto [flatten2dArrayShader, shaderHandle] = AssetManager::importAsset<Shader>(shaderPath / "Flatten2dArray.cs.glsl");
+        m_Flatten2dArrayShader = flatten2dArrayShader;
+
+        auto [blendingShader, blendingShaderHandle] = AssetManager::importAsset<Shader>(shaderPath / "DDGI/ProbeBlending.cs.glsl");
+        m_DDGI_ProbeIrradianceBlendingShader = blendingShader;
+        // NOTE: this is very criminal, but making it better would derail too much from the ddgi,
+        // ok solution would be to create some custom shader file which stores the glsl filepath and the variants, 
+        // then give this file to the assetmanager
+        // or a way to ask the assetamanger for a copy of a loaded object
+        m_DDGI_ProbeDistanceBlendingShader = std::make_shared<OpenGLShader>(shaderPath / "DDGI/ProbeBlending.cs.glsl");
+
+        ShaderVariant radianceVariant;
+        radianceVariant.defines.push_back("DDGI_BLEND_RADIANCE");
+        radianceVariant.name = "DDGI_BLEND_RADIANCE";
+        ShaderVariant distanceVariant;
+        distanceVariant.defines.push_back("DDGI_BLEND_DISTANCE");
+        distanceVariant.name = "DDGI_BLEND_DISTANCE";
+
+        m_DDGI_ProbeIrradianceBlendingShader->addVariant(radianceVariant);
+        m_DDGI_ProbeDistanceBlendingShader->addVariant(distanceVariant);
+
+        m_DDGI_ProbeIrradianceBlendingShader->compile(radianceVariant.name);   
+        m_DDGI_ProbeDistanceBlendingShader->compile(distanceVariant.name);
+
+        initProbeInfoBuffer();
         initTextures();
 
     }
@@ -45,13 +73,10 @@ namespace Rapture {
     {
         if (m_isPopulated)
         {
-            auto& skybox = scene->getSkyBox();
-            
-            auto skyboxTexture = skybox.texture;
 
             updateSunProperties(scene);
 
-            populateProbesCompute(skyboxTexture);
+            populateProbesCompute(scene);
             return;
         }
 
@@ -78,18 +103,12 @@ namespace Rapture {
         // get the needed buffer metadata
         // just use the handles for comparisons and set/get the correct index based on this
 
-
-
-        // Calculate the total size of the grid and the starting offset
-        glm::vec3 totalGridSize = glm::vec3(m_ProbeConfig.probeGridDimensions) * m_ProbeConfig.probeSpacing;
-        glm::vec3 startOffset = m_ProbeConfig.probeOrigin - (totalGridSize / 2.0f) + (m_ProbeConfig.probeSpacing / 2.0f); // Offset by half spacing to center probes
-
         
-        for (int x = 0; x < m_ProbeConfig.probeGridDimensions.x; x++) {
-            for (int y = 0; y < m_ProbeConfig.probeGridDimensions.y; y++) {
-                for (int z = 0; z < m_ProbeConfig.probeGridDimensions.z; z++) {
+        for (int x = 0; x < m_ProbeVolume.gridDimensions.x; x++) {
+            for (int y = 0; y < m_ProbeVolume.gridDimensions.y; y++) {
+                for (int z = 0; z < m_ProbeVolume.gridDimensions.z; z++) {
                     // Calculate the position based on the starting offset and index
-                    auto probePosition = startOffset + glm::vec3(x, y, z) * m_ProbeConfig.probeSpacing;
+                    auto probePosition = m_ProbeVolume.origin + (glm::vec3(x, y, z) - (glm::vec3(m_ProbeVolume.gridDimensions - 1u) / 2.0f)) * m_ProbeVolume.spacing;
                     m_DebugProbePositions.push_back(probePosition);
                     //GE_CORE_TRACE("DynamicDiffuseGI::populateProbes - Probe Index: ({0}, {1}, {2}), Position: ({3}, {4}, {5})", x, y, z, probePosition.x, probePosition.y, probePosition.z);
                 }
@@ -186,7 +205,7 @@ namespace Rapture {
 
         // create all buffers and texture(s)
         // probe ubo
-        m_ProbeInfoBuffer = std::make_shared<UniformBuffer>(sizeof(ProbeInfo), BufferUsage::Static, &m_ProbeConfig);
+        //m_ProbeInfoBuffer = std::make_shared<UniformBuffer>(sizeof(ProbeConfig), BufferUsage::Static, &m_ProbeConfig);
         // mesh info ssbo
         m_MeshInfoBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(MeshInfo) * meshInfos.size(), BufferUsage::Static, meshInfos.data());
         m_meshCount = meshInfos.size();
@@ -200,72 +219,162 @@ namespace Rapture {
 
         m_isPopulated = true;
 
-        populateProbesCompute();
+        populateProbesCompute(scene);
 
         //readDebugBuffer();
 
     }
 
-    void DynamicDiffuseGI::populateProbesCompute(std::shared_ptr<Texture2D> skyboxTexture)
+    void DynamicDiffuseGI::populateProbesCompute(std::shared_ptr<Scene> scene)
     {
         if (!m_isPopulated) {
             GE_CORE_WARN("DynamicDiffuseGI::populateProbesCompute - DynamicDiffuseGI is not populated yet, please call 'populateProbes(Scene)' first");
             return;
         }
 
-        auto completeBVHNodesBuffer = LBVHManager::getLBVH()->getCompleteBVHNodesBuffer();
-        auto twidth = m_RadianceTexture->getWidth();
-        auto theight = m_RadianceTexture->getHeight();
 
-        m_DDGI_PopulateProbesShader->bind();
+        castRays(scene);
+        blendTextures();
+
+        // flatten irradiance texture
+        m_Flatten2dArrayShader->bind();
+        m_RadianceTexture->bind(0);
+        m_IrradianceTextureFlattened->bindCompute(1);
+
+        m_Flatten2dArrayShader->setInt("layerCount", m_RadianceTexture->getDepth());
+        m_Flatten2dArrayShader->setInt("layerWidth", m_RadianceTexture->getWidth());
+        m_Flatten2dArrayShader->setInt("layerHeight", m_RadianceTexture->getHeight());
+        m_Flatten2dArrayShader->setInt("tilesPerRow", static_cast<uint32_t>(ceil(sqrt(m_RadianceTexture->getDepth()))));
+        m_Flatten2dArrayShader->dispatchCompute(m_IrradianceTextureFlattened->getWidth()/16, m_IrradianceTextureFlattened->getHeight()/16, 1);
+
+        m_IrradianceTextureFlattened->unbind();
+        m_Flatten2dArrayShader->unBind();
+
+        // flatten distance texture
+        m_Flatten2dArrayShader->bind();
+        m_VisibilityTexture->bind(0);
+        m_DistanceTextureFlattened->bindCompute(1);
+
+        m_Flatten2dArrayShader->setInt("layerCount", m_VisibilityTexture->getDepth());
+        m_Flatten2dArrayShader->setInt("layerWidth", m_VisibilityTexture->getWidth());
+        m_Flatten2dArrayShader->setInt("layerHeight", m_VisibilityTexture->getHeight());
+        m_Flatten2dArrayShader->setInt("tilesPerRow", static_cast<uint32_t>(ceil(sqrt(m_VisibilityTexture->getDepth()))));
+        m_Flatten2dArrayShader->dispatchCompute(m_DistanceTextureFlattened->getWidth()/16, m_DistanceTextureFlattened->getHeight()/16, 1);
+
+        m_DistanceTextureFlattened->unbind();
+        m_Flatten2dArrayShader->unBind();
+
+        m_isEvenFrame = !m_isEvenFrame;
+
+    }
+
+    // phase 1
+    void DynamicDiffuseGI::castRays(std::shared_ptr<Scene> scene)
+    {
+        if (!m_isPopulated) {
+            GE_CORE_WARN("DynamicDiffuseGI::castRays - DynamicDiffuseGI is not populated yet, please call 'populateProbes(Scene)' first");
+            return;
+        }
+
+        auto completeBVHNodesBuffer = LBVHManager::getLBVH()->getCompleteBVHNodesBuffer();
+
+        // bindings
+        m_DDGI_ProbeTraceShader->bind();
 
         m_ProbeInfoBuffer->bindBase(0); // UBO
         m_SunLightBuffer->bindBase(1); // UBO
 
-        m_DebugBuffer->bindBase(4); // SSBO
+        completeBVHNodesBuffer->bindBase(0); // SSBO
+        m_BufferMetadataBuffer->bindBase(1); // SSBO
+        m_MeshInfoBuffer->bindBase(2); // SSBO
 
-        m_MeshInfoBuffer->bindBase(3); // SSBO
-        m_BufferMetadataBuffer->bindBase(2); // SSBO
-        completeBVHNodesBuffer->bindBase(1); // SSBO
+        m_RayDataTexture->bindCompute(0);
 
-        m_DDGI_PopulateProbesShader->setVec2("u_AtlasTextureResolution", glm::vec2(twidth, theight));
-        m_DDGI_PopulateProbesShader->setUint("u_meshCount", m_meshCount);
-        m_DDGI_PopulateProbesShader->setUint("u_probesPerRow", m_probesPerRow);
-        m_DDGI_PopulateProbesShader->setFloat("u_hysteresis", m_Hysteresis);
-
-        // bind the texture(s)
-        // texture(s)
         if (m_isEvenFrame) {
-            m_RadianceTexture->bindCompute(0);
-            m_VisibilityTexture->bindCompute(1);
-            m_PrevRadianceTexture->bindCompute(2);
-            m_PrevVisibilityTexture->bindCompute(3);
+            m_PrevRadianceTexture->bind(1);
+            m_PrevVisibilityTexture->bind(2);
         } else {
-            m_PrevRadianceTexture->bindCompute(0);
-            m_PrevVisibilityTexture->bindCompute(1);
-            m_RadianceTexture->bindCompute(2);
-            m_VisibilityTexture->bindCompute(3);
+
+            m_RadianceTexture->bind(1);
+            m_VisibilityTexture->bind(2);
         }
+
+        auto& skybox = scene->getSkyBox();
+        auto skyboxTexture = skybox.texture;
 
         if (skyboxTexture) {
-            skyboxTexture->bind(4);
+            skyboxTexture->bind(3);
         }
 
-        m_isEvenFrame = !m_isEvenFrame;
+
+        m_DDGI_ProbeTraceShader->setUint("u_meshCount", m_meshCount);
 
         // dispatch the compute shader
-        //m_DDGI_PopulateProbesShader->dispatchCompute(twidth / 8, theight / 8, 1);
-        m_DDGI_PopulateProbesShader->dispatchCompute(m_ProbeConfig.probeGridDimensions.x, m_ProbeConfig.probeGridDimensions.y, m_ProbeConfig.probeGridDimensions.z);
+        m_DDGI_ProbeTraceShader->dispatchCompute(m_ProbeVolume.gridDimensions.x, m_ProbeVolume.gridDimensions.z, m_ProbeVolume.gridDimensions.y);
 
-        // unbind shader
+        // wait for the raydata to be up to date
+        // could also put this before it is used instead but this will probably not cause performance issues now, so we just do it here so we dotn forget it and pull my hair out
+        m_RayDataTexture->barrier();
+
+        // unbinds
+        m_RayDataTexture->unbind();
+
         m_ProbeInfoBuffer->unbind();
         m_SunLightBuffer->unbind();
-        m_MeshInfoBuffer->unbind();
-        m_BufferMetadataBuffer->unbind();
         completeBVHNodesBuffer->unbind();
-        m_DDGI_PopulateProbesShader->unBind();
+        m_BufferMetadataBuffer->unbind();
+        m_MeshInfoBuffer->unbind();
+
+        m_ProbeInfoBuffer->bindBase(0); // UBO
+        m_DDGI_ProbeTraceShader->unBind();
+
     }
 
+
+    // phase 2
+    void DynamicDiffuseGI::blendTextures()
+    {
+        // irradiance blending
+        m_DDGI_ProbeIrradianceBlendingShader->bind();
+
+        m_RayDataTexture->bindCompute(0);
+
+        if (m_isEvenFrame) {
+            m_PrevRadianceTexture->bindCompute(1); // ingore that both are this for now, we are just debugging
+            m_PrevVisibilityTexture->bindCompute(2);
+            m_RadianceTexture->bindCompute(3); // ingore that both are this for now, we are just debugging
+            m_VisibilityTexture->bindCompute(4);
+        } else {
+            m_RadianceTexture->bindCompute(1);
+            m_VisibilityTexture->bindCompute(2);
+            m_PrevRadianceTexture->bindCompute(3);
+            m_PrevVisibilityTexture->bindCompute(4);
+        }      
+
+        m_ProbeInfoBuffer->bindBase(0); // UBO
+        m_DDGI_ProbeIrradianceBlendingShader->dispatchCompute(m_ProbeVolume.gridDimensions.x, m_ProbeVolume.gridDimensions.z, m_ProbeVolume.gridDimensions.y);
+
+
+        m_DDGI_ProbeIrradianceBlendingShader->unBind();
+
+
+        // distance blending
+        m_DDGI_ProbeDistanceBlendingShader->bind();
+
+        m_DDGI_ProbeDistanceBlendingShader->dispatchCompute(m_ProbeVolume.gridDimensions.x, m_ProbeVolume.gridDimensions.z, m_ProbeVolume.gridDimensions.y);
+
+        // the other buffers and textures should still be bound
+
+
+        m_DDGI_ProbeDistanceBlendingShader->unBind();
+
+        m_ProbeInfoBuffer->unbind();
+
+
+        m_RadianceTexture->barrier();
+
+
+    }
 
     int DynamicDiffuseGI::createBufferMetadata(std::shared_ptr<VertexArray> vao)
     {
@@ -388,58 +497,81 @@ namespace Rapture {
     void DynamicDiffuseGI::initTextures()
     {
 
-        // Calculate total probes
-        uint32_t total_probes = m_ProbeConfig.probeGridDimensions.x * m_ProbeConfig.probeGridDimensions.y * m_ProbeConfig.probeGridDimensions.z;
-
-        // Calculate probes per row/col to make atlas as square as possible
-        float probeAspect = (float)m_ProbeConfig.probeResolution.y / (float)m_ProbeConfig.probeResolution.x;
-        m_probesPerRow = (uint32_t)glm::ceil(glm::sqrt((float)total_probes * probeAspect));
-        uint32_t probesPerCol = (uint32_t)glm::ceil((float)total_probes / m_probesPerRow);
-
-        // Calculate final atlas dimensions
-        glm::uvec2 texture_dims;
-        texture_dims.x = m_probesPerRow * m_ProbeConfig.probeResolution.x;
-        texture_dims.y = probesPerCol * m_ProbeConfig.probeResolution.y;
-
-
-
-        GE_CORE_INFO("DDGI Atlas Config: Total Probes: {}, Probes Per Row: {}, Probes Per Col: {}, Atlas Dims: ({}, {})", total_probes, m_probesPerRow, probesPerCol, texture_dims.x, texture_dims.y);
-
-        TextureSpecification radianceSpec;
-        radianceSpec.width = texture_dims.x;
-        radianceSpec.height = texture_dims.y;
-        radianceSpec.format = TextureFormat::R11G11B10F;
-
-        TextureSpecification visibilitySpec;
-        visibilitySpec.width = texture_dims.x;
-        visibilitySpec.height = texture_dims.y;
-        visibilitySpec.format = TextureFormat::RG16F;
         
 
+        TextureSpecification radianceSpec;
+        radianceSpec.width = m_ProbeVolume.gridDimensions.x * m_ProbeVolume.probeNumIrradianceInteriorTexels;
+        radianceSpec.height = m_ProbeVolume.gridDimensions.z * m_ProbeVolume.probeNumIrradianceInteriorTexels;
+        radianceSpec.depth = m_ProbeVolume.gridDimensions.y;
+        radianceSpec.format = TextureFormat::R11G11B10F;
+
+        TextureSpecification DistanceSpec;
+        DistanceSpec.width = m_ProbeVolume.gridDimensions.x * m_ProbeVolume.probeNumDistanceInteriorTexels;
+        DistanceSpec.height = m_ProbeVolume.gridDimensions.z * m_ProbeVolume.probeNumDistanceInteriorTexels;
+        DistanceSpec.depth = m_ProbeVolume.gridDimensions.y;
+        DistanceSpec.format = TextureFormat::RG16F;
+
+        TextureSpecification rayDataSpec;
+        rayDataSpec.width = m_ProbeVolume.probeNumRays;  // Just the number of rays per probe
+        rayDataSpec.height = m_ProbeVolume.gridDimensions.x * m_ProbeVolume.gridDimensions.z;  // Probes per plane
+        rayDataSpec.depth = m_ProbeVolume.gridDimensions.y;  // Number of planes
+        rayDataSpec.format = TextureFormat::RGBA32F;
+
+        TextureSpecification rayDataFlattenedSpec;
+        // Calculate dimensions for the flattened texture
+        // We'll arrange the layers in a row-major grid
+        uint32_t tilesPerRow = static_cast<uint32_t>(ceil(sqrt(rayDataSpec.depth))); // Number of tiles horizontally
+
+
+        TextureSpecification irradianceFlattenedSpec;
+        // Calculate dimensions for the flattened irradiance texture
+        irradianceFlattenedSpec.width = radianceSpec.width * tilesPerRow;
+        irradianceFlattenedSpec.height = radianceSpec.height * static_cast<uint32_t>(ceil(float(radianceSpec.depth) / tilesPerRow));
+        irradianceFlattenedSpec.format = TextureFormat::R11G11B10F;
+
+        TextureSpecification distanceFlattenedSpec;
+        // Calculate dimensions for the flattened distance texture
+        distanceFlattenedSpec.width = DistanceSpec.width * tilesPerRow;
+        distanceFlattenedSpec.height = DistanceSpec.height * static_cast<uint32_t>(ceil(float(DistanceSpec.depth) / tilesPerRow));
+        distanceFlattenedSpec.format = TextureFormat::RG16F;
+
+        TextureFilter samplingType = TextureFilter::Linear;
+
+
         m_RadianceTexture = Texture2D::create(radianceSpec);
-        m_VisibilityTexture = Texture2D::create(visibilitySpec);
+        m_VisibilityTexture = Texture2D::create(DistanceSpec);
 
         m_PrevRadianceTexture = Texture2D::create(radianceSpec);
-        m_PrevVisibilityTexture = Texture2D::create(visibilitySpec);
+        m_PrevVisibilityTexture = Texture2D::create(DistanceSpec);
 
+        m_RayDataTexture = Texture2D::create(rayDataSpec);
+    
 
-        m_RadianceTexture->setMinFilter(TextureFilter::Nearest); // Linear interpolation within a cascade is valid
-        m_RadianceTexture->setMagFilter(TextureFilter::Nearest);
+        m_IrradianceTextureFlattened = Texture2D::create(irradianceFlattenedSpec);
+        m_DistanceTextureFlattened = Texture2D::create(distanceFlattenedSpec);
+
+        m_RayDataTexture->setMinFilter(TextureFilter::Nearest);
+        m_RayDataTexture->setMagFilter(TextureFilter::Nearest);
+        m_RayDataTexture->setWrapS(TextureWrap::ClampToEdge);
+        m_RayDataTexture->setWrapT(TextureWrap::ClampToEdge);
+
+        m_RadianceTexture->setMinFilter(samplingType); // Linear interpolation within a cascade is valid
+        m_RadianceTexture->setMagFilter(samplingType);
         m_RadianceTexture->setWrapS(TextureWrap::ClampToEdge);
         m_RadianceTexture->setWrapT(TextureWrap::ClampToEdge);
 
-        m_VisibilityTexture->setMinFilter(TextureFilter::Nearest); // Linear interpolation within a cascade is valid
-        m_VisibilityTexture->setMagFilter(TextureFilter::Nearest);
+        m_VisibilityTexture->setMinFilter(samplingType); // Linear interpolation within a cascade is valid
+        m_VisibilityTexture->setMagFilter(samplingType);
         m_VisibilityTexture->setWrapS(TextureWrap::ClampToEdge);
         m_VisibilityTexture->setWrapT(TextureWrap::ClampToEdge);
 
-        m_PrevRadianceTexture->setMinFilter(TextureFilter::Nearest); // Linear interpolation within a cascade is valid
-        m_PrevRadianceTexture->setMagFilter(TextureFilter::Nearest);
+        m_PrevRadianceTexture->setMinFilter(samplingType); // Linear interpolation within a cascade is valid
+        m_PrevRadianceTexture->setMagFilter(samplingType);
         m_PrevRadianceTexture->setWrapS(TextureWrap::ClampToEdge);
         m_PrevRadianceTexture->setWrapT(TextureWrap::ClampToEdge);
 
-        m_PrevVisibilityTexture->setMinFilter(TextureFilter::Nearest); // Linear interpolation within a cascade is valid
-        m_PrevVisibilityTexture->setMagFilter(TextureFilter::Nearest);
+        m_PrevVisibilityTexture->setMinFilter(samplingType); // Linear interpolation within a cascade is valid
+        m_PrevVisibilityTexture->setMagFilter(samplingType);
         m_PrevVisibilityTexture->setWrapS(TextureWrap::ClampToEdge);
         m_PrevVisibilityTexture->setWrapT(TextureWrap::ClampToEdge);
 
@@ -448,6 +580,17 @@ namespace Rapture {
 
         m_PrevRadianceTexture->makeResident();
         m_PrevVisibilityTexture->makeResident();
+        
+        m_RayDataTexture->makeResident();
+
+        m_IrradianceTextureFlattened->makeResident();
+        m_DistanceTextureFlattened->makeResident();
+
+        // dont know if this is needed but i cba
+        //m_PrevRadianceTexture->clear(glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
+        //m_PrevVisibilityTexture->clear(glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
+        //m_RadianceTexture->clear(glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
+        //m_VisibilityTexture->clear(glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
 
     }
     void DynamicDiffuseGI::updateSunProperties(std::shared_ptr<Scene> scene)
@@ -461,22 +604,25 @@ namespace Rapture {
             if (lightComp.type == LightType::Directional) {
                 Entity ent = Entity(entity, scene.get());
 
-                auto csm = ent.tryGetComponent<CascadedShadowComponent>();
-                if (csm) {
-                    uint32_t lastCascadeIndex = csm->numCascades-1;
-                    m_SunShadowProps.sunCascadeCount = csm->numCascades;
-                    m_SunShadowProps.sunLightSpaceMatrix = csm->cascadedShadowMapping->getViewProjectionMatrices()[lastCascadeIndex];
-                    m_SunShadowProps.sunShadowTextureArrayHandle = csm->cascadedShadowMapping->getCascadeTextureHandle();
+                auto sm = ent.tryGetComponent<ShadowComponent>();
+                if (sm->shadowMap) {
+                    m_SunShadowProps.sunLightSpaceMatrix = sm->shadowMap->getWVPMatrix();
+                    if (sm->shadowMap->getShadowMapHandle() == 0) {
+                        GE_CORE_WARN("DynamicDiffuseGI::populateProbes - Entity has no shadow mapping component");
+                    }
+
+                    m_SunShadowProps.sunShadowTextureArrayHandle = sm->shadowMap->getShadowMapHandle();
+
                 } else {
                     GE_CORE_WARN("DynamicDiffuseGI::populateProbes - Entity has no cascaded shadow mapping component");
                     // If no CSM, ensure cascade count is 0 so shader returns shadowFactor = 1.0
-                    m_SunShadowProps.sunCascadeCount = 0;
                     m_SunShadowProps.sunShadowTextureArrayHandle = 0;
                 }
 
 
                 glm::quat rotationQuat = transformComp.transforms.getRotationQuat();
                 m_SunShadowProps.sunDirectionWorld = glm::normalize(rotationQuat * glm::vec3(0, 0, -1));
+                m_SunShadowProps.sunColor = lightComp.color;
 
                 m_SunShadowProps.sunIntensity = lightComp.intensity;
 
@@ -485,6 +631,44 @@ namespace Rapture {
         }
 
         m_SunLightBuffer->setData(&m_SunShadowProps, sizeof(SunProperties));
+
+    }
+    void DynamicDiffuseGI::initProbeInfoBuffer()
+    {
+        ProbeVolume probeVolume;
+
+        probeVolume.origin = glm::vec3(-0.4f, 5.4f, -0.25f);
+        
+        probeVolume.rotation = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+        probeVolume.probeRayRotation = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+        
+        probeVolume.spacing = glm::vec3(1.02f, 1.5f, 1.02f);
+        probeVolume.gridDimensions = glm::uvec3(24, 8, 24);
+        
+        probeVolume.probeNumRays = 256;
+        probeVolume.probeNumIrradianceInteriorTexels = 8;
+        probeVolume.probeNumDistanceInteriorTexels = 16;
+
+        probeVolume.probeHysteresis = 0.97f;
+        probeVolume.probeMaxRayDistance = 10000.0f;
+        probeVolume.probeNormalBias = 0.1f;
+        probeVolume.probeViewBias = 0.1f;
+        probeVolume.probeDistanceExponent = 2.0f;
+        probeVolume.probeIrradianceEncodingGamma = 2.2f;
+
+        probeVolume.probeBrightnessThreshold = 0.1f;
+
+        probeVolume.probeMinFrontfaceDistance = 0.1f;
+    
+        probeVolume.probeRandomRayBackfaceThreshold = 0.1f;
+        probeVolume.probeFixedRayBackfaceThreshold = 0.25f;
+
+        m_ProbeVolume = probeVolume;
+
+        m_ProbeInfoBuffer = std::make_shared<UniformBuffer>(sizeof(ProbeVolume), BufferUsage::Static, &probeVolume);
+        
+
+        
 
     }
 }

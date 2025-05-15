@@ -213,6 +213,7 @@ namespace Rapture {
         return arrayHandle;
     }
 
+
     uint32_t CascadedShadowMapping::getCascadeTextureID() const
     {
         uint32_t arrayID = 0;
@@ -232,6 +233,10 @@ namespace Rapture {
 
         return arrayID;
     }
+
+
+
+
 
     /**
      * Extracts the 8 corners of a camera frustum slice for a specific cascade
@@ -556,6 +561,7 @@ namespace Rapture {
             cascadeData[cascadeIdx].lightViewProj = lightProjectionMatrix * lightViewMatrix;
             m_ViewProjectionMatrices[cascadeIdx] = cascadeData[cascadeIdx].lightViewProj;
         }
+
 
         return cascadeData;
     }

@@ -38,6 +38,7 @@ namespace Rapture
         alignas(4) bool debug_DDGI_RawIndirectSum;
         alignas(4) bool debug_DDGI_TotalWeight;
         alignas(4) bool debug_DDGI_ProbeIrradianceSum;
+        alignas(4) bool debug_DDGI_ProbeInfluenc;
     };
 
 

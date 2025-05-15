@@ -9,6 +9,9 @@
 #include <filesystem>
 #include <thread>
 
+#include <glm/glm.hpp>
+
+
 #include "../Utils/GLCapabilities.h"
 
 namespace Rapture {
@@ -80,7 +83,11 @@ struct TextureSpecification {
 };
 
 
-
+enum class TextureType : uint8_t {
+    TEXTURE2D,
+    TEXTURE2D_ARRAY,
+    TEXTURE2D_CUBEMAP
+};
 
 class Texture {
 public:
@@ -88,6 +95,7 @@ public:
     
     virtual uint32_t getWidth() const = 0;
     virtual uint32_t getHeight() const = 0;
+    
     virtual uint32_t getRendererID() const = 0;
     
     virtual void bind(uint32_t slot = 0) const = 0;
@@ -100,6 +108,8 @@ public:
     virtual void setMagFilter(TextureFilter filter) = 0;
     virtual void setWrapS(TextureWrap wrap) = 0;
     virtual void setWrapT(TextureWrap wrap) = 0;
+
+    virtual void clear(glm::vec4 color) = 0;
 
     // Bindless texture methods
     virtual bool makeResident() = 0;
@@ -118,6 +128,7 @@ public:
     // it is not in texture, because i dont want texture3d to implement it if it is not needed
     virtual void unbindCompute() const = 0;
 
+    virtual uint32_t getDepth() const = 0;
 
     // Static bindless texture methods
     static uint64_t generateTextureHandleFromID(uint32_t textureID);

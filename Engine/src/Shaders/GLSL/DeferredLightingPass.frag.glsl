@@ -27,11 +27,12 @@ layout(binding = 2) uniform sampler2D u_gMaterialProps; // metallic, roughness, 
 layout(binding = 3) uniform sampler2D u_gPositionDepth; // World Pos (rgb), Linear View Depth (a)
 
 // DDGI textures
-layout(binding = 4) uniform sampler2D probeAtlas;         // Irradiance
-layout(binding = 5) uniform sampler2D probeDepthAtlas;    // Distance, Distance^2
+layout(binding = 4) uniform sampler2DArray probeIrradianceAtlas;         // Irradiance
+layout(binding = 5) uniform sampler2DArray probeDistanceAtlas;    // Distance, Distance^2
 
 precision highp float;
 
+#include "DDGI/IrradianceCommon.glsl"
 
 // Camera position for specular calculations
 uniform vec3 u_CameraPosition;
@@ -75,17 +76,12 @@ layout(std430, binding = 0) buffer ShadowDataLayout {
     ShadowBufferData shadowData[];
 };
 
-// DDGI probe info
-layout(std140, binding = 1) uniform ProbeInfoUBO { // Changed binding to 1
-    uvec3 probeGridDimensions;
-    uvec2 probeResolution; // Resolution of each probe texture (e.g., 8x8) - Assuming same for both atlases for now
-    vec3 probeSpacing;
-    vec3 probeOrigin;
-} u_ProbeInfo;
+// Input Uniforms / Buffers
+// Contains global information about the probe grid
+layout(std140, binding = 1) uniform ProbeInfo {
+    ProbeVolume u_DDGI_Volume;
+};
 
-// Need probes per row for atlas coord calculation
-uniform uint u_probesPerRow;
-uniform vec2 u_atlasSize;    // Total pixel dimensions of the probe atlases
 
 #define PI 3.14159265359
 #define INFINITY_FLOAT (1.0 / 0.0) // Match compute shader infinity
@@ -107,18 +103,20 @@ layout(std140, binding = 3) uniform debugConfig {
     bool debug_DDGI_RawIndirectSum;        // Visualize sum of (probeIrradianceContribution * finalProbeWeight) before normalization
     bool debug_DDGI_TotalWeight;           // Visualize the totalWeight variable used for normalization
     bool debug_DDGI_ProbeIrradianceSum;    // Visualize sum of probeIrradianceContribution (radiance * cosine)
+    bool debug_DDGI_ProbeInfluence;        // Visualize which probes influence a pixel
 
 } u_debugConfig;
 
 
 // --- Global DDGI Debugging Variables ---
-vec3 g_debug_DDGI_TrilinearWeightSum;
-vec3 g_debug_DDGI_BackfaceWeightSum;
-vec3 g_debug_DDGI_VisibilityFactorSum;
-vec3 g_debug_DDGI_FinalProbeWeightSum;
-vec3 g_debug_DDGI_RawIndirectSum;
-vec3 g_debug_DDGI_TotalWeight;
-vec3 g_debug_DDGI_ProbeIrradianceSum;
+vec3 g_debug_DDGI_TrilinearWeightSum = vec3(0.0);
+vec3 g_debug_DDGI_BackfaceWeightSum = vec3(0.0);
+vec3 g_debug_DDGI_VisibilityFactorSum = vec3(0.0);
+vec3 g_debug_DDGI_FinalProbeWeightSum = vec3(0.0);
+vec3 g_debug_DDGI_RawIndirectSum = vec3(0.0);
+vec3 g_debug_DDGI_TotalWeight = vec3(0.0);
+vec3 g_debug_DDGI_ProbeIrradianceSum = vec3(0.0);
+vec3 g_debug_DDGI_ProbeInfluenceVisualization = vec3(0.0);
 
 
 // --------------------------------
@@ -384,196 +382,26 @@ float calculateShadow(vec3 fragPosWorld, float fragDepthView, vec3 normal, vec3 
     }
 }
 
-// DDGI helper functions
-
-// Octahedral encoding for mapping a 3D direction vector to a 2D UV coordinate
-// From "A Survey of Octahedral Mappings" and common DDGI implementations
-vec2 octEncode(vec3 n) {
-    n /= (abs(n.x) + abs(n.y) + abs(n.z)); // Project to octahedron
-    vec2 encoded;
-    if (n.z >= 0.0) {
-        encoded = n.xy;
-    } else {
-        encoded.x = (1.0 - abs(n.y)) * (n.x >= 0.0 ? 1.0 : -1.0);
-        encoded.y = (1.0 - abs(n.x)) * (n.y >= 0.0 ? 1.0 : -1.0);
-    }
-    return encoded * 0.5 + 0.5; // Map from [-1, 1] to [0, 1]
-}
-
-// Calculates the UV coordinates within a probe atlas for a given probe and sample direction
-vec2 getProbeSpecificAtlasUV(uvec3 probeIndex3D, vec2 sampleDirOctEncodedUV, uvec2 singleProbeResolution) {
-    // 1. Convert 3D probe index to linear 1D index
-    uint linearIdx = probeIndex3D.z * (u_ProbeInfo.probeGridDimensions.x * u_ProbeInfo.probeGridDimensions.y) +
-                     probeIndex3D.y * u_ProbeInfo.probeGridDimensions.x +
-                     probeIndex3D.x;
-
-    // 2. Convert linear 1D index to 2D atlas grid coordinates (which probe tile)
-    uint atlasGridX = linearIdx % u_probesPerRow;
-    uint atlasGridY = linearIdx / u_probesPerRow;
-
-    // 3. Top-left texel of this specific probe's data in the atlas
-    vec2 probeTexelOrigin = vec2(atlasGridX * singleProbeResolution.x,
-                                 atlasGridY * singleProbeResolution.y);
-
-    // 4. Texel coordinate within this probe based on the octahedral encoded sample direction
-    // sampleDirOctEncodedUV is already [0,1], scale by probe resolution
-    vec2 localTexelOffset = sampleDirOctEncodedUV * vec2(singleProbeResolution); // Can go up to singleProbeResolution
-
-    // 5. Final texel coordinate in the atlas (center of the texel)
-    vec2 atlasTexelCoord = probeTexelOrigin + localTexelOffset;
-
-    // 6. Convert to normalized UV coordinates for texture sampling
-    // Add 0.5 to sample texel centers if localTexelOffset was integer-based.
-    // Since localTexelOffset can be fractional up to singleProbeResolution,
-    // we effectively want to sample across the probe's area.
-    // For direct texel lookup, it would be floor(localTexelOffset) + 0.5
-    // Given sampleDirOctEncodedUV is continuous [0,1], this directly maps to the probe's normalized space.
-    return atlasTexelCoord / u_atlasSize;
-}
 
 
 
-
-
-
-
-/*
-by looking at the way probes are populated and the format/ordering they take on in the probeatlas, can you help me figure out why it feels like the final irradiance or even the final color on the screen seems to only be affected by a couple of probes and some of these probes have an insane weight, for example the skybox texels in the atlas seem to be super dominant, even in areas where non of the provbes nearby sample from the sun? please find out what is causing this to happen in the calculateDDGIIndirectDiffuse. as for linter errors, just ignore them they are wrong
-
-another observation is that when i increase the sun intensity, and the enitre atlas brightens up, i barely see any difference, only in the non shadowed part, but since iam not using the shadow for now in the atlas, and the probes then correctly become brighter i should see the entire scene light up but nothing changes, why is that?
-
-and finaly check the probe sampling in the deferredlighting shader, be absolutly sure that the correct 8 probes are being sampled from, because 1 slight oops in the logic like lineair vs non linear formatiing in the atlas can make or break the algorithm, maybe even think about a way to debug this
-
-*/
-
-vec3 calculateDDGIIndirectDiffuse(vec3 worldPos, vec3 worldNormal, vec3 viewDir) {
-    // Initialize global debug variables
-    g_debug_DDGI_TrilinearWeightSum = vec3(0.0);
-    g_debug_DDGI_BackfaceWeightSum = vec3(0.0);
-    g_debug_DDGI_VisibilityFactorSum = vec3(0.0);
-    g_debug_DDGI_FinalProbeWeightSum = vec3(0.0);
-    g_debug_DDGI_RawIndirectSum = vec3(0.0);
-    g_debug_DDGI_TotalWeight = vec3(0.0);
-    g_debug_DDGI_ProbeIrradianceSum = vec3(0.0);
-
-    vec3 totalWeightedIrradiance = vec3(0.0);
-    float totalWeightSum = 0.0;
-
-    // Apply normal bias to avoid self-occlusion
-    float normalBias = 0.01;
-    vec3 biasedWorldPos = worldPos + worldNormal * normalBias;
+vec3 getIrradiance(vec3 worldPos, vec3 normal, ProbeVolume volume, vec3 cameraDirection) {
     
-    // Calculate grid dimensions and starting position
-    vec3 totalGridVolumeSize = vec3(u_ProbeInfo.probeGridDimensions) * u_ProbeInfo.probeSpacing;
-    vec3 minGridCorner = u_ProbeInfo.probeOrigin - 
-                        ((vec3(u_ProbeInfo.probeGridDimensions - 1u) / 2.0f) * u_ProbeInfo.probeSpacing);
 
-    // Calculate position relative to grid
-    vec3 relativePos = biasedWorldPos - minGridCorner;
-    vec3 normalizedPosInGrid = relativePos / u_ProbeInfo.probeSpacing;
-    ivec3 baseProbeIndex = ivec3(floor(normalizedPosInGrid));
-    vec3 interpolationFactors = fract(normalizedPosInGrid);
+    vec3 surfaceBias = DDGIGetSurfaceBias(normal, cameraDirection, volume);
 
-    // Iterate through the 8 surrounding probes
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 2; j++) {
-            for (int k = 0; k < 2; k++) {
-                ivec3 currentProbeOffset = ivec3(i, j, k);
-                ivec3 currentProbeIndex3D = baseProbeIndex + currentProbeOffset;
+    // Get irradiance for the world-space position in the volume
+    vec3 irradiance = DDGIGetVolumeIrradiance(
+        worldPos,
+        normal,
+        surfaceBias,
+        probeIrradianceAtlas,
+        probeDistanceAtlas,
+        volume);
 
-                // Skip probes outside the grid
-                if (any(lessThan(currentProbeIndex3D, ivec3(0))) || 
-                    any(greaterThanEqual(currentProbeIndex3D, u_ProbeInfo.probeGridDimensions))) {
-                    continue;
-                }
-
-            // --- 1. Calculate Trilinear Interpolation Weight ---
-            float w_x = (i == 0) ? (1.0 - interpolationFactors.x) : interpolationFactors.x;
-            float w_y = (j == 0) ? (1.0 - interpolationFactors.y) : interpolationFactors.y;
-            float w_z = (k == 0) ? (1.0 - interpolationFactors.z) : interpolationFactors.z;
-            float trilinearWeight = w_x * w_y * w_z;            
-            g_debug_DDGI_TrilinearWeightSum += vec3(trilinearWeight);
-            
-            if (trilinearWeight < 0.001 ) continue; // Optimization
-            
-
-            // --- Calculate probe's world position (center of the probe) ---
-            vec3 probeWorldPos = minGridCorner + (vec3(currentProbeIndex3D) + 0.5) * u_ProbeInfo.probeSpacing;
-            vec3 dirToProbe = probeWorldPos - biasedWorldPos; // Vector from shading point to probe
-            float distToProbeSq = dot(dirToProbe, dirToProbe);
-            float distToProbe = sqrt(distToProbeSq);
-            
-            if (distToProbe < 0.001) {
-                dirToProbe = worldNormal; // Avoid issues if at probe center
-            }
-            else {
-                dirToProbe /= distToProbe;
-            }
-
-            // --- 2. Calculate Backface Culling Weight ---
-            float dotNormalDirToProbe = dot(worldNormal, dirToProbe);
-            float backfaceWeight = smoothstep(0.0, 0.2, dotNormalDirToProbe);
-            g_debug_DDGI_BackfaceWeightSum += vec3(backfaceWeight);
-
-
-            // --- Get UV for this probe's data in the atlas ---
-            vec2 probeBaseUV = getProbeSpecificAtlasUV(currentProbeIndex3D, octEncode(dirToProbe), u_ProbeInfo.probeResolution);
-            
-            vec3 dirFromProbeToShadingPoint = normalize(biasedWorldPos - probeWorldPos);
-            if (length(biasedWorldPos - probeWorldPos) < 0.0001) { // If at probe center
-                dirFromProbeToShadingPoint = -worldNormal; // Look opposite to surface normal
-            }
-
-            vec2 depthMoments = texture(probeDepthAtlas, probeBaseUV).rg;
-            float meanDepth = depthMoments.r;
-            float meanDepthSq = depthMoments.g;
-
-            
-            float visibilityWeight = 1.0;
-            if (meanDepth > 0.0) {
-                float variance = max(0.0, meanDepthSq - meanDepth * meanDepth);
-                float delta = distToProbe - meanDepth;
-                if (delta > 0.001) {
-                    visibilityWeight = variance / (variance + delta * delta);
-                    visibilityWeight = smoothstep(0.0, 1.0, visibilityWeight);
-                    //visibilityWeight *= visibilityWeight * visibilityWeight;
-
-                }
-            }
-            g_debug_DDGI_VisibilityFactorSum += vec3(visibilityWeight);
-
-            // --- 4. Sample Irradiance from the Probe ---
-            vec3 probeIrradiance = texture(probeAtlas, probeBaseUV).rgb;
-            g_debug_DDGI_ProbeIrradianceSum += probeIrradiance;
-
-
-            // --- Combine Weights ---
-            float combinedWeight = trilinearWeight * backfaceWeight * visibilityWeight;
-            g_debug_DDGI_FinalProbeWeightSum += vec3(combinedWeight);
-
-            if (combinedWeight > 0.001) {
-                totalWeightedIrradiance += probeIrradiance * combinedWeight;
-                totalWeightSum += combinedWeight;
-            }
-
-
-            }
-        }
-
-    }
-
-    // Normalize and return final indirect diffuse
-    vec3 finalIndirectDiffuse = vec3(0.0);
-    if (totalWeightSum > 0.001) {
-        finalIndirectDiffuse = totalWeightedIrradiance / totalWeightSum;
-    }
-
-    // Populate remaining global debug variables after the loop
-    g_debug_DDGI_RawIndirectSum = totalWeightedIrradiance;
-    g_debug_DDGI_TotalWeight = vec3(totalWeightSum);
-
-    return finalIndirectDiffuse;
+    return irradiance;
 }
+
 
 // --------------------------------
 // Main Shading Logic
@@ -700,50 +528,28 @@ void main() {
     // ===============================================
     // --- Indirect Diffuse Lighting (DDGI) Start ---
     // ===============================================
-    vec3 indirectDiffuseIntensity = calculateDDGIIndirectDiffuse(FragPos, N, V);
-    //vec3 indirectDiffuseIntensity = getIrradiance(FragPos, N, V);
 
-    vec3 kD_indirect = vec3(1.0); 
-    vec3 indirectDiffuseContribution = (kD_indirect * Albedo.rgb / PI) * indirectDiffuseIntensity;
+    vec3 kD_indirect = vec3(1.0) * (1.0 - Metallic); 
+    //vec3 indirectDiffuseContribution = (kD_indirect * Albedo.rgb / PI) * indirectDiffuseIntensity;
+    vec3 indirectDiffuseIntensity = getIrradiance(FragPos, N, u_DDGI_Volume, V);
+    vec3 indirectColor = indirectDiffuseIntensity * (Albedo.rgb / PI) * kD_indirect;
     // ===============================================
     // --- Indirect Diffuse Lighting (DDGI) End   ---
     // ===============================================
 
     // Add ambient lighting (modulated by AO)
     vec3 ambient = vec3(0.02) * Albedo.rgb * AO; // Small base ambient
-    vec3 finalColor = Lo + indirectDiffuseContribution;
+    vec3 finalColor = Lo + indirectColor;
+    //vec3 finalColor = Lo + ambient;
 
-    // --- New DDGI Debugging Visualizations ---
-    if (u_debugConfig.debug_DDGI_TrilinearWeightSum) {
-        finalColor = g_debug_DDGI_TrilinearWeightSum;
-    } else if (u_debugConfig.debug_DDGI_BackfaceWeightSum) {
-        finalColor = g_debug_DDGI_BackfaceWeightSum;
-    } else if (u_debugConfig.debug_DDGI_VisibilityFactorSum) {
-        finalColor = g_debug_DDGI_VisibilityFactorSum;
-    } else if (u_debugConfig.debug_DDGI_FinalProbeWeightSum) {
-        finalColor = g_debug_DDGI_FinalProbeWeightSum;
-    } else if (u_debugConfig.debug_DDGI_RawIndirectSum) {
-        finalColor = g_debug_DDGI_RawIndirectSum;
-    } else if (u_debugConfig.debug_DDGI_TotalWeight) {
-        finalColor = g_debug_DDGI_TotalWeight;
-    } else if (u_debugConfig.debug_DDGI_ProbeIrradianceSum) {
-        finalColor = g_debug_DDGI_ProbeIrradianceSum;
-    }
-    // --- End New DDGI Debugging Visualizations ---
-    else if (u_debugConfig.showDiffuseIntensity) { // Added 'else' to chain after new debugs
-        finalColor = indirectDiffuseIntensity;
-    }
-    else if (u_debugConfig.showDiffuse) {
-        finalColor = indirectDiffuseContribution;
-    }
-    else if (u_debugConfig.showDirect) {
+    if (u_debugConfig.showDiffuseIntensity) {
+        finalColor = vec3(indirectDiffuseIntensity);
+    } else if (u_debugConfig.showDiffuse) {
+        finalColor = indirectColor;
+    } else if (u_debugConfig.showDirect) {
         finalColor = Lo;
-    }
-    else if (u_debugConfig.showDirectAmbient) {
-        finalColor = ambient + Lo;
-    }
-    else if (u_debugConfig.showFinal) {
-        finalColor = finalColor;
+    } else if (u_debugConfig.showDirectAmbient) {
+        finalColor = Lo + ambient;
     }
 
 

@@ -333,7 +333,7 @@ void SettingsPanel::renderSceneSettings()
 
         ImGui::Checkbox("Show Probe Irradiance Sum", &debugConfig->debug_DDGI_ProbeIrradianceSum);
 
-
+        ImGui::Checkbox("Show Probe Influence", &debugConfig->debug_DDGI_ProbeInfluenc);
 
 
     // Skybox Settings
