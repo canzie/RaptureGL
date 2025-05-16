@@ -48,19 +48,16 @@ float calculateSunShadowFactor(vec3 hitPositionWorld, vec3 hitNormalWorld, SunPr
 
     float comparisonDepth = projCoords.z - bias;
     
-    sampler2DShadow shadowMap = sampler2DShadow(sunProperties.sunShadowTextureArrayHandle);
+    sampler2D shadowMap = sampler2D(sunProperties.sunShadowTextureArrayHandle);
     //vec2 texelSize = 1.0 / vec2(textureSize(shadowMapArray, 0));
     
     // Single shadow map lookup (no PCF)
-    float shadowFactor = texture(
-        shadowMap,
-        vec3(
-            projCoords.xy,
-            comparisonDepth
-        )
-    );
+    float closestDepth = texture(shadowMap, projCoords.xy).r;
 
-    return clamp(shadowFactor, 0.0, 1.0);
+    // 1 = not shadowed, 0 = shadowed
+    float shadowFactor = projCoords.z > closestDepth ? 1.0 : 0.0;
+
+    return shadowFactor;
 }
 
 /**
@@ -72,10 +69,11 @@ vec3 EvaluateDirectionalLight(vec3 shadingNormal, vec3 hitPositionWorld, SunProp
 
     // sample shadow map here
     float shadowFactor = calculateSunShadowFactor(hitPositionWorld, shadingNormal, sunProperties);
-    shadowFactor = 0.0;
+    //shadowFactor = 0.0;
     // Early out, the light isn't visible from the surface
-    if (shadowFactor == 0.0) 
+    if (shadowFactor == 0.0){
         return vec3(0.0);
+    }
 
     // Compute lighting
     vec3 lightDirection = normalize(-sunProperties.sunDirectionWorld);

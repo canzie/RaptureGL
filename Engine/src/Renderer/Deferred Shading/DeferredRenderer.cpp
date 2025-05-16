@@ -18,6 +18,8 @@
 
 #include <cmath> // For std::ceil if needed, or use integer division trick
 
+#include <glm/gtx/string_cast.hpp>
+
 #include "../../WindowContext/Application.h"
 
 namespace Rapture
@@ -369,12 +371,14 @@ namespace Rapture
         
         if (light.type == LightType::Directional) {
             // Get scene bounds or focus on camera frustum
-            glm::vec3 sceneCenter = glm::vec3(s_cameraPosition.x, 0.0f, s_cameraPosition.z); // Use camera's XZ position, fixed Y
+            glm::vec3 sceneCenter = glm::vec3(s_cameraPosition); // Use camera's XZ position, fixed Y
             float sceneBounds = shadowComp.shadowMapSize; // Use configured shadow map size
             
             // Position the light based on scene center and direction
-            glm::vec3 shadowCamPos = sceneCenter - lightDir * (sceneBounds);
-            
+            glm::vec3 shadowCamPos = lightPos;
+            shadowCamPos.y = sceneBounds;
+            shadowCamPos -= lightDir*10.0f;
+
             // Create view matrix centered on the scene, not on the light entity
             viewMatrix = glm::lookAt(
                 shadowCamPos,          // Position light relative to scene center
@@ -385,7 +389,9 @@ namespace Rapture
             // Use appropriate size for your scene
             float orthoSize = sceneBounds * 0.5f;
             // Use near/far planes that encompass your entire scene
-            lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1f, sceneBounds);
+            lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 1.0f, sceneBounds*1.5f);
+
+
         } else {
             // Perspective projection for spot/point light
             float aspect = 1.0f; // Shadow map is square
@@ -414,6 +420,7 @@ namespace Rapture
             // Update the frustum
             shadowComp.updateFrustum(viewMatrix, lightProj);
             
+
             // dont save this shadow as it is not indeded to be used for the main lighting pass
             if (!shadowComp.isMainShadow) {
                 continue;
