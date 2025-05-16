@@ -458,6 +458,7 @@ void main() {
         // sample the skybox
 
         vec3 sunColor = texture(u_skyboxCubemap, ray.direction).rgb;
+        sunColor *= u_SunProperties.sunIntensity * u_SunProperties.sunColor;
         
         DDGIStoreProbeRayMiss(ivec3(outputCoords), sunColor * u_SunProperties.sunIntensity);
         return;

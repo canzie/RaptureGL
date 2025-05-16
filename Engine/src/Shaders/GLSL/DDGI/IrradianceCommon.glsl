@@ -76,6 +76,12 @@ vec3 EvaluateDirectionalLight(vec3 shadingNormal, vec3 hitPositionWorld, SunProp
     return sunProperties.sunIntensity * sunProperties.sunColor * NdotL * shadowFactor;
 }
 
+vec3 EvaluateSpotLight(vec3 shadingNormal, vec3 hitPositionWorld, SunProperties sunProperties)
+{   
+
+    return vec3(0.0);
+}
+
 
 /**
  * Computes the diffuse reflection of light off the given surface (direct lighting).
