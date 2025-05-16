@@ -6,34 +6,25 @@
 #extension GL_NV_shader_buffer_load : require
 #extension GL_NV_gpu_shader5 : require
 
-// --- Debug Macros ---
-// Uncomment one of the following lines to enable a specific debug view.
-// #define DEBUG_VIEW_PROBE_INDEX        // Visualize the 3D probe index (normalized)
-// #define DEBUG_VIEW_PROBE_POSITION     // Visualize the world-space probe position (normalized/wrapped)
-// #define DEBUG_VIEW_RAY_DIRECTION      // Visualize the ray direction (normalized)
-// #define DEBUG_VIEW_HIT                // Visualize hit success (red for hit, blue for miss)
-// #define DEBUG_VIEW_UV                 // Visualize interpolated UV coordinates at hit (R=U, G=V)
-// #define DEBUG_VIEW_BVH_HIT_NODE       // Visualize if BVH trace found a leaf node (Green=hit, Red=miss)
-// #define DEBUG_VIEW_TRIANGLE_HIT       // Visualize if triangle intersection succeeded (Green=hit, Red=miss)
-//#define DEBUG_VIEW_ALBEDO             // Default: Visualize sampled albedo color
-// #define DEBUG_OUTPUT_BUFFER
-
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+// need to define this so the store functions are enabled, since passing textures trough arguments is kind of scuffed and i cba
+#define RAY_DATA_TEXTURE
 
+layout (binding = 0, rgba32f) uniform restrict writeonly image2DArray RayData;
 
-// Output Images
-layout (binding = 0, r11f_g11f_b10f) uniform restrict writeonly image2D probeAtlas;
-layout (binding = 1, rg16f) uniform restrict writeonly image2D probeDepthAtlas;
-
-layout (binding = 2, r11f_g11f_b10f) uniform restrict readonly image2D prevProbeAtlas;
-layout (binding = 3, rg16f) uniform restrict readonly image2D prevProbeDepthAtlas;
+layout (binding = 1) uniform sampler2DArray prevProbeAtlas;
+layout (binding = 2) uniform sampler2DArray prevProbeDepthAtlas;
 
 // Skybox Cubemap
-layout (binding = 4) uniform samplerCube u_skyboxCubemap;
+layout (binding = 3) uniform samplerCube u_skyboxCubemap;
 
 precision highp float;
 
+
+
+#include "MeshCommon.glsl"
+#include "IrradianceCommon.glsl"
 
 struct BVHNode {
     int left;
@@ -44,212 +35,6 @@ struct BVHNode {
 
 };
 
-struct BufferMetadata {
-
-    uint positionAttributeOffsetBytes; // Offset of position *within* the stride
-    uint texCoordAttributeOffsetBytes;
-    uint normalAttributeOffsetBytes;
-    uint tangentAttributeOffsetBytes;
-
-
-    uint vertexStrideBytes;            // Stride of the vertex buffer in bytes
-    uint indexType;                    // GL_UNSIGNED_INT (5125) or GL_UNSIGNED_SHORT (5123)
-
-    uint64_t VBOHandle;
-    uint64_t IBOHandle;
-};
-
-// Input Uniforms / Buffers
-// Contains global information about the probe grid
-layout(std140, binding = 0) uniform ProbeInfo {
-    vec3 origin;
-
-    vec4 rotation;                           // rotation quaternion for the volume
-    vec4 probeRayRotation;                   // rotation quaternion for probe rays
-
-
-    vec3 spacing;
-    uvec3 gridDimensions;
-
-    int      probeNumRays;                       // number of rays traced per probe
-    int      probeNumIrradianceInteriorTexels;   // number of texels in one dimension of a probe's irradiance texture (does not include 1-texel border)
-    int      probeNumDistanceInteriorTexels;     // number of texels in one dimension of a probe's distance texture (does not include 1-texel border)
-
-    float    probeHysteresis;                    // weight of the previous irradiance and distance data store in probes
-    float    probeMaxRayDistance;                // maximum world-space distance a probe ray can travel
-    float    probeNormalBias;                    // offset along the surface normal, applied during lighting to avoid numerical instabilities when determining visibility
-    float    probeViewBias;                      // offset along the camera view ray, applied during lighting to avoid numerical instabilities when determining visibility
-    float    probeDistanceExponent;              // exponent used during visibility testing. High values react rapidly to depth discontinuities, but may cause banding
-    float    probeIrradianceEncodingGamma;       // exponent that perceptually encodes irradiance for faster light-to-dark convergence
-
-    // Probe Relocation, Probe Classification
-    float    probeFixedRayBackfaceThreshold;     // threshold that specifies the ratio of *fixed* rays traced for a probe that may hit back facing triangles before the probe is considered inside geometry (used in relocation & classification)
-    float    probeMinFrontfaceDistance;          // minimum world-space distance to a front facing triangle allowed before a probe is relocated
-
-} u_volume;
-
-// Contains the actual BVH node data
-layout(std430, binding = 1) readonly buffer LBVHNodes {
-    BVHNode lbvh[];
-} u_lbvh;
-
-vec3 DDGIGetVolumeIrradiance(vec3 worldPos, vec3 worldNormal) {
-    float normalBias = 0.01; // Consistent normal bias
-    vec3 biasedWorldPos = worldPos + normalize(worldNormal) * normalBias;
-
-    vec3 centeredGridPos_float = (biasedWorldPos - u_ProbeInfo.probeOrigin) / u_ProbeInfo.probeSpacing;
-    vec3 halfGridDimOffset = (vec3(u_ProbeInfo.probeGridDimensions - 1u) / 2.0); // Calculate offset once
-
-
-    // Calculate base grid index for the loop (0-indexed from grid origin)
-    vec3 baseGridIndex_float = floor(centeredGridPos_float + halfGridDimOffset); // Use the offset grid position
-    ivec3 baseGridIndex = ivec3(baseGridIndex_float);
-
-    vec3 finalIrradiance = vec3(0.0); // Move initialization here
-    float totalWeight = 0.0;
-
-    vec3 cellFrac = (centeredGridPos_float + halfGridDimOffset) - baseGridIndex_float;
-    vec3 alpha = clamp(cellFrac, vec3(0.0), vec3(1.0));
-    int probeIndex = 0;
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 2; j++) {
-            for (int k = 0; k < 2; k++) {
-                float weight = 1.0;
-
-
-                // Calculate grid position (0-indexed ID) of the current probe
-                ivec3 currentProbeGridID_ivec = baseGridIndex + ivec3(i, j, k);
-                uvec3 currentProbeGridID = uvec3(currentProbeGridID_ivec); 
-
-                // Calculate world position of the current probe's center
-                vec3 currentProbeWorldPos = u_ProbeInfo.probeOrigin +
-                                            (vec3(currentProbeGridID_ivec) - halfGridDimOffset) * u_ProbeInfo.probeSpacing;
-
-                vec3 dirFromFragToProbe = currentProbeWorldPos - biasedWorldPos;
-                float distToProbe = length(dirFromFragToProbe);
-
-                if (distToProbe < 0.0001) { // Avoid normalization of zero vector if at probe center
-                    dirFromFragToProbe = -worldNormal; // Sample direction opposite to surface normal as a fallback
-                } else {
-                    dirFromFragToProbe = normalize(dirFromFragToProbe);
-                }
-
-                float backfaceWeight = dot(worldNormal, dirFromFragToProbe);
-                backfaceWeight = (backfaceWeight + 1.0) * 0.5;
-                weight *= (backfaceWeight * backfaceWeight) + 0.2;
-
-
-
-                vec2 octEncodedSampleDir = octEncode(dirFromFragToProbe); // New octEncode outputs [-1, 1]
-                octEncodedSampleDir = octEncodedSampleDir * 0.5 + 0.5;
-                
-                // 6. Get the UV coordinates within the *probe atlas* for the specified probe and sample direction.
-                vec2 probeAtlasUV = getProbeSpecificAtlasUV(
-                    currentProbeGridID,
-                    octEncodedSampleDir,
-                    u_ProbeInfo.probeResolution // This is u_ProbeInfo.probeResolution from the UBO
-                );  
-
-                vec2 depthMoments = 2.0 * texture(probeDepthAtlas, probeAtlasUV).rg;
-                float meanDepth = depthMoments.r;
-                float meanDepthSq = depthMoments.g;
-
-                float variance = abs(meanDepthSq - meanDepth * meanDepth);
-
-                float chebyshevWeight = 1.0;
-                if (distToProbe > meanDepth) {
-                    float v = distToProbe - meanDepth;
-                    chebyshevWeight = variance / (variance + (v*v));
-
-                    chebyshevWeight = max((chebyshevWeight * chebyshevWeight * chebyshevWeight), 0.0);
-                }
-                weight *= max(chebyshevWeight, 0.05);
-                weight = max(weight, 0.000001);
-
-
-                const float crushThreshold = 0.2;
-                if (weight < crushThreshold)
-                {
-                    weight *= (weight * weight) * (1.0 / (crushThreshold * crushThreshold));
-                }
-
-
-
-                float wx = (i == 1 ? cellFrac.x : 1.0 - cellFrac.x);
-                float wy = (j == 1 ? cellFrac.y : 1.0 - cellFrac.y);
-                float wz = (k == 1 ? cellFrac.z : 1.0 - cellFrac.z);
-                float triWeight = wx * wy * wz;
-
-                //ivec3 adjacentProbeOffset = ivec3(probeIndex, probeIndex >> 1, probeIndex >> 2) & ivec3(1, 1, 1);
-
-                //vec3 trilinear = max(vec3(0.001), mix(vec3(1.0)-alpha, alpha, vec3(adjacentProbeOffset)));  
-                //float trilinearWeight = trilinear.x * trilinear.y * trilinear.z;
-                // Apply the calculated visibilityWeight to the probe's contribution
-                weight *= triWeight;
-
-                
-                vec3 probeIrradiance = texture(probeAtlas, probeAtlasUV).rgb;
-
-                finalIrradiance += probeIrradiance * weight;
-                totalWeight += weight; 
-
-
-                probeIndex++;
-            }
-        }
-    }
-
-    // Normalize only if totalWeight is significant to avoid division by zero
-    if (totalWeight > 0.0001) {
-        finalIrradiance *= (1.0 / totalWeight);
-        finalIrradiance *= finalIrradiance;
-        finalIrradiance *= 6.28318530718;
-    } else {
-        finalIrradiance = vec3(0.0); // Or some default ambient color
-    }
-    // for rgb10a2 format
-    //finalIrradiance *= 1.0989;
-
-    return finalIrradiance;
-}
-
-struct MeshInfo {
-    uint RootIndex; // index of the root node in the BVH
-    uint64_t AlbedoTextureHandle;
-    uint64_t NormalTextureHandle;
-    uint64_t MetallicRoughnessTextureHandle;
-    uint bufferMetadataIDX; // index for BufferMetadata array
-
-    uint vertexOffsetBytes;
-    uint indexOffsetBytes;
-
-    mat4 Transform;
-    mat4 InvTransform;
-};
-
-layout(std430, binding = 2) readonly buffer BufferMetadataStorage {
-    BufferMetadata AllBufferMetadata[];
-} u_bufferMetadata;
-
-layout(std430, binding = 3) readonly buffer SceneInfo {
-    MeshInfo MeshInfos[];
-} u_sceneInfo;
-
-
-struct Triangle {
-    vec3 v0;
-    vec3 v1;
-    vec3 v2;  // Vertices in world space
-    vec3 n0;
-    vec3 n1;
-    vec3 n2;  // Normals in world space
-    vec3 t0;
-    vec3 t1;
-    vec3 t2;  // Tangents in world space
-    vec2 uv0;
-    vec2 uv1;
-    vec2 uv2; // Texture coordinates
-};
 
 struct Ray {
     vec3 origin;
@@ -257,40 +42,6 @@ struct Ray {
     vec3 invDir;
 };
 
-
-#ifdef DEBUG_OUTPUT_BUFFER
-
-    struct DebugData {
-        uint primitiveIndex;
-    };
-
-    layout(std430, binding = 4) writeonly buffer debugBuffer {
-        DebugData u_debugData[];
-    };
-#endif
-
-
-
-// Define PI constant
-#define PI 3.14159265359
-#define PI2 6.28318530718
-
-
-uniform vec2 u_AtlasTextureResolution; // atlas pixel resolution in screen size, not ndc
-uniform vec2 u_DepthAtlasTextureResolution;
-uniform uint u_meshCount;
-uniform uint u_probesPerRow; // Number of probes along the X-axis of the atlas texture
-uniform float u_hysteresis;
-
-// --- Sun Shadow Uniforms for Largest Cascade ---
-layout(std140, binding = 1) uniform SunPropertiesUBO {
-    mat4 sunLightSpaceMatrix;
-    vec3 sunDirectionWorld;       
-    uint sunCascadeCount;
-    float sunIntensity;
-    uint64_t sunShadowTextureArrayHandle; 
-
-} u_SunProperties;
 
 // Placeholder struct for trace result
 struct HitInfo {
@@ -301,152 +52,64 @@ struct HitInfo {
     uint meshIndex;      // Index into u_sceneInfo.MeshInfos array
     Triangle tri;
     vec3 hitPosition; // World space hit position
+    bool isFrontFacing; // yes or backface
 };
 
 
-#define UNSIGNED_INT 5125
-#define UNSIGNED_SHORT 5123
+
+// Input Uniforms / Buffers
+// Contains global information about the probe grid
+layout(std140, binding = 0) uniform ProbeInfo {
+    ProbeVolume u_volume;
+};
+
+
+
+// --- Sun Shadow Uniforms for Largest Cascade ---
+layout(std140, binding = 1) uniform SunPropertiesUBO {
+    SunProperties u_SunProperties;
+};
+
+
+// Contains the actual BVH node data
+layout(std430, binding = 0) readonly buffer LBVHNodes {
+    BVHNode lbvh[];
+} u_lbvh;
+
+
+layout(std430, binding = 1) readonly buffer BufferMetadataStorage {
+    BufferMetadata AllBufferMetadata[];
+} u_bufferMetadata;
+
+layout(std430, binding = 2) readonly buffer SceneInfo {
+    MeshInfo MeshInfos[];
+} u_sceneInfo;
+
+// Contains the actual BVH node data
+layout(std430, binding = 3) readonly buffer TLASNodes {
+    BVHNode lbvh[];
+} u_tlas;
+
+
+//uniform vec2 u_AtlasTextureResolution; // atlas pixel resolution in screen size, not ndc
+uniform uint u_meshCount = 0;
+
+
+
 #define INFINITY_FLOAT (1.0/0.0)
 #define SKYBOX_DISTANCE 1000.0
 #define MAX_DISTANCE 1000.0
-
-// meshinfo contains needed metadata about where to get the vertex data, the index is for the specific triangle
-Triangle getTriangle(MeshInfo meshInfo, uint primitiveIndex) {
-    Triangle tri = Triangle(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec2(0.0), vec2(0.0), vec2(0.0));
-    BufferMetadata bufferMetadata = u_bufferMetadata.AllBufferMetadata[meshInfo.bufferMetadataIDX];
-    uint64_t vboHandle = bufferMetadata.VBOHandle;
-    uint64_t iboHandle = bufferMetadata.IBOHandle;
-    uint indexType = bufferMetadata.indexType;
-    uint indexSize = indexType == UNSIGNED_INT ? 4 : 2;
+// Define PI constant
+#define PI 3.14159265359
+#define PI2 6.28318530718
 
 
-    uint indexOffsetBytes = meshInfo.indexOffsetBytes + (indexSize * primitiveIndex * 3);
+#define INVALID_POINTER 0x0
+#define INVALID_POINTER_INT -1
 
-    uint indices[3];
-
-    uint8_t *iboPtr = (uint8_t *)iboHandle;
-
-
-    // Read indices based on indexType
-    if (indexType == UNSIGNED_INT) { // GL_UNSIGNED_INT
-
-        uint ind0 = *((uint *)(iboPtr + indexOffsetBytes + 0)); // Offset 12 is 4-byte aligned
-        uint ind1 = *((uint *)(iboPtr + indexOffsetBytes + 4)); // Offset 16 is 4-byte aligned
-        uint ind2 = *((uint *)(iboPtr + indexOffsetBytes + 8)); // Offset 20 is 4-byte aligned
-        indices[0] = ind0;
-        indices[1] = ind1;
-        indices[2] = ind2;
-    } else { // Assuming GL_UNSIGNED_SHORT (5123)
-
-        uint16_t ind0 = *((uint16_t *)(iboPtr + indexOffsetBytes + 0)); // Offset 12 is 4-byte aligned
-        uint16_t ind1 = *((uint16_t *)(iboPtr + indexOffsetBytes + 2)); // Offset 16 is 4-byte aligned
-        uint16_t ind2 = *((uint16_t *)(iboPtr + indexOffsetBytes + 4)); // Offset 20 is 4-byte aligned
-        indices[0] = uint(ind0);
-        indices[1] = uint(ind1);
-        indices[2] = uint(ind2);
-    }
-
-    uvec3 vertexStartByteOffset;
-    vertexStartByteOffset[0] = meshInfo.vertexOffsetBytes + (indices[0] * bufferMetadata.vertexStrideBytes);
-    vertexStartByteOffset[1] = meshInfo.vertexOffsetBytes + (indices[1] * bufferMetadata.vertexStrideBytes);
-    vertexStartByteOffset[2] = meshInfo.vertexOffsetBytes + (indices[2] * bufferMetadata.vertexStrideBytes);
-
-    // Calculate the absolute byte offset for the start of the position attribute within that vertex
-    uvec3 positionStartByteOffset = vertexStartByteOffset + bufferMetadata.positionAttributeOffsetBytes;
-
-    uvec3 normalStartByteOffset = vertexStartByteOffset + bufferMetadata.normalAttributeOffsetBytes;
-
-    uvec3 tangentStartByteOffset = vertexStartByteOffset + bufferMetadata.tangentAttributeOffsetBytes;
-
-    uvec3 textureStartByteOffset =vertexStartByteOffset + bufferMetadata.texCoordAttributeOffsetBytes;
-
-    uint8_t *vboBasePtr = (uint8_t *)vboHandle;
-
-    
-    float v0x = *((float *)(vboBasePtr + positionStartByteOffset[0] + 0)); // Offset 12 is 4-byte aligned
-    float v0y = *((float *)(vboBasePtr + positionStartByteOffset[0] + 4)); // Offset 16 is 4-byte aligned
-    float v0z = *((float *)(vboBasePtr + positionStartByteOffset[0] + 8)); // Offset 20 is 4-byte aligned
-    vec3 v0_local = vec3(v0x, v0y, v0z);
-
-    float n0x = *((float *)(vboBasePtr + normalStartByteOffset[0] + 0)); // Offset 12 is 4-byte aligned
-    float n0y = *((float *)(vboBasePtr + normalStartByteOffset[0] + 4)); // Offset 16 is 4-byte aligned
-    float n0z = *((float *)(vboBasePtr + normalStartByteOffset[0] + 8)); // Offset 20 is 4-byte aligned
-    vec3 n0_local = vec3(n0x, n0y, n0z);
-
-    float t0x = *((float *)(vboBasePtr + tangentStartByteOffset[0] + 0)); // Offset 12 is 4-byte aligned
-    float t0y = *((float *)(vboBasePtr + tangentStartByteOffset[0] + 4)); // Offset 16 is 4-byte aligned
-    float t0z = *((float *)(vboBasePtr + tangentStartByteOffset[0] + 8)); // Offset 20 is 4-byte aligned
-    vec3 t0_local = vec3(t0x, t0y, t0z);
-
-    float uv0x = *((float *)(vboBasePtr + textureStartByteOffset[0] + 0));
-    float uv0y = *((float *)(vboBasePtr + textureStartByteOffset[0] + 4));
-    vec2 uv0  = vec2(uv0x, uv0y);
-    
-    // --- Vertex 1 ---
-    float v1x = *((float *)(vboBasePtr + positionStartByteOffset[1] + 0));
-    float v1y = *((float *)(vboBasePtr + positionStartByteOffset[1] + 4));
-    float v1z = *((float *)(vboBasePtr + positionStartByteOffset[1] + 8));
-    vec3 v1_local = vec3(v1x, v1y, v1z);
-
-    float n1x = *((float *)(vboBasePtr + normalStartByteOffset[1] + 0)); // Offset 12 is 4-byte aligned
-    float n1y = *((float *)(vboBasePtr + normalStartByteOffset[1] + 4)); // Offset 16 is 4-byte aligned
-    float n1z = *((float *)(vboBasePtr + normalStartByteOffset[1] + 8)); // Offset 20 is 4-byte aligned
-    vec3 n1_local = vec3(n1x, n1y, n1z);
-
-    float t1x = *((float *)(vboBasePtr + tangentStartByteOffset[1] + 0)); // Offset 12 is 4-byte aligned
-    float t1y = *((float *)(vboBasePtr + tangentStartByteOffset[1] + 4)); // Offset 16 is 4-byte aligned
-    float t1z = *((float *)(vboBasePtr + tangentStartByteOffset[1] + 8)); // Offset 20 is 4-byte aligned
-    vec3 t1_local = vec3(t1x, t1y, t1z);
-
-    float uv1x = *((float *)(vboBasePtr + textureStartByteOffset[1] + 0));
-    float uv1y = *((float *)(vboBasePtr + textureStartByteOffset[1] + 4));
-    vec2 uv1  = vec2(uv1x, uv1y);
-
-    // --- Vertex 2 ---
-    float v2x = *((float *)(vboBasePtr + positionStartByteOffset[2] + 0));
-    float v2y = *((float *)(vboBasePtr + positionStartByteOffset[2] + 4));
-    float v2z = *((float *)(vboBasePtr + positionStartByteOffset[2] + 8));
-    vec3 v2_local = vec3(v2x, v2y, v2z);
-    
-    float n2x = *((float *)(vboBasePtr + normalStartByteOffset[2] + 0)); // Offset 12 is 4-byte aligned
-    float n2y = *((float *)(vboBasePtr + normalStartByteOffset[2] + 4)); // Offset 16 is 4-byte aligned
-    float n2z = *((float *)(vboBasePtr + normalStartByteOffset[2] + 8)); // Offset 20 is 4-byte aligned
-    vec3 n2_local = vec3(n2x, n2y, n2z);
-    
-    float t2x = *((float *)(vboBasePtr + tangentStartByteOffset[2] + 0)); // Offset 12 is 4-byte aligned
-    float t2y = *((float *)(vboBasePtr + tangentStartByteOffset[2] + 4)); // Offset 16 is 4-byte aligned
-    float t2z = *((float *)(vboBasePtr + tangentStartByteOffset[2] + 8)); // Offset 20 is 4-byte aligned
-    vec3 t2_local = vec3(t2x, t2y, t2z);
-
-    float uv2x = *((float *)(vboBasePtr + textureStartByteOffset[2] + 0));
-    float uv2y = *((float *)(vboBasePtr + textureStartByteOffset[2] + 4));
-    vec2 uv2  = vec2(uv2x, uv2y);
-
-    
-    tri.v0 = (meshInfo.Transform * vec4(v0_local, 1.0)).xyz;
-    tri.v1 = (meshInfo.Transform * vec4(v1_local, 1.0)).xyz;
-    tri.v2 = (meshInfo.Transform * vec4(v2_local, 1.0)).xyz;
-
-    tri.n0 = (meshInfo.Transform * vec4(n0_local, 0.0)).xyz;
-    tri.n1 = (meshInfo.Transform * vec4(n1_local, 0.0)).xyz;
-    tri.n2 = (meshInfo.Transform * vec4(n2_local, 0.0)).xyz;
-
-    tri.t0 = (meshInfo.Transform * vec4(t0_local, 0.0)).xyz;
-    tri.t1 = (meshInfo.Transform * vec4(t1_local, 0.0)).xyz;
-    tri.t2 = (meshInfo.Transform * vec4(t2_local, 0.0)).xyz;
-
-    
-    tri.uv0 = uv0;
-    tri.uv1 = uv1;
-    tri.uv2 = uv2;
-    
-
-    return tri;
-}
 
 // Returns true if there's an intersection, and outputs the barycentric coordinates and distance
-bool intersectTriangle(Ray ray, Triangle tri, out vec2 barycentricUV, out float t) {
-    
+bool intersectTriangle(Ray ray, Triangle tri, out vec2 barycentricUV, out float t, out bool isFrontFacing) {
 
     // Calculate edges
     vec3 edgeAB = tri.v1 - tri.v0;
@@ -454,10 +117,9 @@ bool intersectTriangle(Ray ray, Triangle tri, out vec2 barycentricUV, out float 
     
     vec3 normalVec = cross(edgeAB, edgeAC);
 
-    // Backface culling: if the ray hits from behind, ignore intersection
-    //if (dot(ray.direction, normalVec) > 0.0) {
-    //    return false;
-    //}
+    // is used for blending, we then invert the distance and reduce it by 80%
+    isFrontFacing = dot(ray.direction, normalVec) < 0.0;
+    
     
     vec3 ao = ray.origin - tri.v0;
     vec3 dao = cross(ao, ray.direction);
@@ -515,65 +177,13 @@ vec3 interpolateTangent(vec2 barycentricUV, Triangle tri) {
     return tri.t0 * w + tri.t1 * u + tri.t2 * v;
 }
 
-/*
-vec2 octEncode(vec3 n) {
-    n /= (abs(n.x) + abs(n.y) + abs(n.z));
-    vec2 encoded = (n.z >= 0.0) ? n.xy : vec2(
-        (1.0 - abs(n.y)) * (n.x >= 0.0 ? 1.0 : -1.0),
-        (1.0 - abs(n.x)) * (n.y >= 0.0 ? 1.0 : -1.0)
-    );
-    return encoded * 0.5 + 0.5;
-}
-
-vec3 octDecode(vec2 f) {
-    f = f * 2.0 - 1.0; // Map from [0, 1] to [-1, 1]
-    vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
-    float t = max(-n.z, 0.0); // Equivalent to saturate(-n.z)
-    // n.xy += (n.xy >= 0.0 ? -t : t); // Invalid GLSL
-    // Apply the sign-based offset component-wise
-    n.x += (n.x >= 0.0 ? -t : t);
-    n.y += (n.y >= 0.0 ? -t : t);
-    return normalize(n);
-}
-*/
-
-float RTXGISignNotZero(float v)
-{
-    return (v >= 0.0) ? 1.0 : -1.0;
-}
-vec2 RTXGISignNotZero2(vec2 v)
-{
-    return vec2(RTXGISignNotZero(v.x), RTXGISignNotZero(v.y));
-}
-
-vec2 octEncode(vec3 n) {
-    float l1norm = abs(n.x) + abs(n.y) + abs(n.z);
-    vec2 uv = n.xy * (1.0 / l1norm);
-    if (n.z < 0.0)
-    {
-        uv = (1.0 - abs(uv.yx)) * RTXGISignNotZero2(uv.xy);
-    }
-    return uv;
-}
-
-vec3 octDecode(vec2 coords) {
-    //vec2 coords = f * 2.0 - 1.0;
-    vec3 direction = vec3(coords.x, coords.y, 1.0 - abs(coords.x) - abs(coords.y));
-    if (direction.z < 0.0)
-    {
-        direction.xy = (1.0 - abs(direction.yx)) * RTXGISignNotZero2(direction.xy);
-    }
-    return normalize(direction);
-}
-
 // Calculates the final world-space shading normal using interpolated TBN and normal map
 vec3 calculateShadingNormal(
-    uint meshIndex,
+    MeshInfo meshInfo,
     vec2 uv,
     vec3 N_geom,   // Interpolated geometric normal (world space)
     vec3 T_geom    // Interpolated tangent (world space)
 ) {
-    MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIndex];
     vec3 finalNormal = N_geom; // Default to geometric normal
 
     // Check if a normal map exists for this mesh
@@ -607,32 +217,19 @@ bool RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax, out float tmin_out) 
     vec3 tMin = (aabbMin - ray.origin) * ray.invDir;
 	vec3 tMax = (aabbMax - ray.origin) * ray.invDir;
 
-	//vec3 t1 = min(tMin, tMax);
-	//vec3 t2 = max(tMin, tMax);
-
-    vec3 t1 = vec3(
-        min(tMin.x, tMax.x),
-        min(tMin.y, tMax.y),
-        min(tMin.z, tMax.z)
-    );
-    vec3 t2 = vec3(
-        max(tMin.x, tMax.x),
-        max(tMin.y, tMax.y),
-        max(tMin.z, tMax.z)
-    );
+	vec3 t1 = min(tMin, tMax);
+	vec3 t2 = max(tMin, tMax);
 
 	float tNear = max(max(t1.x, t1.y), t1.z);
 	float tFar = min(min(t2.x, t2.y), t2.z);
 
 	bool hit = tFar >= tNear && tFar > 0;
-	tmin_out = hit ? tNear > 0 ? tNear : 0 : INFINITY_FLOAT;
+	tmin_out = hit ? tNear > 0 ? tNear : 0 : u_volume.probeMaxRayDistance;
 
     return hit;
 
     
 }
-
-#define INVALID_POINTER 0x0
 
 
 HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo) {
@@ -640,12 +237,12 @@ HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo)
 
     HitInfo result;
     result.hit = false;
-    result.t = INFINITY_FLOAT;
+    result.t = u_volume.probeMaxRayDistance;
     result.primitiveIndex = 0;
     result.barycentricUV = vec2(0.0);
 
     // stack
-    #define MAX_STACK_SIZE 128
+    #define MAX_STACK_SIZE 32
     int nodeStack[MAX_STACK_SIZE];
     uint stackPointer = 0;
     nodeStack[stackPointer++] = int(rootIndexOffset);
@@ -656,11 +253,11 @@ HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo)
         BVHNode node = u_lbvh.lbvh[currentNodeIndex];
 
         if (node.left == INVALID_POINTER && node.right == INVALID_POINTER) {
-            Triangle tri = getTriangle(meshInfo, node.primitiveIdx);
+            Triangle tri = getTriangle(meshInfo, node.primitiveIdx, u_bufferMetadata.AllBufferMetadata[meshInfo.bufferMetadataIDX]);
             vec2 barycentricUV;
             float t;
-            bool hit = intersectTriangle(ray, tri, barycentricUV, t);
-            vec3 hitPosition = ray.origin + ray.direction * t;
+            bool isFrontFacing;
+            bool hit = intersectTriangle(ray, tri, barycentricUV, t, isFrontFacing);
 
             if (hit && t < result.t) {
                 result.hit = true;
@@ -668,6 +265,8 @@ HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo)
                 result.primitiveIndex = node.primitiveIdx;
                 result.barycentricUV = barycentricUV;
                 result.tri = tri;
+                result.isFrontFacing = isFrontFacing;
+                result.hitPosition = ray.origin + ray.direction * t;
             } 
         }  else {
             int childIndexA = int(node.left+rootIndexOffset);
@@ -705,11 +304,77 @@ HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo)
     return result;
 }
 
+HitInfo traceTLAS(Ray ray, uint rootIndex) {
+    int currentNodeIndex = 0; 
 
-// Placeholder: Samples albedo texture using bindless handle
-// Requires GL_ARB_bindless_texture
-vec3 sampleAlbedo(uint meshIndex, vec2 uv) {
-    MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIndex];
+    HitInfo result;
+    result.hit = false;
+    result.t = u_volume.probeMaxRayDistance;
+
+    // stack
+    #define MAX_TLAS_STACK_SIZE 16
+    int nodeStack[MAX_TLAS_STACK_SIZE];
+    uint stackPointer = 0;
+    nodeStack[stackPointer++] = int(rootIndex);
+
+
+    while (stackPointer > 0) {
+        currentNodeIndex = nodeStack[--stackPointer];
+        BVHNode node = u_tlas.lbvh[currentNodeIndex];
+
+        if (node.left == -1 && node.right == -1) {
+            MeshInfo meshInfo = u_sceneInfo.MeshInfos[node.primitiveIdx];
+
+            mat4 invTransform = meshInfo.InvTransform;
+            vec3 localRayOrigin = (invTransform * vec4(ray.origin, 1.0)).xyz;
+            vec3 localRayDirection = (invTransform * vec4(ray.direction, 0.0)).xyz;
+            vec3 localInvDir = 1.0 / localRayDirection;
+            Ray localRay = Ray(localRayOrigin, localRayDirection, localInvDir);
+
+            HitInfo BVHResult = traceBVH(ray, localRay, meshInfo.RootIndex, meshInfo);
+
+            if (BVHResult.hit && BVHResult.t < result.t) {
+                result = BVHResult;
+                result.meshIndex = node.primitiveIdx;
+            }
+
+        }  else {
+            int childIndexA = int(node.left);
+            int childIndexB = int(node.right);
+            BVHNode childA = u_tlas.lbvh[childIndexA];
+            BVHNode childB = u_tlas.lbvh[childIndexB];
+
+            float dstA;
+            float dstB;
+            bool hitA = RayBoundingBoxDst(ray, childA.aabbMin, childA.aabbMax, dstA);
+            bool hitB = RayBoundingBoxDst(ray, childB.aabbMin, childB.aabbMax, dstB);
+            
+            bool isNearestA = dstA <= dstB;
+            float dstNear = isNearestA ? dstA : dstB;
+            float dstFar = isNearestA ? dstB : dstA;
+
+            int childIndexNear = isNearestA ? childIndexA : childIndexB;
+            int childIndexFar = isNearestA ? childIndexB : childIndexA;
+
+            if (dstFar < result.t) {
+                nodeStack[stackPointer++] = childIndexFar;
+            }
+
+            if (dstNear < result.t) {
+                nodeStack[stackPointer++] = childIndexNear;
+            }
+            
+        }
+
+        
+    }
+
+    return result;
+
+}
+
+
+vec3 sampleAlbedo(MeshInfo meshInfo, vec2 uv) {
     uint64_t albedoTextureHandle = meshInfo.AlbedoTextureHandle;
     if (albedoTextureHandle == 0) {
         return vec3(1.0, 0.0, 1.0); // Return constant grey for now
@@ -719,8 +384,7 @@ vec3 sampleAlbedo(uint meshIndex, vec2 uv) {
     return texture(albedoSampler, uv).rgb;
 }
 
-vec3 sampleNormal(uint meshIndex, vec2 uv) {
-    MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIndex];
+vec3 sampleNormal(MeshInfo meshInfo, vec2 uv) {
     uint64_t normalTextureHandle = meshInfo.NormalTextureHandle;
     if (normalTextureHandle == 0) {
         return vec3(0.0, 0.0, 0.0); // Return constant grey for now
@@ -732,361 +396,141 @@ vec3 sampleNormal(uint meshIndex, vec2 uv) {
 
 
 
+HitInfo TraceRay(Ray worldRay) {
+
+    HitInfo closestHitInfo;
+    closestHitInfo.hit = false;
+    closestHitInfo.t = u_volume.probeMaxRayDistance;
+    
+    for (int meshIdx = 0; meshIdx < u_meshCount; meshIdx++) {
+        MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIdx];
+        uint rootIndex = meshInfo.RootIndex;
+        BVHNode rootNode = u_lbvh.lbvh[rootIndex]; // Get the root node of the mesh's BVH
+        
+        mat4 invTransform = meshInfo.InvTransform;
+        vec3 localRayOrigin = (invTransform * vec4(worldRay.origin, 1.0)).xyz;
+        vec3 localRayDirection = (invTransform * vec4(worldRay.direction, 0.0)).xyz;
+        vec3 localInvDir = 1.0 / localRayDirection;
+        Ray localRay = Ray(localRayOrigin, localRayDirection, localInvDir);
+
+        float rootAABBDst;
+        // Test ray against the mesh's root BVH node AABB
+        if (RayBoundingBoxDst(localRay, rootNode.aabbMin, rootNode.aabbMax, rootAABBDst)) {
+            // Only proceed if this mesh's AABB is closer than the current closest hit
+            if (rootAABBDst < closestHitInfo.t) {
+                HitInfo currentMeshHitResult = traceBVH(worldRay, localRay, rootIndex, meshInfo);
+            
+                if (currentMeshHitResult.hit && currentMeshHitResult.t < closestHitInfo.t) {
+                    closestHitInfo = currentMeshHitResult;
+                    closestHitInfo.meshIndex = meshIdx;
+                } 
+            }
+        }
+    }
+
+    return closestHitInfo;
+
+}
 
 
-
-
-
-
-#define N_RAYS_PER_PROBE 256 // Number of sample rays to cast per probe
 
 
 /**
- * Computes a low discrepancy spherically distributed direction on the unit sphere,
- * for the given index in a set of samples. Each direction is unique in
- * the set, but the set of directions is always the same.
- */
-vec3 RTXGISphericalFibonacci(uint sampleIndex, uint numSamples)
+ * Computes a weight value in the range [0, 1] for a world position and volume pair.
+ * All positions inside the given volume recieve a weight of 1.
+ * Positions outside the volume receive a weight in [0, 1] that
+ * decreases as the position moves away from the volume.
+ */ 
+float DDGIGetVolumeBlendWeight(vec3 worldPosition, ProbeVolume volume)
 {
-    const float b = (sqrt(5.0) * 0.5 + 0.5) - 1.0;
-    float phi = 6.28318530718 * fract(sampleIndex * b);
-    float cosTheta = 1.0 - (2.0 * sampleIndex + 1.0) * (1.0 / numSamples);
-    float sinTheta = sqrt(clamp(1.0 - (cosTheta * cosTheta), 0.0, 1.0));
+    // Get the volume's origin and extent
+    vec3 extent = (volume.spacing * (volume.gridDimensions - 1)) * 0.5;
 
-    return vec3((cos(phi) * sinTheta), (sin(phi) * sinTheta), cosTheta);
+    // Get the delta between the (rotated volume) and the world-space position
+    vec3 position = (worldPosition - volume.origin);
+    //position = abs(RTXGIQuaternionRotate(position, RTXGIQuaternionConjugate(volume.rotation)));
+
+    vec3 delta = position - extent;
+    if(all(lessThan(delta, vec3(0.0)))) return 1.0;
+
+    // Adjust the blend weight for each axis
+    float volumeBlendWeight = 1.0;
+    volumeBlendWeight *= (1.0 - clamp(delta.x / volume.spacing.x, 0.0, 1.0));
+    volumeBlendWeight *= (1.0 - clamp(delta.y / volume.spacing.y, 0.0, 1.0));
+    volumeBlendWeight *= (1.0 - clamp(delta.z / volume.spacing.z, 0.0, 1.0));
+
+    return volumeBlendWeight;
 }
 
-// Shared memory for storing results of the N sample rays per probe
-shared vec3 s_sampleRayDirections[N_RAYS_PER_PROBE];
-shared vec3 s_sampleRayIrradiance[N_RAYS_PER_PROBE];
-shared float s_sampleRayDepth[N_RAYS_PER_PROBE];
 
-// --- Helper function for Sun Shadow Calculation (Largest Cascade) ---
-float calculateSunShadowFactor_LargestCascade(vec3 hitPositionWorld, vec3 hitNormalWorld) {
-    if (u_SunProperties.sunCascadeCount == 0 || u_SunProperties.sunShadowTextureArrayHandle == 0) return 1.0; // No shadow map or handle is zero
-
-    // Transform hit position to light clip space for the largest cascade
-    vec4 hitPosLightSpace = u_SunProperties.sunLightSpaceMatrix * vec4(hitPositionWorld, 1.0);
-
-    // Perform perspective divide
-    vec3 projCoords = hitPosLightSpace.xyz / hitPosLightSpace.w;
-
-    // Transform to [0,1] range for texture lookup
-    projCoords = projCoords * 0.5 + 0.5;
-
-    // Check if fragment is outside the light's view frustum [0, 1] range
-    if(projCoords.x < 0.0 || projCoords.x > 1.0 ||
-       projCoords.y < 0.0 || projCoords.y > 1.0 ||
-       projCoords.z < 0.0 || projCoords.z > 1.0) { // Check Z too
-        return 1.0; // Outside frustum = Not shadowed
-    }
-
-    // Bias calculation (similar to DeferredLightingPass)
-    // u_SunProperties.sunDirectionWorld should be the normalized vector FROM the hit point TO the sun for this bias calculation.
-    // If u_SunProperties.sunDirectionWorld is currently the direction light TRAVELS, we need to use its negative for this specific bias calculation to match the comment and typical CSM bias logic.
-    //vec3 sunDirForBias = -normalize(u_SunProperties.sunDirectionWorld);
-    vec3 lightWorldDir = -normalize(u_SunProperties.sunDirectionWorld);
-    float cosTheta = clamp(dot(hitNormalWorld, lightWorldDir), 0.0, 1.0);
-    float bias = max(0.005 * (1.0 - cosTheta), 0.001);
-
-    float comparisonDepth = projCoords.z - bias;
-    
-    sampler2DArrayShadow shadowMapArray = sampler2DArrayShadow(u_SunProperties.sunShadowTextureArrayHandle);
-    //vec2 texelSize = 1.0 / vec2(textureSize(shadowMapArray, 0));
-    
-    // Single shadow map lookup (no PCF)
-    float shadowFactor = texture(
-        shadowMapArray,
-        vec4(
-            projCoords.xy,
-            float(u_SunProperties.sunCascadeCount - 1), // Layer index for the largest cascade
-            comparisonDepth
-        )
-    );
-
-    return clamp(shadowFactor, 0.0, 1.0);
-}
-
-int DDGIGetProbesPerPlane(ivec3 probeGridDimensions)
-{
-    return (probeGridDimensions.x * probeGridDimensions.z);
-}
-int DDGIGetPlaneIndex(ivec3 probeCoords)
-{
-    return probeCoords.y;
-}
-int DDGIGetProbeIndexInPlane(ivec3 probeCoords, ivec3 probeGridDimensions)
-{
-    return probeCoords.x + (probeGridDimensions.x * probeCoords.z);
-}
-
-int DDGIGetProbeIndex(ivec3 probeCoords) {
-
-    // Get the 3D ID of the probe this workgroup is processing
-    int probesPerPlane = DDGIGetProbesPerPlane(ivec3(u_volume.gridDimensions));
-    int planeIndex = DDGIGetPlaneIndex(probeCoords);
-    int probeIndexInPlane = DDGIGetProbeIndexInPlane(probeCoords, ivec3(u_volume.gridDimensions));
-
-    return (planeIndex * probesPerPlane) + probeIndexInPlane;
-}
 
 void main() {
 
+    ivec3 probeCoords = ivec3(gl_WorkGroupID.x, gl_WorkGroupID.z, gl_WorkGroupID.y);
+    int probeIndex = DDGIGetProbeIndex(probeCoords, u_volume);
+
+    int rayIndex = int(gl_LocalInvocationID.y * gl_WorkGroupSize.x + gl_LocalInvocationID.x);
+
+    vec3 probeWorldPosition = DDGIGetProbeWorldPosition(probeCoords, u_volume);
+
+    vec3 probeRayDirection = DDGIGetProbeRayDirection(rayIndex, u_volume);
+   
+    uvec3 outputCoords = DDGIGetRayDataTexelCoords(rayIndex, probeIndex, u_volume);
 
 
+    Ray ray = Ray(probeWorldPosition, probeRayDirection, 1.0 / probeRayDirection);
+    HitInfo closestHitInfo = traceTLAS(ray, 0);
+    //HitInfo closestHitInfo = TraceRay(ray);
 
-    // phase 2 
+    if (!closestHitInfo.hit) {
+        // sample the skybox
 
-    // determine if this is a border texel
-    bool isBorderTexel = (gl_LocalInvocationID.x == 0 || gl_LocalInvocationID.x == (u_volume.probeNumIrradianceInteriorTexels + 1)); // Border Columns
-    isBorderTexel = isBorderTexel || (gl_LocalInvocationID.y == 0 || gl_LocalInvocationID.y == (u_volume.probeNumIrradianceInteriorTexels + 1));     // Border Rows
+        vec3 sunColor = texture(u_skyboxCubemap, ray.direction).rgb;
+        
+        DDGIStoreProbeRayMiss(ivec3(outputCoords), sunColor * u_SunProperties.sunIntensity);
+        return;
+    }
 
-    int probeIndex = DDGIGetProbeIndex(ivec3(gl_WorkGroupID.xyz));
+    MeshInfo meshInfo = u_sceneInfo.MeshInfos[closestHitInfo.meshIndex];
 
-    uint numProbes = (u_volume.gridDimensions.x * u_volume.gridDimensions.y * u_volume.gridDimensions.z);
-
-    if (probeIndex >= numProbes || probeIndex < 0) return;
-
-
-
-    vec2 uv;
-
-    uv.x = probeIndex % u_probesPerRow;
-    uv.y = probeIndex / u_probesPerRow;
-    uv = uv * u_volume.probeNumIrradianceInteriorTexels;
-
-    uv = uv + gl_LocalInvocationID.xy;
-
-    vec3 color = vec3(probeIndex)/vec3(numProbes);
-    if (isBorderTexel)
+    if (!closestHitInfo.isFrontFacing)
     {
-        imageStore(probeAtlas, ivec2(uv), vec4(vec3(1.0, 0.0, 1.0), 1.0));
-    }else { 
-        imageStore(probeAtlas, ivec2(uv), vec4(color, 1.0));
+        // Store the ray backface hit
+        DDGIStoreProbeRayBackfaceHit(ivec3(outputCoords), closestHitInfo.t);
+        return;
     }
 
-    ivec3 threadCoords = ivec3(int(gl_WorkGroupID.x) * u_volume.probeNumIrradianceInteriorTexels, int(gl_WorkGroupID.y) * u_volume.probeNumIrradianceInteriorTexels, int(gl_GlobalInvocationID.z)) + ivec3(gl_LocalInvocationID.xyz) - ivec3(1, 1, 0);
-    imageStore(probeDepthAtlas,  ivec2(uv), vec4(vec3(threadCoords), 1.0));
-
-
-    // --- Phase 1: Cast N_RAYS_PER_PROBE sample rays and store results in shared memory ---
-
-    // --- Phase 2: Filter shared samples to compute and store output texel values ---
-
-
-
-    /*
-    // probedim/2 = center of the grid
-    // offsetcenter = origin + (probedim/2) * probespacing
-
-    vec3 probePosition = probeOrigin + (vec3(probeID) - (vec3(probeGridDimensions - 1u) / 2.0f)) * probeSpacing;
-    uint localInvocationIndex1D = gl_LocalInvocationID.y * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
-    uint numLocalInvocationsXY = gl_WorkGroupSize.x * gl_WorkGroupSize.y;
-    bool hitSky = true;
-
-    // --- Phase 1: Cast N_RAYS_PER_PROBE sample rays and store results in shared memory ---
-    for (uint sampleIdx = localInvocationIndex1D; sampleIdx < N_RAYS_PER_PROBE; sampleIdx += numLocalInvocationsXY) {
-        vec3 fibonacciDir = RTXGISphericalFibonacci(sampleIdx, N_RAYS_PER_PROBE);
-        // Assuming OpenGL Y-up world, and RTXGISphericalFibonacci is Z-up.
-        // Swizzle: WorldX = FibX, WorldY = FibZ, WorldZ = -FibY (testing negation)
-        vec3 rayDir = vec3(fibonacciDir.x, fibonacciDir.z, fibonacciDir.y);
-        //vec3 rayDir = fibonacciDir;
-
-        s_sampleRayDirections[sampleIdx] = rayDir;
-        Ray sampleRay = Ray(probePosition, rayDir, 1.0 / rayDir);
-        HitInfo closestHitInfo;
-        closestHitInfo.hit = false;
-        closestHitInfo.t = MAX_DISTANCE;
-
-        for (int meshIdx = 0; meshIdx < u_meshCount; meshIdx++) {
-            MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIdx];
-            uint rootIndex = meshInfo.RootIndex;
-            mat4 invTransform = meshInfo.InvTransform;
-            vec3 localRayOrigin = (invTransform * vec4(sampleRay.origin, 1.0)).xyz;
-            vec3 localRayDirection = (invTransform * vec4(sampleRay.direction, 0.0)).xyz;
-            vec3 localInvDir = 1.0 / localRayDirection;
-            Ray localRay = Ray(localRayOrigin, localRayDirection, localInvDir);
-            HitInfo currentMeshHitResult = traceBVH(sampleRay, localRay, rootIndex, meshInfo);
-            
-            if (currentMeshHitResult.hit) {
-                // Calculate anisotropic maximum travel distance t for the ray
-                // such that its endpoint lies on the boundary of the probe's cell (probePosition +/- probeSpacing / 2.0)
-                vec3 scaledRayDirComponents = abs(sampleRay.direction / probeSpacing); // component-wise division
-                float maxScaledRate = max(scaledRayDirComponents.x, max(scaledRayDirComponents.y, scaledRayDirComponents.z));
-                // Add a small epsilon to the denominator to prevent division by zero if maxScaledRate is somehow zero,
-                // though it shouldn't be for a normalized rayDir and positive probeSpacing.
-                float anisotropicMaxT = 0.5 / (maxScaledRate + 0.00001); 
-
-                if (currentMeshHitResult.t < anisotropicMaxT+0.01 && currentMeshHitResult.t < closestHitInfo.t) {
-                    closestHitInfo = currentMeshHitResult;
-                    closestHitInfo.meshIndex = meshIdx;
-                }
-                hitSky = false;
-
-            } 
-        }
-
-        if (hitSky) {
-            // Calculate sun shadow for rays hitting the sky
-            // Consider the "hit" to be at the probe's origin, and the normal to be the ray direction
-            float sunShadowFactorSky = calculateSunShadowFactor_LargestCascade(probePosition, rayDir);
-
-            vec3 skyColor = texture(u_skyboxCubemap, rayDir).rgb;
-            // Optional: Desaturate skyColor if needed, or apply other sky effects
-            // float luminance = dot(skyColor, vec3(0.2126, 0.7152, 0.0722));
-            // float desaturationFactor = 0.9;
-            // skyColor = mix(skyColor, vec3(luminance), desaturationFactor);
-
-            // Apply shadow to sky color
-            skyColor *= sunShadowFactorSky;
-            
-            s_sampleRayIrradiance[sampleIdx] = vec3(1.0, 0.0, 1.0) * sunShadowFactorSky; // to test skybox influence
-            s_sampleRayDepth[sampleIdx] = SKYBOX_DISTANCE;
-
-        } else if (closestHitInfo.hit) {
-            vec2 uv = interpolateUV(closestHitInfo.barycentricUV, closestHitInfo.tri);
-            vec3 worldNormal_geom = interpolateNormal(closestHitInfo.barycentricUV, closestHitInfo.tri);
-            vec3 worldTangent_geom = interpolateTangent(closestHitInfo.barycentricUV, closestHitInfo.tri);
-            vec3 worldShadingNormal = calculateShadingNormal(closestHitInfo.meshIndex, uv, worldNormal_geom, worldTangent_geom);
-            vec3 albedo = sampleAlbedo(closestHitInfo.meshIndex, uv);
-
-
-            float sunShadowFactor = calculateSunShadowFactor_LargestCascade(closestHitInfo.hitPosition, worldShadingNormal);
-            // u_SunLight.direction is the direction the light travels (e.g., from sun towards scene)
-            // NdotL needs vector from surface TO light, so -normalize(u_SunLight.direction)
-            float NdotL_sun = max(0.0, dot(worldShadingNormal, -normalize(u_SunProperties.sunDirectionWorld)));
-            vec3 directSunIrradianceComponent = (albedo / PI) * u_SunProperties.sunIntensity * NdotL_sun * sunShadowFactor; // Modulate by shadow
-            
-            // Indirect lighting component from previous frame's probes
-            // samplePreviousProbes returns incident irradiance at the surfel from the direction of a previous probe.
-            vec3 incidentIndirectIrradianceAtSurfel = samplePreviousProbes(closestHitInfo.hitPosition, worldShadingNormal);
-            // The surfel reflects this incident indirect irradiance
-            vec3 indirectReflectionAtSurfel = (albedo / PI) * incidentIndirectIrradianceAtSurfel;
-
-            s_sampleRayIrradiance[sampleIdx] = directSunIrradianceComponent + indirectReflectionAtSurfel;
-            s_sampleRayDepth[sampleIdx] = closestHitInfo.t;
-        } else { // hit, but another probe was closer
-            s_sampleRayIrradiance[sampleIdx] = vec3(0.0); // No indirect light contribution on miss
-            s_sampleRayDepth[sampleIdx] = MAX_DISTANCE; // Use INFINITY_FLOAT for misses
-        }
-
-    }
-
-    barrier(); // Synchronize workgroup: ensure all shared memory writes from Phase 1 are complete
-
-    // --- Phase 2: Filter shared samples to compute and store output texel values ---
-    uint totalOutputTexels = probeResolution.x * probeResolution.y;
+    vec2 uv = interpolateUV(closestHitInfo.barycentricUV, closestHitInfo.tri);
+    vec3 worldNormal_geom = interpolateNormal(closestHitInfo.barycentricUV, closestHitInfo.tri);
+    vec3 worldTangent_geom = interpolateTangent(closestHitInfo.barycentricUV, closestHitInfo.tri);
+    vec3 worldShadingNormal = calculateShadingNormal(meshInfo, uv, worldNormal_geom, worldTangent_geom);
+    vec3 albedo = sampleAlbedo(meshInfo, uv);
     
-    // Calculate the base atlas coordinate for this probe (used by all invocations for this probe)
-    uint linearProbeIdx_global = probeID.z * (probeGridDimensions.x * probeGridDimensions.y) +
-                                 probeID.y * probeGridDimensions.x +
-                                 probeID.x;
-    ivec2 probeTileBaseAtlasCoord;
-    probeTileBaseAtlasCoord.x = int((linearProbeIdx_global % u_probesPerRow) * probeResolution.x);
-    probeTileBaseAtlasCoord.y = int((linearProbeIdx_global / u_probesPerRow) * probeResolution.y);
+    vec3 diffuse = DirectDiffuseLighting(albedo, worldShadingNormal, closestHitInfo.hitPosition, u_SunProperties);
+
+    // Indirect Lighting (recursive)
+    vec3 irradiance = vec3(0.0);
+    // Use the ray's own direction for surface bias, not the main camera direction
+    vec3 surfaceBias = DDGIGetSurfaceBias(worldShadingNormal, ray.direction, u_volume);
+
+    //float volumeBlendWeight = DDGIGetVolumeBlendWeight(closestHitInfo.hitPosition, u_volume);
 
 
-    // Filtering parameters
-    float cosConeLobe = 0.85; // around half the hemisphere
-                               // Higher values mean narrower cones. Adjusted from 0.8 for a bit wider cone initially.
-    float weightPower = 2.0;   // Power for dot product weighting, higher values give sharper falloff.
-
-    for (uint outputTexel1DIdx = localInvocationIndex1D; outputTexel1DIdx < totalOutputTexels; outputTexel1DIdx += numLocalInvocationsXY) {
-        uint local_tx = outputTexel1DIdx % probeResolution.x;
-        uint local_ty = outputTexel1DIdx / probeResolution.x;
-
-        vec2 uv_01 = (vec2(local_tx, local_ty) + 0.5) / vec2(probeResolution); // UVs in [0,1] range
-        vec2 oct_coords_neg1_1 = uv_01 * 2.0 - 1.0; // Remap to [-1,1] for new octDecode
-        vec3 texelPrimaryRayDir = octDecode(oct_coords_neg1_1); // New octDecode expects [-1,1]
-
-        vec3 accumulatedIrradiance = vec3(0.0);
-        float totalWeight = 0.0;
-        float minDepthInCone = INFINITY_FLOAT;
-        uint contributingSamplesCount = 0;
-
-        for (uint i = 0; i < N_RAYS_PER_PROBE; i++) {
-            float dot_product = dot(s_sampleRayDirections[i], texelPrimaryRayDir);
-            if (dot_product > cosConeLobe) {
-                float weight = pow(max(0.0, dot_product), weightPower); // max(0,...) in case dot_product is slightly negative but > cosConeLobe (if cosConeLobe is negative, which it isn't here)
-               
-                accumulatedIrradiance += s_sampleRayIrradiance[i] * weight;
-                totalWeight += weight;
-
-                if (s_sampleRayDepth[i] < minDepthInCone) {
-                    minDepthInCone = s_sampleRayDepth[i];
-                }
-                // Only count samples that are actual hits for depth purposes, or just any sample in cone?
-                // Let's say any sample in cone can contribute to irradiance, but depth uses actual hits.
-                if(!isinf(s_sampleRayDepth[i])) { // Check if the sample ray actually hit something
-                   contributingSamplesCount++; // This counts actual geometric hits within the cone
-                }
-            }
-        }
-
-        ivec2 atlasTexelCoord = probeTileBaseAtlasCoord + ivec2(local_tx, local_ty);
-        float alpha_blend = 1.0 - u_hysteresis; // alpha_blend is the weight for NEW data
-
-        // Hysteresis for Irradiance
-        vec3 oldIrradiance = imageLoad(prevProbeAtlas, atlasTexelCoord).rgb;
-        vec3 finalBlendedIrradiance;
-        if (totalWeight > 0.0001) {
-            vec3 currentFrameCalculatedIrradiance = accumulatedIrradiance / totalWeight;
-            finalBlendedIrradiance = mix(oldIrradiance, currentFrameCalculatedIrradiance, alpha_blend);
-        } else {
-            // If current frame provides no significant new irradiance, keep the old value
-            // to prevent valid lit areas from fading to black.
-            finalBlendedIrradiance = oldIrradiance;
-        }
+        // Get irradiance from the DDGIVolume
+        irradiance = DDGIGetVolumeIrradiance(
+            closestHitInfo.hitPosition,
+            worldShadingNormal,
+            surfaceBias,
+            prevProbeAtlas,
+            prevProbeDepthAtlas,
+            u_volume);
 
 
-        // Determine finalDepthForTexel based on current frame's data before creating moments
-        float finalDepthForTexel;
-        if (totalWeight > 0.0001 && minDepthInCone < INFINITY_FLOAT && contributingSamplesCount > 0) {
-            finalDepthForTexel = minDepthInCone;
-        } else {
-            // Conditions for a valid depth hit not met (low weight, or all hits were sky/misses)
-            finalDepthForTexel = MAX_DISTANCE;
-        }
+    // Perfectly diffuse reflectors don't exist in the real world.
+    // Limit the BRDF albedo to a maximum value to account for the energy loss at each bounce.
+    float maxAlbedo = 0.9;
 
-        // Hysteresis for Depth Moments
-        vec2 currentDepthMoments;
-        if (finalDepthForTexel < MAX_DISTANCE) {
-            currentDepthMoments = vec2(finalDepthForTexel, finalDepthForTexel * finalDepthForTexel);
-        } else {
-            // Current frame is a miss or no info
-            currentDepthMoments = vec2(MAX_DISTANCE, MAX_DISTANCE * MAX_DISTANCE); // Use MAX_DISTANCE and its square
-        }
-
-        vec2 oldDepthData = imageLoad(prevProbeDepthAtlas, atlasTexelCoord).rg;
-        vec2 finalBlendedDepthMoments;
-
-        // DDGI Paper: "If the new value is infinite (a miss), it overwrites the old depth estimate...
-        // Otherwise, new finite values are blended into the existing estimate using hysteresis."
-        // We use MAX_DISTANCE to represent a miss/sky.
-        // Check if current frame is a miss (using MAX_DISTANCE as the indicator)
-        if (currentDepthMoments.x >= MAX_DISTANCE - 0.0001) { // Use epsilon comparison for floats
-            finalBlendedDepthMoments = currentDepthMoments; // Overwrite with the miss state
-        } else {
-            // Current frame's depth is a valid, finite hit.
-            // Check if old data was a miss state
-            if (oldDepthData.x >= MAX_DISTANCE - 0.0001 || isnan(oldDepthData.x)) { // If old data was bad/miss
-                finalBlendedDepthMoments = currentDepthMoments; // Use new valid data directly
-            } else { // Both current and old are valid, finite hits
-                finalBlendedDepthMoments = mix(oldDepthData, currentDepthMoments, alpha_blend); // Blend them
-            }
-        }
-
-        // Store final results to atlas
-        imageStore(probeAtlas, atlasTexelCoord, vec4(finalBlendedIrradiance, 1.0));
-        imageStore(probeDepthAtlas, atlasTexelCoord, vec4(finalBlendedDepthMoments, 0.0, 0.0));
-    }
-    // No explicit return needed, all paths complete.
-    */
+    // Store the final ray radiance and hit distance
+    vec3 radiance = diffuse + ((min(albedo, vec3(maxAlbedo)) / PI) * irradiance);
+    DDGIStoreProbeRayFrontfaceHit(ivec3(outputCoords), clamp(radiance, vec3(0.0), vec3(1.0)), closestHitInfo.t);
 }
-
-
-
-
-
-
-

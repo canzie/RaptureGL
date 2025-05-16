@@ -227,6 +227,9 @@ namespace Rapture {
 
     void DynamicDiffuseGI::populateProbesCompute(std::shared_ptr<Scene> scene)
     {
+        RAPTURE_PROFILE_FUNCTION();
+        RAPTURE_PROFILE_GPU_SCOPE("DynamicDiffuseGI::populateProbesCompute");
+
         if (!m_isPopulated) {
             GE_CORE_WARN("DynamicDiffuseGI::populateProbesCompute - DynamicDiffuseGI is not populated yet, please call 'populateProbes(Scene)' first");
             return;
@@ -235,6 +238,9 @@ namespace Rapture {
 
         castRays(scene);
         blendTextures();
+
+        {
+        RAPTURE_PROFILE_GPU_SCOPE("DynamicDiffuseGI::populateProbesCompute - Flattening Textures");
 
         // flatten irradiance texture
         m_Flatten2dArrayShader->bind();
@@ -265,18 +271,22 @@ namespace Rapture {
         m_Flatten2dArrayShader->unBind();
 
         m_isEvenFrame = !m_isEvenFrame;
-
+        }
     }
 
     // phase 1
     void DynamicDiffuseGI::castRays(std::shared_ptr<Scene> scene)
     {
+        RAPTURE_PROFILE_FUNCTION();
+        RAPTURE_PROFILE_GPU_SCOPE("DynamicDiffuseGI::castRays");
+
         if (!m_isPopulated) {
             GE_CORE_WARN("DynamicDiffuseGI::castRays - DynamicDiffuseGI is not populated yet, please call 'populateProbes(Scene)' first");
             return;
         }
 
         auto completeBVHNodesBuffer = LBVHManager::getLBVH()->getCompleteBVHNodesBuffer();
+        auto tlasBuffer = LBVHManager::getLBVH()->getTLASBuffer();
 
         // bindings
         m_DDGI_ProbeTraceShader->bind();
@@ -287,6 +297,7 @@ namespace Rapture {
         completeBVHNodesBuffer->bindBase(0); // SSBO
         m_BufferMetadataBuffer->bindBase(1); // SSBO
         m_MeshInfoBuffer->bindBase(2); // SSBO
+        tlasBuffer->bindBase(3); // SSBO
 
         m_RayDataTexture->bindCompute(0);
 
@@ -334,7 +345,12 @@ namespace Rapture {
     // phase 2
     void DynamicDiffuseGI::blendTextures()
     {
+        RAPTURE_PROFILE_FUNCTION();
+        
         // irradiance blending
+        {
+            RAPTURE_PROFILE_GPU_SCOPE("DynamicDiffuseGI::blendTextures - Irradiance Blending");
+
         m_DDGI_ProbeIrradianceBlendingShader->bind();
 
         m_RayDataTexture->bindCompute(0);
@@ -356,8 +372,9 @@ namespace Rapture {
 
 
         m_DDGI_ProbeIrradianceBlendingShader->unBind();
-
-
+        }
+        {
+            RAPTURE_PROFILE_GPU_SCOPE("DynamicDiffuseGI::blendTextures - Distance Blending");
         // distance blending
         m_DDGI_ProbeDistanceBlendingShader->bind();
 
@@ -369,7 +386,7 @@ namespace Rapture {
         m_DDGI_ProbeDistanceBlendingShader->unBind();
 
         m_ProbeInfoBuffer->unbind();
-
+        }
 
         m_RadianceTexture->barrier();
 
@@ -595,6 +612,9 @@ namespace Rapture {
     }
     void DynamicDiffuseGI::updateSunProperties(std::shared_ptr<Scene> scene)
     {
+        RAPTURE_PROFILE_FUNCTION();
+        RAPTURE_PROFILE_GPU_SCOPE("DynamicDiffuseGI::updateSunProperties");
+
         auto& reg = scene->getRegistry();
         auto lightView = reg.view<LightComponent, TransformComponent>();
         
@@ -653,7 +673,7 @@ namespace Rapture {
         probeVolume.probeMaxRayDistance = 10000.0f;
         probeVolume.probeNormalBias = 0.1f;
         probeVolume.probeViewBias = 0.1f;
-        probeVolume.probeDistanceExponent = 2.0f;
+        probeVolume.probeDistanceExponent = 10.0f;
         probeVolume.probeIrradianceEncodingGamma = 2.2f;
 
         probeVolume.probeBrightnessThreshold = 0.1f;

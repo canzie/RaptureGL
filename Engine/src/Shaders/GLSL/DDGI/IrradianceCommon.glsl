@@ -38,24 +38,17 @@ float calculateSunShadowFactor(vec3 hitPositionWorld, vec3 hitNormalWorld, SunPr
         return 1.0; // Outside frustum = Not shadowed
     }
 
-    // Bias calculation (similar to DeferredLightingPass)
-    // u_SunProperties.sunDirectionWorld should be the normalized vector FROM the hit point TO the sun for this bias calculation.
-    // If u_SunProperties.sunDirectionWorld is currently the direction light TRAVELS, we need to use its negative for this specific bias calculation to match the comment and typical CSM bias logic.
-    //vec3 sunDirForBias = -normalize(u_SunProperties.sunDirectionWorld);
     vec3 lightWorldDir = normalize(-sunProperties.sunDirectionWorld);
     float cosTheta = clamp(dot(hitNormalWorld, lightWorldDir), 0.0, 1.0);
     float bias = max(0.005 * (1.0 - cosTheta), 0.001);
 
     float comparisonDepth = projCoords.z - bias;
     
-    sampler2D shadowMap = sampler2D(sunProperties.sunShadowTextureArrayHandle);
+    sampler2DShadow shadowMap = sampler2DShadow(sunProperties.sunShadowTextureArrayHandle);
     //vec2 texelSize = 1.0 / vec2(textureSize(shadowMapArray, 0));
     
     // Single shadow map lookup (no PCF)
-    float closestDepth = texture(shadowMap, projCoords.xy).r;
-
-    // 1 = not shadowed, 0 = shadowed
-    float shadowFactor = projCoords.z > closestDepth ? 1.0 : 0.0;
+    float shadowFactor = texture(shadowMap, vec3(projCoords.xy, comparisonDepth));
 
     return shadowFactor;
 }

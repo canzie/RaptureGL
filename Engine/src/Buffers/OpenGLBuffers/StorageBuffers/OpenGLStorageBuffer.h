@@ -34,6 +34,8 @@ namespace Rapture {
 		virtual void bind() override;
 		virtual void unbind() override;
 		void bindBase(unsigned int bindingPoint);
+
+        void resize(size_t newSize);
 		
 		void setData(const void* data, size_t size, size_t offset = 0);
 		void* map(size_t offset = 0, size_t size = 0);

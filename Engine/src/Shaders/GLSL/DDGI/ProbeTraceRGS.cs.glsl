@@ -50,10 +50,11 @@ struct HitInfo {
     vec2 barycentricUV; // Barycentric coords at hit point
     uint primitiveIndex; // Index within the mesh's index buffer (e.g., first index of the triangle)
     uint meshIndex;      // Index into u_sceneInfo.MeshInfos array
-    Triangle tri;
+    TriangleVertices tri;
     vec3 hitPosition; // World space hit position
     bool isFrontFacing; // yes or backface
 };
+
 
 
 // Input Uniforms / Buffers
@@ -84,6 +85,11 @@ layout(std430, binding = 2) readonly buffer SceneInfo {
     MeshInfo MeshInfos[];
 } u_sceneInfo;
 
+// Contains the actual BVH node data
+layout(std430, binding = 3) readonly buffer TLASNodes {
+    BVHNode lbvh[];
+} u_tlas;
+
 
 //uniform vec2 u_AtlasTextureResolution; // atlas pixel resolution in screen size, not ndc
 uniform uint u_meshCount = 0;
@@ -99,15 +105,15 @@ uniform uint u_meshCount = 0;
 
 
 #define INVALID_POINTER 0x0
-
+#define INVALID_POINTER_INT -1
 
 
 // Returns true if there's an intersection, and outputs the barycentric coordinates and distance
-bool intersectTriangle(Ray ray, Triangle tri, out vec2 barycentricUV, out float t, out bool isFrontFacing) {
+bool intersectTriangle(Ray ray, TriangleVertices triVertices, out vec2 barycentricUV, out float t, out bool isFrontFacing) {
 
     // Calculate edges
-    vec3 edgeAB = tri.v1 - tri.v0;
-    vec3 edgeAC = tri.v2 - tri.v0;
+    vec3 edgeAB = triVertices.v1 - triVertices.v0;
+    vec3 edgeAC = triVertices.v2 - triVertices.v0;
     
     vec3 normalVec = cross(edgeAB, edgeAC);
 
@@ -115,7 +121,7 @@ bool intersectTriangle(Ray ray, Triangle tri, out vec2 barycentricUV, out float 
     isFrontFacing = dot(ray.direction, normalVec) < 0.0;
     
     
-    vec3 ao = ray.origin - tri.v0;
+    vec3 ao = ray.origin - triVertices.v0;
     vec3 dao = cross(ao, ray.direction);
 
     float determinant = -dot(ray.direction, normalVec);
@@ -211,19 +217,8 @@ bool RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax, out float tmin_out) 
     vec3 tMin = (aabbMin - ray.origin) * ray.invDir;
 	vec3 tMax = (aabbMax - ray.origin) * ray.invDir;
 
-	//vec3 t1 = min(tMin, tMax);
-	//vec3 t2 = max(tMin, tMax);
-
-    vec3 t1 = vec3(
-        min(tMin.x, tMax.x),
-        min(tMin.y, tMax.y),
-        min(tMin.z, tMax.z)
-    );
-    vec3 t2 = vec3(
-        max(tMin.x, tMax.x),
-        max(tMin.y, tMax.y),
-        max(tMin.z, tMax.z)
-    );
+	vec3 t1 = min(tMin, tMax);
+	vec3 t2 = max(tMin, tMax);
 
 	float tNear = max(max(t1.x, t1.y), t1.z);
 	float tFar = min(min(t2.x, t2.y), t2.z);
@@ -237,7 +232,7 @@ bool RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax, out float tmin_out) 
 }
 
 
-HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo) {
+HitInfo traceBVH(Ray localRay, uint rootIndexOffset, MeshInfo meshInfo) {
     int currentNodeIndex = 0; 
 
     HitInfo result;
@@ -247,7 +242,7 @@ HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo)
     result.barycentricUV = vec2(0.0);
 
     // stack
-    #define MAX_STACK_SIZE 128
+    #define MAX_STACK_SIZE 32
     int nodeStack[MAX_STACK_SIZE];
     uint stackPointer = 0;
     nodeStack[stackPointer++] = int(rootIndexOffset);
@@ -258,21 +253,21 @@ HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo)
         BVHNode node = u_lbvh.lbvh[currentNodeIndex];
 
         if (node.left == INVALID_POINTER && node.right == INVALID_POINTER) {
-            Triangle tri = getTriangle(meshInfo, node.primitiveIdx, u_bufferMetadata.AllBufferMetadata[meshInfo.bufferMetadataIDX]);
+            TriangleVertices triVerts = getTriangleVertices(meshInfo, node.primitiveIdx, u_bufferMetadata.AllBufferMetadata[meshInfo.bufferMetadataIDX]);
             vec2 barycentricUV;
             float t;
             bool isFrontFacing;
-            bool hit = intersectTriangle(ray, tri, barycentricUV, t, isFrontFacing);
-            vec3 hitPosition = ray.origin + ray.direction * t;
+            bool hit = intersectTriangle(localRay, triVerts, barycentricUV, t, isFrontFacing);
 
             if (hit && t < result.t) {
                 result.hit = true;
                 result.t = t;
                 result.primitiveIndex = node.primitiveIdx;
                 result.barycentricUV = barycentricUV;
-                result.tri = tri;
+                result.tri = triVerts;
                 result.isFrontFacing = isFrontFacing;
-            } 
+                //result.hitPosition = localRay.origin + localRay.direction * t;
+            }
         }  else {
             int childIndexA = int(node.left+rootIndexOffset);
             int childIndexB = int(node.right+rootIndexOffset);
@@ -309,9 +304,84 @@ HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo)
     return result;
 }
 
+HitInfo traceTLAS(Ray ray, uint rootIndex) {
+    int currentNodeIndex = 0; 
 
-// Placeholder: Samples albedo texture using bindless handle
-// Requires GL_ARB_bindless_texture
+    HitInfo result;
+    result.hit = false;
+    result.t = u_volume.probeMaxRayDistance;
+
+    // stack
+    #define MAX_TLAS_STACK_SIZE 16
+    int nodeStack[MAX_TLAS_STACK_SIZE];
+    uint stackPointer = 0;
+    nodeStack[stackPointer++] = int(rootIndex);
+
+
+    while (stackPointer > 0) {
+        currentNodeIndex = nodeStack[--stackPointer];
+        BVHNode node = u_tlas.lbvh[currentNodeIndex];
+
+        if (node.left == -1 && node.right == -1) {
+            MeshInfo meshInfo = u_sceneInfo.MeshInfos[node.primitiveIdx];
+
+            mat4 invTransform = meshInfo.InvTransform;
+            vec3 localRayOrigin = (invTransform * vec4(ray.origin, 1.0)).xyz;
+            vec3 localRayDirection = (invTransform * vec4(ray.direction, 0.0)).xyz;
+            vec3 localInvDir = 1.0 / localRayDirection;
+            Ray localRay = Ray(localRayOrigin, localRayDirection, localInvDir);
+
+            HitInfo BVHResult = traceBVH(localRay, meshInfo.RootIndex, meshInfo);
+
+            if (BVHResult.hit) {
+                vec3 localHitPos = localRay.origin + localRay.direction * BVHResult.t;
+                vec3 worldHitPos_candidate = (meshInfo.Transform * vec4(localHitPos, 1.0)).xyz;
+                BVHResult.t = distance(ray.origin, worldHitPos_candidate); // Calculate world_t
+                BVHResult.hitPosition = worldHitPos_candidate;
+                
+
+                if (BVHResult.t < result.t) {
+                    result = BVHResult;
+                    result.meshIndex = node.primitiveIdx;
+                }
+            }
+
+        }  else {
+            int childIndexA = int(node.left);
+            int childIndexB = int(node.right);
+            BVHNode childA = u_tlas.lbvh[childIndexA];
+            BVHNode childB = u_tlas.lbvh[childIndexB];
+
+            float dstA;
+            float dstB;
+            bool hitA = RayBoundingBoxDst(ray, childA.aabbMin, childA.aabbMax, dstA);
+            bool hitB = RayBoundingBoxDst(ray, childB.aabbMin, childB.aabbMax, dstB);
+            
+            bool isNearestA = dstA <= dstB;
+            float dstNear = isNearestA ? dstA : dstB;
+            float dstFar = isNearestA ? dstB : dstA;
+
+            int childIndexNear = isNearestA ? childIndexA : childIndexB;
+            int childIndexFar = isNearestA ? childIndexB : childIndexA;
+
+            if (dstFar < result.t) {
+                nodeStack[stackPointer++] = childIndexFar;
+            }
+
+            if (dstNear < result.t) {
+                nodeStack[stackPointer++] = childIndexNear;
+            }
+            
+        }
+
+        
+    }
+
+    return result;
+
+}
+
+
 vec3 sampleAlbedo(MeshInfo meshInfo, vec2 uv) {
     uint64_t albedoTextureHandle = meshInfo.AlbedoTextureHandle;
     if (albedoTextureHandle == 0) {
@@ -333,35 +403,6 @@ vec3 sampleNormal(MeshInfo meshInfo, vec2 uv) {
 }
 
 
-
-HitInfo TraceRay(Ray worldRay) {
-
-    HitInfo closestHitInfo;
-    closestHitInfo.hit = false;
-    closestHitInfo.t = u_volume.probeMaxRayDistance;
-
-    for (int meshIdx = 0; meshIdx < u_meshCount; meshIdx++) {
-        MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIdx];
-        uint rootIndex = meshInfo.RootIndex;
-        
-        mat4 invTransform = meshInfo.InvTransform;
-        vec3 localRayOrigin = (invTransform * vec4(worldRay.origin, 1.0)).xyz;
-        vec3 localRayDirection = (invTransform * vec4(worldRay.direction, 0.0)).xyz;
-        vec3 localInvDir = 1.0 / localRayDirection;
-        Ray localRay = Ray(localRayOrigin, localRayDirection, localInvDir);
-        
-        HitInfo currentMeshHitResult = traceBVH(worldRay, localRay, rootIndex, meshInfo);
-            
-            if (currentMeshHitResult.hit && currentMeshHitResult.t < closestHitInfo.t) {
-                closestHitInfo = currentMeshHitResult;
-                closestHitInfo.meshIndex = meshIdx;
-
-            } 
-        }
-
-    return closestHitInfo;
-
-}
 
 
 
@@ -410,8 +451,8 @@ void main() {
 
 
     Ray ray = Ray(probeWorldPosition, probeRayDirection, 1.0 / probeRayDirection);
-    HitInfo closestHitInfo = TraceRay(ray);
-    MeshInfo meshInfo = u_sceneInfo.MeshInfos[closestHitInfo.meshIndex];
+    HitInfo closestHitInfo = traceTLAS(ray, 0);
+    //HitInfo closestHitInfo = TraceRay(ray);
 
     if (!closestHitInfo.hit) {
         // sample the skybox
@@ -422,6 +463,8 @@ void main() {
         return;
     }
 
+    MeshInfo meshInfo = u_sceneInfo.MeshInfos[closestHitInfo.meshIndex];
+
     if (!closestHitInfo.isFrontFacing)
     {
         // Store the ray backface hit
@@ -429,9 +472,11 @@ void main() {
         return;
     }
 
-    vec2 uv = interpolateUV(closestHitInfo.barycentricUV, closestHitInfo.tri);
-    vec3 worldNormal_geom = interpolateNormal(closestHitInfo.barycentricUV, closestHitInfo.tri);
-    vec3 worldTangent_geom = interpolateTangent(closestHitInfo.barycentricUV, closestHitInfo.tri);
+    Triangle tri = getTriangleExtras(meshInfo, closestHitInfo.primitiveIndex, closestHitInfo.tri, u_bufferMetadata.AllBufferMetadata[meshInfo.bufferMetadataIDX]);
+
+    vec2 uv = interpolateUV(closestHitInfo.barycentricUV, tri);
+    vec3 worldNormal_geom = interpolateNormal(closestHitInfo.barycentricUV, tri);
+    vec3 worldTangent_geom = interpolateTangent(closestHitInfo.barycentricUV, tri);
     vec3 worldShadingNormal = calculateShadingNormal(meshInfo, uv, worldNormal_geom, worldTangent_geom);
     vec3 albedo = sampleAlbedo(meshInfo, uv);
     
@@ -442,7 +487,6 @@ void main() {
     // Use the ray's own direction for surface bias, not the main camera direction
     vec3 surfaceBias = DDGIGetSurfaceBias(worldShadingNormal, ray.direction, u_volume);
 
-    //float volumeBlendWeight = DDGIGetVolumeBlendWeight(closestHitInfo.hitPosition, u_volume);
 
 
         // Get irradiance from the DDGIVolume

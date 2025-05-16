@@ -11,21 +11,15 @@
 #include "../../../../Scenes/Entity.h"
 #include "../../../../Scenes/Scene.h"
 
+// For UINT32_MAX if not covered by Entity.h or cstdint transitively
+#include <limits>
+
+#include "../BVHCommon.h"
 
 namespace Rapture {
 
 
 
-struct BVHNode {
-    alignas(4) int leftChildIndex; // Index of left child.
-    alignas(4) int rightChildIndex; // Index of right child.
-
-    alignas(4) uint32_t primitiveIdx;  
-
-    alignas(16) glm::vec3 minBounds;
-    alignas(16) glm::vec3 maxBounds;
-
-};
 
 // output of the builder; it is necessary to allocate the (empty) buffer
 struct LBVHNode {
@@ -46,14 +40,13 @@ struct LBVHConstructionInfo {
     int visitationCount;// number of threads that arrived
 };
 
-struct BVHCPU {
-    std::vector<BVHNode> nodes;
-    uint32_t rootIndex=0; // relative to a specific mesh bvh
-    uint32_t absoluteRootIndex=0; // index inside a full bvh buffer with bvhs from other meshes, should be better when we have a tlas
-    glm::mat4 transform;
-};
+
+
+
 
 class LBVH {
+
+
     public:
         LBVH(uint32_t maxTriangleCount);
         ~LBVH();
@@ -66,6 +59,7 @@ class LBVH {
         const std::unordered_map<uint32_t, BVHCPU>& getAllCPUBVHNodes() const { return m_cpuBVHNodes; };
 
         std::shared_ptr<ShaderStorageBuffer> getCompleteBVHNodesBuffer();
+        std::shared_ptr<ShaderStorageBuffer> getTLASBuffer() { return m_TLASBuffer; };
 
     private:
         // Reads the BVH node data from the GPU buffer to the CPU if necessary
@@ -73,6 +67,8 @@ class LBVH {
         std::vector<BVHNode> getCPUBVHNodes();
         void fillCompleteBVHNodesBuffer();
 
+        //void updateTLASBuffer();
+        //void createTLASBuffer();
     private:
         std::shared_ptr<Shader> m_StructureShader;
         std::shared_ptr<Shader> m_AABBShader;
@@ -83,13 +79,18 @@ class LBVH {
         std::shared_ptr<ShaderStorageBuffer> m_BVHNodesBuffer;
         std::shared_ptr<ShaderStorageBuffer> m_PrimitiveAABBsBuffer;
         std::shared_ptr<ShaderStorageBuffer> m_LBVHConstructionInfoBuffer;
-        
+
+        std::shared_ptr<ShaderStorageBuffer> m_TLASBuffer;
+
+
         // contains all the bvh nodes from all meshes, instead of just for 1 mesh
         std::shared_ptr<ShaderStorageBuffer> m_CompleteBVHNodesBuffer;
 
 
         std::string m_StructureShaderPath = "Sorting/BVH/LBVH/LBVH_Structure.cs.glsl";
         std::string m_AABBShaderPath = "Sorting/BVH/LBVH/LBVH_AABB.cs.glsl";
+
+        BVHCPU m_TLAS;
 
         // CPU-side cache for BVH nodes
         std::unordered_map<EntityID, BVHCPU> m_cpuBVHNodes;
@@ -98,6 +99,7 @@ class LBVH {
         bool m_isDirty = true;
         // Store the triangle count from the last generation for buffer size calculation
         uint32_t m_lastTriangleCount = 0;
+
 
 
 

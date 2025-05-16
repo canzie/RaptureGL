@@ -100,12 +100,127 @@ namespace Rapture {
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bindingPoint, m_rendererId);
 	}
 
-	void ShaderStorageBuffer::setData(const void* data, size_t size, size_t offset) {
+    void ShaderStorageBuffer::resize(size_t newSize)
+    {
+        if (newSize <= m_size) {
+            return;
+        }
+
+        RAPTURE_PROFILE_FUNCTION();
+
+        GE_CORE_INFO("SSBO: Resizing buffer (ID: {0}) from {1} to {2} bytes", m_rendererId, m_size, newSize);
+
+        if (m_isMapped) {
+            GE_CORE_ERROR("SSBO: Cannot resize a temporarily mapped buffer. Unmap first. (ID: {0})", m_rendererId);
+            return;
+        }
+
+        std::vector<char> oldData;
+        if (m_rendererId != 0 && m_size > 0) {
+            oldData.resize(m_size);
+            if (m_persistentlyMappedPtr) {
+                memcpy(oldData.data(), m_persistentlyMappedPtr, m_size);
+            } else {
+                // Not persistently mapped, not temporarily mapped. Read directly.
+                if (GLCapabilities::hasDSA()) {
+                    glGetNamedBufferSubData(m_rendererId, 0, m_size, oldData.data());
+                } else {
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_rendererId);
+                    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, m_size, oldData.data());
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+                }
+            }
+        }
+
+        // --- Clean up old buffer ---
+        GLuint oldRendererIdForLog = m_rendererId; // For logging
+        if (m_rendererId != 0) {
+            if (m_persistentlyMappedPtr) {
+                if (GLCapabilities::hasDSA()) {
+                    glUnmapNamedBuffer(m_rendererId);
+                } else {
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_rendererId);
+                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+                }
+                m_persistentlyMappedPtr = nullptr;
+            }
+            glDeleteBuffers(1, &m_rendererId);
+            m_rendererId = 0;
+        }
+
+        // --- Store original properties, update size ---
+        BufferUsage originalUsage = m_usage; 
+        bool originallyImmutable = m_isImmutable; // State of the *old* buffer.
+
+        size_t oldSizeForLog = m_size;
+        m_size = newSize;
+        // m_isImmutable will be reset based on creation method.
+        // m_persistentlyMappedPtr is already null.
+        // m_isMapped is false.
+
+        // --- Create new buffer ---
+        if (originallyImmutable) {
+            glCreateBuffers(1, &m_rendererId);
+            GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_DYNAMIC_STORAGE_BIT;
+            bool isNewPersistent = false;
+            if (originalUsage == BufferUsage::Stream) {
+                flags |= GL_MAP_PERSISTENT_BIT;
+                isNewPersistent = true;
+            }
+            
+            glNamedBufferStorage(m_rendererId, m_size, nullptr, flags);
+            m_isImmutable = true; // New buffer is immutable
+
+            if (isNewPersistent) {
+                GLbitfield mapFlags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT;
+                // Optional: if (coherent) mapFlags |= GL_MAP_COHERENT_BIT;
+                if (GLCapabilities::hasDSA()) {
+                     m_persistentlyMappedPtr = glMapNamedBufferRange(m_rendererId, 0, m_size, mapFlags);
+                } else {
+                     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_rendererId);
+                     m_persistentlyMappedPtr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, m_size, mapFlags);
+                     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0); 
+                }
+                if (!m_persistentlyMappedPtr) {
+                    GE_CORE_ERROR("SSBO: Failed to persistently map resized buffer (ID: {0})", m_rendererId);
+                } else {
+                     GE_CORE_INFO("SSBO: Persistently mapped new buffer (ID: {0}) after resize", m_rendererId);
+                }
+            }
+        } else { // Original was mutable (used glBufferData)
+            m_isImmutable = false; // New buffer is mutable
+            if (GLCapabilities::hasDSA()) {
+                glCreateBuffers(1, &m_rendererId);
+                glNamedBufferData(m_rendererId, m_size, nullptr, convertBufferUsage(originalUsage));
+            } else {
+                glGenBuffers(1, &m_rendererId);
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_rendererId);
+                glBufferData(GL_SHADER_STORAGE_BUFFER, m_size, nullptr, convertBufferUsage(originalUsage));
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+            }
+        }
+        GE_CORE_INFO("SSBO: Created new buffer (ID: {0}, Old ID: {1}, Size: {2} bytes, Old Size: {3}, Immutable: {4}) for resize", 
+            m_rendererId, oldRendererIdForLog, m_size, oldSizeForLog, m_isImmutable);
+
+        // --- Restore data to the new buffer ---
+        if (!oldData.empty()) {
+            // Since newSize > old m_size (guaranteed by the initial check), oldData.size() is the amount to restore.
+            setData(oldData.data(), oldData.size(), 0);
+            GE_CORE_INFO("SSBO: Restored {0} bytes of data to resized buffer (ID: {1})", oldData.size(), m_rendererId);
+        } else if (oldRendererIdForLog != 0 && oldSizeForLog > 0) { 
+            GE_CORE_INFO("SSBO: Old buffer (ID: {0}) had data but oldData vector is empty. This shouldn't happen.", oldRendererIdForLog);
+        }
+        
+        GE_CORE_INFO("SSBO: Successfully resized buffer to {0} bytes (ID: {1})", m_size, m_rendererId);
+    }
+
+    void ShaderStorageBuffer::setData(const void* data, size_t size, size_t offset) {
 		RAPTURE_PROFILE_FUNCTION();
 		if (offset + size > m_size) {
-			GE_CORE_ERROR("Buffer overflow: Trying to write {0} bytes at offset {1} in SSBO of size {2}", 
+			GE_CORE_WARN("Buffer overflow: Trying to write {0} bytes at offset {1} in SSBO of size {2}, resizing buffer", 
 				size, offset, m_size);
-			return;
+			resize(size);
 		}
 
         if (m_isMapped) { // Check temporary mapping

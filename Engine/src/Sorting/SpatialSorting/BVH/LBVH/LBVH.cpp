@@ -6,6 +6,9 @@
 #include "../../../../Debug/TracyProfiler.h"
 #include <string> 
 #include <algorithm> 
+#include <limits> // Required for std::numeric_limits
+
+#include "../BVH.h"
 
 #include "../../../../WindowContext/Application.h"
 
@@ -30,7 +33,7 @@ namespace Rapture {
     LBVH::LBVH(uint32_t maxTriangleCount = MAX_TRIANGLE_COUNT)
     : m_RadixSort(maxTriangleCount),
       m_isDirty(true),
-      m_lastTriangleCount(0)
+      m_lastTriangleCount(0) // Initialize TLAS root to invalid
     {
         auto& app = Application::getInstance();
         auto project = app.getProject();
@@ -128,11 +131,12 @@ namespace Rapture {
         // Mark the CPU data as dirty since the GPU data has been updated
         m_isDirty = true;
 
-
+        //buildTLAS_CPU(); // Build TLAS after all BLASes are generated
     }
 
     std::shared_ptr<ShaderStorageBuffer> LBVH::getCompleteBVHNodesBuffer()
     {
+        RAPTURE_PROFILE_FUNCTION();
 
         if (m_CompleteBVHNodesBuffer == nullptr) {
             fillCompleteBVHNodesBuffer();
@@ -140,6 +144,8 @@ namespace Rapture {
 
         return m_CompleteBVHNodesBuffer;
     }
+
+
 
     std::vector<BVHNode> LBVH::getCPUBVHNodes()
     {
@@ -208,19 +214,13 @@ namespace Rapture {
 
     void LBVH::fillCompleteBVHNodesBuffer()
     {
-        
-        std::vector<BVHNode> nodes;
-
-        //uint32_t bvhnodesSize = 0;
-
-        //for (const auto& bvh : m_cpuBVHNodes) {
-        //    auto nodes = bvh.second.nodes;
-        //    bvhnodesSize += nodes.size();
-        //}
+        RAPTURE_PROFILE_FUNCTION();
 
         m_CompleteBVHNodesBuffer = std::make_shared<ShaderStorageBuffer>(m_correctOrderedNodes.size() * sizeof(BVHNode), BufferUsage::Static, m_correctOrderedNodes.data());
 
     }
+
+
 
     // sorts all of the geometry in an entire scene, this way we can calculated the max_triangles
     void LBVH::generate(std::shared_ptr<Scene> scene)
@@ -232,6 +232,7 @@ namespace Rapture {
 
         uint32_t totalNodes = 0;
 
+        std::vector<BVHCPU> bvhs;
         for (auto entity : view) {
             
             auto& meshComponent = view.get<MeshComponent>(entity);
@@ -247,11 +248,19 @@ namespace Rapture {
             bvhCPU.transform = transformComponent.transformMatrix();
             bvhCPU.absoluteRootIndex = totalNodes + bvhCPU.rootIndex;
             m_cpuBVHNodes[entityID] = bvhCPU;
-
+            bvhs.push_back(bvhCPU);
             m_correctOrderedNodes.insert(m_correctOrderedNodes.end(), nodes.begin(), nodes.end());
 
             totalNodes += nodes.size();
+        } 
+
+        std::vector<glm::mat4> bla;
+        BVH::buildTLAS(bvhs, m_TLAS, bla);        
+
+        if (m_TLASBuffer == nullptr) {
+            m_TLASBuffer = std::make_shared<ShaderStorageBuffer>(m_TLAS.nodes.size() * sizeof(BVHNode), BufferUsage::Stream, m_TLAS.nodes.data());
         }
+
     }
 
 
