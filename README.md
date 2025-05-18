@@ -36,17 +36,17 @@ An implementation of dynamic diffuse global illumination. Currently only uses a 
 
 <table>
 <tr>
-<td><img src="https://github.com/canzie/RaptureGL/tree/main/screenshots/DDGI1_final.png" alt="DDGI Diffuse"></td>
-<td><img src="https://github.com/canzie/RaptureGL/tree/main/screenshots/DDGI1_direct_ambient.png" alt="Direct + Ambient"></td>
-<td><img src="https://github.com/canzie/RaptureGL/tree/main/screenshots/DDGI1_direct.png" alt="Direct Only"></td>
+<td><img src="./screenshots/DDGI1_final.PNG" alt="DDGI Diffuse"><br>DDGI Diffuse</td>
+<td><img src="./screenshots/DDGI1_direct_ambient.PNG" alt="Direct + Ambient"><br>Direct + Ambient</td>
+<td><img src="./screenshots/DDGI1_direct.PNG" alt="Direct Only"><br>Direct Only</td>
 </tr>
 </table>
 
 <table>
 <tr>
-<td><img src="https://github.com/canzie/RaptureGL/tree/main/screenshots/DDGI2_final.png" alt="DDGI Diffuse"></td>
-<td><img src="https://github.com/canzie/RaptureGL/tree/main/screenshots/DDGI2_direct_ambient.png" alt="Direct + Ambient"></td>
-<td><img src="https://github.com/canzie/RaptureGL/tree/main/screenshots/DDGI2_direct.png" alt="Direct Only"></td>
+<td><img src="./screenshots/DDGI2_final.PNG" alt="DDGI Diffuse"><br>DDGI Diffuse</td>
+<td><img src="./screenshots/DDGI2_direct_ambient.PNG" alt="Direct + Ambient"><br>Direct + Ambient</td>
+<td><img src="./screenshots/DDGI2_direct.PNG" alt="Direct Only"><br>Direct Only</td>
 </tr>
 </table>
 
