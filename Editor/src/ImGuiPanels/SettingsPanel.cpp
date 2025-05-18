@@ -302,6 +302,14 @@ void SettingsPanel::renderSceneSettings()
 
 
 
+    ImGui::Separator();
+
+    bool ddgiEnabled = Rapture::DeferredRenderer::getEnableDDGI();
+
+    if (ImGui::Checkbox("Enable DDGI", &ddgiEnabled)) {
+        Rapture::DeferredRenderer::setEnableDDGI(ddgiEnabled);
+    }
+
 
 
     ImGui::Separator();

@@ -72,7 +72,8 @@ namespace Rapture
 
         static DebugConfig* getDDGIDebugConfig() { return &s_debugConfig; }
 
-
+        static void setEnableDDGI(bool enable) { s_enableDDGI = enable; }
+        static bool getEnableDDGI() { return s_enableDDGI; }
 
     private:
         // Helper method for light setup
@@ -108,6 +109,8 @@ namespace Rapture
         // Shadow mapping
         static bool s_shadowMapDirty;
         static bool s_isShadowPass;
+
+        static bool s_enableDDGI;
 
         static std::shared_ptr<ShadowMapBase> s_currentShadowMap;
 

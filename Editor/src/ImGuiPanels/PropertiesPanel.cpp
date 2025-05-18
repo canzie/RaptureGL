@@ -103,7 +103,7 @@ void PropertiesPanel::renderEntityProperties(std::shared_ptr<Rapture::Entity> en
             memset(buffer, 0, sizeof(buffer));
             // Copy the tag content into the buffer, ensuring null termination
             tagComponent.tag.copy(buffer, sizeof(buffer) - 1);
-            buffer[std::min(tagComponent.tag.size(), sizeof(buffer) - 1)] = '\0'; // Explicitly null-terminate
+            buffer[(std::min)(tagComponent.tag.size(), sizeof(buffer) - 1)] = '\0'; // Explicitly null-terminate
 
             if (ImGui::InputText("Name", buffer, sizeof(buffer))) {
                 tagComponent.tag = std::string(buffer); // Update the component tag if changed

@@ -6,10 +6,11 @@ Created for learning 3D graphics and game engine architecures from scratch.
 
 
 ### Rendering
+- Dynamic Difffuse Global Illumination
 - PBR (Physically Based Rendering) with support for:
   - Metallic-roughness workflow
   - Specular-glossiness workflow
-  - Full PBR texture maps (albedo, normal, metallic, roughness, AO, emissive)
+  - Full PBR texture maps
 - Support for both forward and deferred rendering pipelines
 - Support for Point, Spot and Directional lights
 - Traditional and Cascaded Shadow Mapping (CSM)
@@ -30,9 +31,28 @@ Created for learning 3D graphics and game engine architecures from scratch.
 
 ## Showcase of recent features
 
+### Dynamic Diffuse Global Illumination (DDGI)
+An implementation of dynamic diffuse global illumination. Currently only uses a diffuse pipeline, with plans to include specular glossy later. The main sources used to develop this were the [NVIDIA DDGI paper](https://www.jcgt.org/published/0008/02/01/paper-lowres.pdf) and the [GDC](https://www.gdcvault.com/play/1026182/) talk for the main DDGI algorithm, and this [VkLBVH](https://github.com/MircoWerner/VkLBVH) repository for parallel LBVH and Radix sort implementations.
+
+<table>
+<tr>
+<td><img src="screenshots/DDGI1_final.png" alt="DDGI Diffuse"></td>
+<td><img src="screenshots/DDGI1_direct_ambient.png" alt="Direct + Ambient"></td>
+<td><img src="screenshots/DDGI1_direct.png" alt="Direct Only"></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td><img src="screenshots/DDGI2_final.png" alt="DDGI Diffuse"></td>
+<td><img src="screenshots/DDGI2_direct_ambient.png" alt="Direct + Ambient"></td>
+<td><img src="screenshots/DDGI2_direct.png" alt="Direct Only"></td>
+</tr>
+</table>
+
 ### Cascaded Shadow Mapping (CSM)
 
-I recently finished(mostly) my implementation of CSM, it uses scene independent matrix transformations for the cascade ligthview matrices.
+My implementation of CSM, it uses scene independent matrix transformations for the cascade ligthview matrices.
 Uses a hybrid approach for spliting the frustum range with a lambda to bias either the logarithmic or linear splits
 
 ![CSM with visible cascades](screenshots/CSM_Example.PNG)

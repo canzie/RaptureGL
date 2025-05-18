@@ -21,9 +21,7 @@
 
 namespace Rapture {
 
-
 struct BufferMetadata {
-
     alignas(4) uint32_t positionAttributeOffsetBytes; // Offset of position *within* the stride
     alignas(4) uint32_t texCoordAttributeOffsetBytes;
     alignas(4) uint32_t normalAttributeOffsetBytes;
@@ -64,10 +62,31 @@ struct SunProperties {
 
 
 
-struct DebugData {
+struct DebugData { // Must match GLSL Profile struct
+    alignas(8) uint64_t TOTAL_INVOCATION_TIME;
+    alignas(8) uint64_t TRACE_TLAS_TIME;
+    alignas(8) uint64_t TOTAL_BVH_TIME_PER_TLAS_CALL;
+    alignas(8) uint64_t SUM_TLAS_INTERNAL_RBBOX_TIME_PER_TLAS_CALL;
+    alignas(8) uint64_t AVG_TLAS_INTERNAL_RBBOX_CALL_TIME;
+    alignas(8) uint64_t SUM_RAY_SETUP_TRANSFORM_TIME_PER_TLAS_CALL;
+    alignas(8) uint64_t SUM_HIT_TRANSFORM_TIME_PER_TLAS_CALL;
 
-    alignas(4) uint32_t idx;
+    alignas(8) uint64_t BVH_TRACE_TIME; // Avg time for one full traceBVH call
+    alignas(8) uint64_t BVH_TRAVERSAL_OVERHEAD_TIME;
 
+    // Average time per individual call of these functions (workgroup-wide)
+    alignas(8) uint64_t AVG_TIME_PER_GTVERTS_CALL;
+    alignas(8) uint64_t AVG_TIME_PER_ITRI_CALL;
+    alignas(8) uint64_t AVG_TIME_PER_RBBOX_CALL;
+
+    // New: Average sum of time spent in these functions *during one average traceBVH call*
+    alignas(8) uint64_t AVG_SUM_GTVERTS_TIME_IN_BVHCALL;
+    alignas(8) uint64_t AVG_SUM_ITRI_TIME_IN_BVHCALL;
+    alignas(8) uint64_t AVG_SUM_RBBOX_TIME_IN_BVHCALL;
+
+    alignas(8) uint64_t GET_TRIANGLE_EXTRAS_TIME; 
+    alignas(8) uint64_t DIRECT_DIFFUSE_LIGHTING_TIME;
+    alignas(8) uint64_t GET_VOLUME_IRRADIANCE_TIME;
 };
 
 class DynamicDiffuseGI {
@@ -89,7 +108,6 @@ public:
     uint32_t getProbesPerRow() { return m_probesPerRow; }
 
 private:
-
     void castRays(std::shared_ptr<Scene> scene);
     void blendTextures();
 

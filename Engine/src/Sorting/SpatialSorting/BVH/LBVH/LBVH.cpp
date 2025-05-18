@@ -233,6 +233,9 @@ namespace Rapture {
         uint32_t totalNodes = 0;
 
         std::vector<BVHCPU> bvhs;
+        m_tlasEntityMap.clear(); // Clear before populating
+        m_correctOrderedNodes.clear(); // Clear before populating
+
         for (auto entity : view) {
             
             auto& meshComponent = view.get<MeshComponent>(entity);
@@ -249,6 +252,7 @@ namespace Rapture {
             bvhCPU.absoluteRootIndex = totalNodes + bvhCPU.rootIndex;
             m_cpuBVHNodes[entityID] = bvhCPU;
             bvhs.push_back(bvhCPU);
+            m_tlasEntityMap.push_back(entityID);
             m_correctOrderedNodes.insert(m_correctOrderedNodes.end(), nodes.begin(), nodes.end());
 
             totalNodes += nodes.size();

@@ -229,23 +229,25 @@ TriangleVertices getTriangleVertices(MeshInfo meshInfo, uint primitiveIndex, Buf
 
 
 
-    uint8_t *vboBasePtr = (uint8_t *)vboHandle;
+    float32_t *vboBasePtr = (float32_t *)vboHandle;
 
-    
-    tri.v0.x = *((float *)(vboBasePtr + positionStartByteOffset[0] + 0)); // Offset 12 is 4-byte aligned
-    tri.v0.y = *((float *)(vboBasePtr + positionStartByteOffset[0] + 4)); // Offset 16 is 4-byte aligned
-    tri.v0.z = *((float *)(vboBasePtr + positionStartByteOffset[0] + 8)); // Offset 20 is 4-byte aligned
+    float32_t* offsetAddress = vboBasePtr + positionStartByteOffset[0]/4;
+    tri.v0.x = *((float *)(offsetAddress + 0)); // Offset 12 is 4-byte aligned
+    tri.v0.y = *((float *)(offsetAddress + 1)); // Offset 16 is 4-byte aligned
+    tri.v0.z = *((float *)(offsetAddress + 2)); // Offset 20 is 4-byte aligned
 
     // --- Vertex 1 ---
-    tri.v1.x = *((float *)(vboBasePtr + positionStartByteOffset[1] + 0));
-    tri.v1.y = *((float *)(vboBasePtr + positionStartByteOffset[1] + 4));
-    tri.v1.z = *((float *)(vboBasePtr + positionStartByteOffset[1] + 8));
+    offsetAddress = vboBasePtr + positionStartByteOffset[1]/4;
+    tri.v1.x = *((float *)(offsetAddress + 0));
+    tri.v1.y = *((float *)(offsetAddress + 1));
+    tri.v1.z = *((float *)(offsetAddress + 2));
 
     // --- Vertex 2 ---
-    tri.v2.x = *((float *)(vboBasePtr + positionStartByteOffset[2] + 0));
-    tri.v2.y = *((float *)(vboBasePtr + positionStartByteOffset[2] + 4));
-    tri.v2.z = *((float *)(vboBasePtr + positionStartByteOffset[2] + 8));
-
+    offsetAddress = vboBasePtr + positionStartByteOffset[2]/4;
+    tri.v2.x = *((float *)(offsetAddress + 0));
+    tri.v2.y = *((float *)(offsetAddress + 1));
+    tri.v2.z = *((float *)(offsetAddress + 2));
+    
 
     return tri;
 }

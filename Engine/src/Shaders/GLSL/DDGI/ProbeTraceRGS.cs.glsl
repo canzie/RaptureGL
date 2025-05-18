@@ -6,7 +6,6 @@
 #extension GL_NV_shader_buffer_load : require
 #extension GL_NV_gpu_shader5 : require
 
-
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 // need to define this so the store functions are enabled, since passing textures trough arguments is kind of scuffed and i cba
 #define RAY_DATA_TEXTURE
@@ -21,27 +20,22 @@ layout (binding = 3) uniform samplerCube u_skyboxCubemap;
 
 precision highp float;
 
-
-
 #include "MeshCommon.glsl"
 #include "IrradianceCommon.glsl"
 
 struct BVHNode {
+    vec3 aabbMin; 
     int left;
+    vec3 aabbMax;
     int right;
     uint primitiveIdx;
-    vec3 aabbMin; 
-    vec3 aabbMax;
-
 };
-
 
 struct Ray {
     vec3 origin;
     vec3 direction;
     vec3 invDir;
 };
-
 
 // Placeholder struct for trace result
 struct HitInfo {
@@ -55,27 +49,21 @@ struct HitInfo {
     bool isFrontFacing; // yes or backface
 };
 
-
-
 // Input Uniforms / Buffers
 // Contains global information about the probe grid
 layout(std140, binding = 0) uniform ProbeInfo {
     ProbeVolume u_volume;
 };
 
-
-
 // --- Sun Shadow Uniforms for Largest Cascade ---
 layout(std140, binding = 1) uniform SunPropertiesUBO {
     SunProperties u_SunProperties;
 };
 
-
 // Contains the actual BVH node data
 layout(std430, binding = 0) readonly buffer LBVHNodes {
     BVHNode lbvh[];
 } u_lbvh;
-
 
 layout(std430, binding = 1) readonly buffer BufferMetadataStorage {
     BufferMetadata AllBufferMetadata[];
@@ -90,12 +78,6 @@ layout(std430, binding = 3) readonly buffer TLASNodes {
     BVHNode lbvh[];
 } u_tlas;
 
-
-//uniform vec2 u_AtlasTextureResolution; // atlas pixel resolution in screen size, not ndc
-uniform uint u_meshCount = 0;
-
-
-
 #define INFINITY_FLOAT (1.0/0.0)
 #define SKYBOX_DISTANCE 1000.0
 #define MAX_DISTANCE 1000.0
@@ -103,14 +85,11 @@ uniform uint u_meshCount = 0;
 #define PI 3.14159265359
 #define PI2 6.28318530718
 
-
 #define INVALID_POINTER 0x0
 #define INVALID_POINTER_INT -1
 
-
 // Returns true if there's an intersection, and outputs the barycentric coordinates and distance
 bool intersectTriangle(Ray ray, TriangleVertices triVertices, out vec2 barycentricUV, out float t, out bool isFrontFacing) {
-
     // Calculate edges
     vec3 edgeAB = triVertices.v1 - triVertices.v0;
     vec3 edgeAC = triVertices.v2 - triVertices.v0;
@@ -119,7 +98,6 @@ bool intersectTriangle(Ray ray, TriangleVertices triVertices, out vec2 barycentr
 
     // is used for blending, we then invert the distance and reduce it by 80%
     isFrontFacing = dot(ray.direction, normalVec) < 0.0;
-    
     
     vec3 ao = ray.origin - triVertices.v0;
     vec3 dao = cross(ao, ray.direction);
@@ -149,7 +127,6 @@ bool intersectTriangle(Ray ray, TriangleVertices triVertices, out vec2 barycentr
     
     return hitValid;
 }
-
 
 // Usage example for texture sampling:
 vec2 interpolateUV(vec2 barycentricUV, Triangle tri) {
@@ -215,29 +192,26 @@ vec3 calculateShadingNormal(
 
 bool RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax, out float tmin_out) {
     vec3 tMin = (aabbMin - ray.origin) * ray.invDir;
-	vec3 tMax = (aabbMax - ray.origin) * ray.invDir;
+    vec3 tMax = (aabbMax - ray.origin) * ray.invDir;
 
-	vec3 t1 = min(tMin, tMax);
-	vec3 t2 = max(tMin, tMax);
+    vec3 t1 = min(tMin, tMax);
+    vec3 t2 = max(tMin, tMax);
 
-	float tNear = max(max(t1.x, t1.y), t1.z);
-	float tFar = min(min(t2.x, t2.y), t2.z);
+    float tNear = max(max(t1.x, t1.y), t1.z);
+    float tFar = min(min(t2.x, t2.y), t2.z);
 
-	bool hit = tFar >= tNear && tFar > 0;
-	tmin_out = hit ? tNear > 0 ? tNear : 0 : u_volume.probeMaxRayDistance;
+    bool hit = tFar >= tNear && tFar > 0;
+    tmin_out = hit ? tNear > 0 ? tNear : 0 : u_volume.probeMaxRayDistance;
 
     return hit;
-
-    
 }
 
-
-HitInfo traceBVH(Ray localRay, uint rootIndexOffset, MeshInfo meshInfo) {
+HitInfo traceBVH(Ray localRay, float closestHit, uint rootIndexOffset, MeshInfo meshInfo) {
     int currentNodeIndex = 0; 
 
     HitInfo result;
     result.hit = false;
-    result.t = u_volume.probeMaxRayDistance;
+    result.t = closestHit;
     result.primitiveIndex = 0;
     result.barycentricUV = vec2(0.0);
 
@@ -247,13 +221,13 @@ HitInfo traceBVH(Ray localRay, uint rootIndexOffset, MeshInfo meshInfo) {
     uint stackPointer = 0;
     nodeStack[stackPointer++] = int(rootIndexOffset);
 
-
     while (stackPointer > 0) {
         currentNodeIndex = nodeStack[--stackPointer];
         BVHNode node = u_lbvh.lbvh[currentNodeIndex];
 
         if (node.left == INVALID_POINTER && node.right == INVALID_POINTER) {
             TriangleVertices triVerts = getTriangleVertices(meshInfo, node.primitiveIdx, u_bufferMetadata.AllBufferMetadata[meshInfo.bufferMetadataIDX]);
+            
             vec2 barycentricUV;
             float t;
             bool isFrontFacing;
@@ -266,9 +240,8 @@ HitInfo traceBVH(Ray localRay, uint rootIndexOffset, MeshInfo meshInfo) {
                 result.barycentricUV = barycentricUV;
                 result.tri = triVerts;
                 result.isFrontFacing = isFrontFacing;
-                //result.hitPosition = localRay.origin + localRay.direction * t;
             }
-        }  else {
+        } else {
             int childIndexA = int(node.left+rootIndexOffset);
             int childIndexB = int(node.right+rootIndexOffset);
             BVHNode childA = u_lbvh.lbvh[childIndexA];
@@ -293,12 +266,7 @@ HitInfo traceBVH(Ray localRay, uint rootIndexOffset, MeshInfo meshInfo) {
             if (dstNear < result.t) {
                 nodeStack[stackPointer++] = childIndexNear;
             }
-            
-
-
         }
-
-        
     }
 
     return result;
@@ -317,12 +285,11 @@ HitInfo traceTLAS(Ray ray, uint rootIndex) {
     uint stackPointer = 0;
     nodeStack[stackPointer++] = int(rootIndex);
 
-
     while (stackPointer > 0) {
         currentNodeIndex = nodeStack[--stackPointer];
         BVHNode node = u_tlas.lbvh[currentNodeIndex];
 
-        if (node.left == -1 && node.right == -1) {
+        if (node.left == -1 && node.right == -1) { 
             MeshInfo meshInfo = u_sceneInfo.MeshInfos[node.primitiveIdx];
 
             mat4 invTransform = meshInfo.InvTransform;
@@ -331,22 +298,20 @@ HitInfo traceTLAS(Ray ray, uint rootIndex) {
             vec3 localInvDir = 1.0 / localRayDirection;
             Ray localRay = Ray(localRayOrigin, localRayDirection, localInvDir);
 
-            HitInfo BVHResult = traceBVH(localRay, meshInfo.RootIndex, meshInfo);
+            HitInfo BVHResult = traceBVH(localRay, result.t, meshInfo.RootIndex, meshInfo);
 
             if (BVHResult.hit) {
                 vec3 localHitPos = localRay.origin + localRay.direction * BVHResult.t;
                 vec3 worldHitPos_candidate = (meshInfo.Transform * vec4(localHitPos, 1.0)).xyz;
                 BVHResult.t = distance(ray.origin, worldHitPos_candidate); // Calculate world_t
                 BVHResult.hitPosition = worldHitPos_candidate;
-                
 
                 if (BVHResult.t < result.t) {
                     result = BVHResult;
                     result.meshIndex = node.primitiveIdx;
                 }
             }
-
-        }  else {
+        } else {
             int childIndexA = int(node.left);
             int childIndexB = int(node.right);
             BVHNode childA = u_tlas.lbvh[childIndexA];
@@ -371,16 +336,11 @@ HitInfo traceTLAS(Ray ray, uint rootIndex) {
             if (dstNear < result.t) {
                 nodeStack[stackPointer++] = childIndexNear;
             }
-            
         }
-
-        
     }
 
     return result;
-
 }
-
 
 vec3 sampleAlbedo(MeshInfo meshInfo, vec2 uv) {
     uint64_t albedoTextureHandle = meshInfo.AlbedoTextureHandle;
@@ -437,26 +397,22 @@ float DDGIGetVolumeBlendWeight(vec3 worldPosition, ProbeVolume volume)
 
 
 void main() {
-
     ivec3 probeCoords = ivec3(gl_WorkGroupID.x, gl_WorkGroupID.z, gl_WorkGroupID.y);
     int probeIndex = DDGIGetProbeIndex(probeCoords, u_volume);
 
     int rayIndex = int(gl_LocalInvocationID.y * gl_WorkGroupSize.x + gl_LocalInvocationID.x);
 
     vec3 probeWorldPosition = DDGIGetProbeWorldPosition(probeCoords, u_volume);
-
     vec3 probeRayDirection = DDGIGetProbeRayDirection(rayIndex, u_volume);
    
     uvec3 outputCoords = DDGIGetRayDataTexelCoords(rayIndex, probeIndex, u_volume);
 
-
     Ray ray = Ray(probeWorldPosition, probeRayDirection, 1.0 / probeRayDirection);
+    
     HitInfo closestHitInfo = traceTLAS(ray, 0);
-    //HitInfo closestHitInfo = TraceRay(ray);
 
     if (!closestHitInfo.hit) {
         // sample the skybox
-
         vec3 sunColor = texture(u_skyboxCubemap, ray.direction).rgb;
         sunColor *= u_SunProperties.sunIntensity * u_SunProperties.sunColor;
         
@@ -488,17 +444,14 @@ void main() {
     // Use the ray's own direction for surface bias, not the main camera direction
     vec3 surfaceBias = DDGIGetSurfaceBias(worldShadingNormal, ray.direction, u_volume);
 
-
-
-        // Get irradiance from the DDGIVolume
-        irradiance = DDGIGetVolumeIrradiance(
-            closestHitInfo.hitPosition,
-            worldShadingNormal,
-            surfaceBias,
-            prevProbeAtlas,
-            prevProbeDepthAtlas,
-            u_volume);
-
+    // Get irradiance from the DDGIVolume
+    irradiance = DDGIGetVolumeIrradiance(
+        closestHitInfo.hitPosition,
+        worldShadingNormal,
+        surfaceBias,
+        prevProbeAtlas,
+        prevProbeDepthAtlas,
+        u_volume);
 
     // Perfectly diffuse reflectors don't exist in the real world.
     // Limit the BRDF albedo to a maximum value to account for the energy loss at each bounce.

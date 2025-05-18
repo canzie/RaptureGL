@@ -36,6 +36,7 @@ precision highp float;
 
 // Camera position for specular calculations
 uniform vec3 u_CameraPosition;
+uniform bool u_isDDGIEnabled;
 
 // Light space matrix for shadow mapping - keeping for backward compatibility
 //uniform mat4 u_LightSpaceMatrix;
@@ -525,22 +526,26 @@ void main() {
         Lo += (kD_direct * Albedo.rgb / PI + specular) * radiance * NdotL * shadowFactor; 
     }
     
+    vec3 ambient = vec3(0.02) * Albedo.rgb * AO * (1.0 - Metallic); // Small base ambient
+
+
     // ===============================================
     // --- Indirect Diffuse Lighting (DDGI) Start ---
     // ===============================================
-
-    vec3 kD_indirect = vec3(1.0) * (1.0 - Metallic); 
-    //vec3 indirectDiffuseContribution = (kD_indirect * Albedo.rgb / PI) * indirectDiffuseIntensity;
-    vec3 indirectDiffuseIntensity = getIrradiance(FragPos, N, u_DDGI_Volume, V);
-    vec3 indirectColor = indirectDiffuseIntensity * (Albedo.rgb / PI) * kD_indirect;
+    vec3 indirectColor = ambient;
+    vec3 indirectDiffuseIntensity = vec3(0.0);
+    if (u_isDDGIEnabled) {
+        vec3 kD_indirect = vec3(1.0) * (1.0 - Metallic); 
+        //vec3 indirectDiffuseContribution = (kD_indirect * Albedo.rgb / PI) * indirectDiffuseIntensity;
+        indirectDiffuseIntensity = getIrradiance(FragPos, N, u_DDGI_Volume, V);
+        indirectColor = indirectDiffuseIntensity * (Albedo.rgb / PI) * kD_indirect;
+    }
     // ===============================================
     // --- Indirect Diffuse Lighting (DDGI) End   ---
     // ===============================================
 
     // Add ambient lighting (modulated by AO)
-    vec3 ambient = vec3(0.02) * Albedo.rgb * AO; // Small base ambient
     vec3 finalColor = Lo + indirectColor;
-    //vec3 finalColor = Lo + ambient;
 
     if (u_debugConfig.showDiffuseIntensity) {
         finalColor = vec3(indirectDiffuseIntensity);

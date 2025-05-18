@@ -6,13 +6,14 @@
 namespace Rapture {
 
 struct BVHNode {
+    alignas(16) glm::vec3 minBounds;
     alignas(4) int leftChildIndex; // Index of left child.
+    
+    alignas(16) glm::vec3 maxBounds;
     alignas(4) int rightChildIndex; // Index of right child.
 
     alignas(4) uint32_t primitiveIdx;  
 
-    alignas(16) glm::vec3 minBounds;
-    alignas(16) glm::vec3 maxBounds;
 
 };
 

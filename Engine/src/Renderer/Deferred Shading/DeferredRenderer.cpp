@@ -58,6 +58,8 @@ namespace Rapture
     std::shared_ptr<UniformBuffer> DeferredRenderer::s_debugConfigUBO = nullptr;
     std::shared_ptr<DynamicDiffuseGI> DeferredRenderer::s_ddgi = nullptr;
 
+    bool DeferredRenderer::s_enableDDGI = false;
+
     void DeferredRenderer::init()
     {
 		RAPTURE_PROFILE_FUNCTION();
@@ -252,7 +254,9 @@ namespace Rapture
         }
 
         // this will only do something
-        s_ddgi->populateProbes(s);
+        if (s_enableDDGI) {
+            s_ddgi->populateProbes(s);
+        }
 
         // Setup lights (uses caching)
         setupLightsUniforms(s);
@@ -703,6 +707,7 @@ namespace Rapture
             // Set Camera Position uniform
             if (boundShader) {
                 boundShader->setVec3("u_CameraPosition", s_cameraPosition);
+                boundShader->setBool("u_isDDGIEnabled", s_enableDDGI);
             }
 
         
@@ -716,9 +721,11 @@ namespace Rapture
 
         
         s_gBuffer->bindTextures();
-        s_ddgi->getRadianceTexture()->bind(4);
-        s_ddgi->getVisibilityTexture()->bind(5);
-        s_ddgi->getProbeInfoBuffer()->bindBase(1);
+        if (s_enableDDGI) {
+            s_ddgi->getRadianceTexture()->bind(4);
+            s_ddgi->getVisibilityTexture()->bind(5);
+            s_ddgi->getProbeInfoBuffer()->bindBase(1);
+        }
 
 
 
@@ -739,8 +746,10 @@ namespace Rapture
 
         
         s_gBuffer->unbindTextures();
-        s_ddgi->getRadianceTexture()->unbind();
-        s_ddgi->getVisibilityTexture()->unbind();
+        if (s_enableDDGI) {
+            s_ddgi->getRadianceTexture()->unbind();
+            s_ddgi->getVisibilityTexture()->unbind();
+        }
 
 
         {

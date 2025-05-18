@@ -5,150 +5,43 @@
 #extension GL_ARB_gpu_shader_int64 : require
 #extension GL_NV_shader_buffer_load : require
 #extension GL_NV_gpu_shader5 : require
-
-// --- Debug Macros ---
-// Uncomment one of the following lines to enable a specific debug view.
-// #define DEBUG_VIEW_PROBE_INDEX        // Visualize the 3D probe index (normalized)
-// #define DEBUG_VIEW_PROBE_POSITION     // Visualize the world-space probe position (normalized/wrapped)
-// #define DEBUG_VIEW_RAY_DIRECTION      // Visualize the ray direction (normalized)
-// #define DEBUG_VIEW_HIT                // Visualize hit success (red for hit, blue for miss)
-// #define DEBUG_VIEW_UV                 // Visualize interpolated UV coordinates at hit (R=U, G=V)
-// #define DEBUG_VIEW_BVH_HIT_NODE       // Visualize if BVH trace found a leaf node (Green=hit, Red=miss)
-// #define DEBUG_VIEW_TRIANGLE_HIT       // Visualize if triangle intersection succeeded (Green=hit, Red=miss)
-//#define DEBUG_VIEW_ALBEDO             // Default: Visualize sampled albedo color
-// #define DEBUG_OUTPUT_BUFFER
+#extension GL_ARB_shader_clock : enable
 
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+// need to define this so the store functions are enabled, since passing textures trough arguments is kind of scuffed and i cba
+#define RAY_DATA_TEXTURE
 
+layout (binding = 0, rgba32f) uniform restrict writeonly image2DArray RayData;
 
-// Output Images
-layout (binding = 0, r11f_g11f_b10f) uniform restrict writeonly image2D probeAtlas;
-layout (binding = 1, rg16f) uniform restrict writeonly image2D probeDepthAtlas;
-
-layout (binding = 2, r11f_g11f_b10f) uniform restrict readonly image2D prevProbeAtlas;
-layout (binding = 3, rg16f) uniform restrict readonly image2D prevProbeDepthAtlas;
+layout (binding = 1) uniform sampler2DArray prevProbeAtlas;
+layout (binding = 2) uniform sampler2DArray prevProbeDepthAtlas;
 
 // Skybox Cubemap
-layout (binding = 4) uniform samplerCube u_skyboxCubemap;
+layout (binding = 3) uniform samplerCube u_skyboxCubemap;
 
 precision highp float;
 
 
+
+#include "MeshCommon.glsl"
+#include "IrradianceCommon.glsl"
+
 struct BVHNode {
+    vec3 aabbMin; 
     int left;
+    vec3 aabbMax;
     int right;
     uint primitiveIdx;
-    vec3 aabbMin; 
-    vec3 aabbMax;
 
 };
 
-struct BufferMetadata {
-
-    uint positionAttributeOffsetBytes; // Offset of position *within* the stride
-    uint texCoordAttributeOffsetBytes;
-    uint normalAttributeOffsetBytes;
-    uint tangentAttributeOffsetBytes;
-
-
-    uint vertexStrideBytes;            // Stride of the vertex buffer in bytes
-    uint indexType;                    // GL_UNSIGNED_INT (5125) or GL_UNSIGNED_SHORT (5123)
-
-    uint64_t VBOHandle;
-    uint64_t IBOHandle;
-};
-
-// Input Uniforms / Buffers
-// Contains global information about the probe grid
-layout(std140, binding = 0) uniform ProbeInfo {
-    uvec3 probeGridDimensions; // Number of probes in each dimension (X, Y, Z)
-    uvec2 probeResolution; // Resolution of each probe texture (e.g., 8x8)
-    vec3 probeSpacing;
-    vec3 probeOrigin; // will probably be camera position
-};
-
-// Contains the actual BVH node data
-layout(std430, binding = 1) readonly buffer LBVHNodes {
-    BVHNode lbvh[];
-} u_lbvh;
-
-
-struct MeshInfo {
-    uint RootIndex; // index of the root node in the BVH
-    uint64_t AlbedoTextureHandle;
-    uint64_t NormalTextureHandle;
-    uint64_t MetallicRoughnessTextureHandle;
-    uint bufferMetadataIDX; // index for BufferMetadata array
-
-    uint vertexOffsetBytes;
-    uint indexOffsetBytes;
-
-    mat4 Transform;
-    mat4 InvTransform;
-};
-
-layout(std430, binding = 2) readonly buffer BufferMetadataStorage {
-    BufferMetadata AllBufferMetadata[];
-} u_bufferMetadata;
-
-layout(std430, binding = 3) readonly buffer SceneInfo {
-    MeshInfo MeshInfos[];
-} u_sceneInfo;
-
-
-struct Triangle {
-    vec3 v0;
-    vec3 v1;
-    vec3 v2;  // Vertices in world space
-    vec3 n0;
-    vec3 n1;
-    vec3 n2;  // Normals in world space
-    vec3 t0;
-    vec3 t1;
-    vec3 t2;  // Tangents in world space
-    vec2 uv0;
-    vec2 uv1;
-    vec2 uv2; // Texture coordinates
-};
 
 struct Ray {
     vec3 origin;
     vec3 direction;
     vec3 invDir;
 };
-
-
-#ifdef DEBUG_OUTPUT_BUFFER
-
-    struct DebugData {
-        uint primitiveIndex;
-    };
-
-    layout(std430, binding = 4) writeonly buffer debugBuffer {
-        DebugData u_debugData[];
-    };
-#endif
-
-// --- Light Definitions ---
-struct DirectionalLight {
-    vec3 direction;
-    float intensity;
-};
-
-// Use std140 layout for UBOs
-layout(std140, binding = 1) uniform LightInfo {
-    DirectionalLight u_SunLight;
-};
-
-// Define PI constant
-#define PI 3.14159265359
-
-uniform vec2 u_AtlasTextureResolution; // atlas pixel resolution in screen size, not ndc
-uniform uint u_meshCount;
-uniform uint u_probesPerRow; // Number of probes along the X-axis of the atlas texture
-uniform float u_hysteresis;
-
 
 
 // Placeholder struct for trace result
@@ -158,165 +51,148 @@ struct HitInfo {
     vec2 barycentricUV; // Barycentric coords at hit point
     uint primitiveIndex; // Index within the mesh's index buffer (e.g., first index of the triangle)
     uint meshIndex;      // Index into u_sceneInfo.MeshInfos array
-    Triangle tri;
-    vec3 hitPosition;
+    TriangleVertices tri;
+    vec3 hitPosition; // World space hit position
+    bool isFrontFacing; // yes or backface
 };
 
 
-#define UNSIGNED_INT 5125
-#define UNSIGNED_SHORT 5123
-#define INFINITY_FLOAT 0x7FFFFFFF
 
-// meshinfo contains needed metadata about where to get the vertex data, the index is for the specific triangle
-Triangle getTriangle(MeshInfo meshInfo, uint primitiveIndex) {
-    Triangle tri = Triangle(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec2(0.0), vec2(0.0), vec2(0.0));
-    BufferMetadata bufferMetadata = u_bufferMetadata.AllBufferMetadata[meshInfo.bufferMetadataIDX];
-    uint64_t vboHandle = bufferMetadata.VBOHandle;
-    uint64_t iboHandle = bufferMetadata.IBOHandle;
-    uint indexType = bufferMetadata.indexType;
-    uint indexSize = indexType == UNSIGNED_INT ? 4 : 2;
+// Input Uniforms / Buffers
+// Contains global information about the probe grid
+layout(std140, binding = 0) uniform ProbeInfo {
+    ProbeVolume u_volume;
+};
 
 
-    uint indexOffsetBytes = meshInfo.indexOffsetBytes + (indexSize * primitiveIndex * 3);
 
-    uint indices[3];
+// --- Sun Shadow Uniforms for Largest Cascade ---
+layout(std140, binding = 1) uniform SunPropertiesUBO {
+    SunProperties u_SunProperties;
+};
 
-    uint8_t *iboPtr = (uint8_t *)iboHandle;
+
+// Contains the actual BVH node data
+layout(std430, binding = 0) readonly buffer LBVHNodes {
+    BVHNode lbvh[];
+} u_lbvh;
 
 
-    // Read indices based on indexType
-    if (indexType == UNSIGNED_INT) { // GL_UNSIGNED_INT
+layout(std430, binding = 1) readonly buffer BufferMetadataStorage {
+    BufferMetadata AllBufferMetadata[];
+} u_bufferMetadata;
 
-        uint ind0 = *((uint *)(iboPtr + indexOffsetBytes + 0)); // Offset 12 is 4-byte aligned
-        uint ind1 = *((uint *)(iboPtr + indexOffsetBytes + 4)); // Offset 16 is 4-byte aligned
-        uint ind2 = *((uint *)(iboPtr + indexOffsetBytes + 8)); // Offset 20 is 4-byte aligned
-        indices[0] = ind0;
-        indices[1] = ind1;
-        indices[2] = ind2;
-    } else { // Assuming GL_UNSIGNED_SHORT (5123)
+layout(std430, binding = 2) readonly buffer SceneInfo {
+    MeshInfo MeshInfos[];
+} u_sceneInfo;
 
-        uint16_t ind0 = *((uint16_t *)(iboPtr + indexOffsetBytes + 0)); // Offset 12 is 4-byte aligned
-        uint16_t ind1 = *((uint16_t *)(iboPtr + indexOffsetBytes + 2)); // Offset 16 is 4-byte aligned
-        uint16_t ind2 = *((uint16_t *)(iboPtr + indexOffsetBytes + 4)); // Offset 20 is 4-byte aligned
-        indices[0] = uint(ind0);
-        indices[1] = uint(ind1);
-        indices[2] = uint(ind2);
-    }
+// Contains the actual BVH node data
+layout(std430, binding = 3) readonly buffer TLASNodes {
+    BVHNode lbvh[];
+} u_tlas;
 
-    uvec3 vertexStartByteOffset;
-    vertexStartByteOffset[0] = meshInfo.vertexOffsetBytes + (indices[0] * bufferMetadata.vertexStrideBytes);
-    vertexStartByteOffset[1] = meshInfo.vertexOffsetBytes + (indices[1] * bufferMetadata.vertexStrideBytes);
-    vertexStartByteOffset[2] = meshInfo.vertexOffsetBytes + (indices[2] * bufferMetadata.vertexStrideBytes);
+// New struct for traceBVH to return its internal timings and counts
+struct BVHInternalTimings {
+    uint64_t total_gtverts_time_in_bvh;
+    uint count_gtverts_in_bvh;
+    uint64_t total_itri_time_in_bvh;
+    uint count_itri_in_bvh;
+    uint64_t total_rbbox_time_in_bvh;
+    uint count_rbbox_in_bvh;
+};
 
-    // Calculate the absolute byte offset for the start of the position attribute within that vertex
-    uvec3 positionStartByteOffset = vertexStartByteOffset + bufferMetadata.positionAttributeOffsetBytes;
+struct Profile { // Updated to reflect new and renamed metrics
+    uint64_t TOTAL_INVOCATION_TIME;
+    uint64_t TRACE_TLAS_TIME;
+    uint64_t TOTAL_BVH_TIME_PER_TLAS_CALL; // New metric
+    uint64_t BVH_TRACE_TIME; // Avg time for one full traceBVH call
 
-    uvec3 normalStartByteOffset = vertexStartByteOffset + bufferMetadata.normalAttributeOffsetBytes;
+    // Average time per individual call of these functions (workgroup-wide)
+    uint64_t AVG_TIME_PER_GTVERTS_CALL;
+    uint64_t AVG_TIME_PER_ITRI_CALL;
+    uint64_t AVG_TIME_PER_RBBOX_CALL;
 
-    uvec3 tangentStartByteOffset = vertexStartByteOffset + bufferMetadata.tangentAttributeOffsetBytes;
+    // New: Average sum of time spent in these functions *during one average traceBVH call*
+    uint64_t AVG_SUM_GTVERTS_TIME_IN_BVHCALL;
+    uint64_t AVG_SUM_ITRI_TIME_IN_BVHCALL;
+    uint64_t AVG_SUM_RBBOX_TIME_IN_BVHCALL;
 
-    uvec3 textureStartByteOffset =vertexStartByteOffset + bufferMetadata.texCoordAttributeOffsetBytes;
+    uint64_t GET_TRIANGLE_EXTRAS_TIME; 
+    uint64_t DIRECT_DIFFUSE_LIGHTING_TIME;
+    uint64_t GET_VOLUME_IRRADIANCE_TIME;
+};
 
-    uint8_t *vboBasePtr = (uint8_t *)vboHandle;
 
-    
-    float v0x = *((float *)(vboBasePtr + positionStartByteOffset[0] + 0)); // Offset 12 is 4-byte aligned
-    float v0y = *((float *)(vboBasePtr + positionStartByteOffset[0] + 4)); // Offset 16 is 4-byte aligned
-    float v0z = *((float *)(vboBasePtr + positionStartByteOffset[0] + 8)); // Offset 20 is 4-byte aligned
-    vec3 v0_local = vec3(v0x, v0y, v0z);
+layout(std430, binding = 4) writeonly buffer Profling {
+    Profile mean_timings[];
+} u_profile;
 
-    float n0x = *((float *)(vboBasePtr + normalStartByteOffset[0] + 0)); // Offset 12 is 4-byte aligned
-    float n0y = *((float *)(vboBasePtr + normalStartByteOffset[0] + 4)); // Offset 16 is 4-byte aligned
-    float n0z = *((float *)(vboBasePtr + normalStartByteOffset[0] + 8)); // Offset 20 is 4-byte aligned
-    vec3 n0_local = vec3(n0x, n0y, n0z);
 
-    float t0x = *((float *)(vboBasePtr + tangentStartByteOffset[0] + 0)); // Offset 12 is 4-byte aligned
-    float t0y = *((float *)(vboBasePtr + tangentStartByteOffset[0] + 4)); // Offset 16 is 4-byte aligned
-    float t0z = *((float *)(vboBasePtr + tangentStartByteOffset[0] + 8)); // Offset 20 is 4-byte aligned
-    vec3 t0_local = vec3(t0x, t0y, t0z);
 
-    float uv0x = *((float *)(vboBasePtr + textureStartByteOffset[0] + 0));
-    float uv0y = *((float *)(vboBasePtr + textureStartByteOffset[0] + 4));
-    vec2 uv0  = vec2(uv0x, uv0y);
-    
-    // --- Vertex 1 ---
-    float v1x = *((float *)(vboBasePtr + positionStartByteOffset[1] + 0));
-    float v1y = *((float *)(vboBasePtr + positionStartByteOffset[1] + 4));
-    float v1z = *((float *)(vboBasePtr + positionStartByteOffset[1] + 8));
-    vec3 v1_local = vec3(v1x, v1y, v1z);
 
-    float n1x = *((float *)(vboBasePtr + normalStartByteOffset[1] + 0)); // Offset 12 is 4-byte aligned
-    float n1y = *((float *)(vboBasePtr + normalStartByteOffset[1] + 4)); // Offset 16 is 4-byte aligned
-    float n1z = *((float *)(vboBasePtr + normalStartByteOffset[1] + 8)); // Offset 20 is 4-byte aligned
-    vec3 n1_local = vec3(n1x, n1y, n1z);
 
-    float t1x = *((float *)(vboBasePtr + tangentStartByteOffset[1] + 0)); // Offset 12 is 4-byte aligned
-    float t1y = *((float *)(vboBasePtr + tangentStartByteOffset[1] + 4)); // Offset 16 is 4-byte aligned
-    float t1z = *((float *)(vboBasePtr + tangentStartByteOffset[1] + 8)); // Offset 20 is 4-byte aligned
-    vec3 t1_local = vec3(t1x, t1y, t1z);
+#define INFINITY_FLOAT (1.0/0.0)
+#define SKYBOX_DISTANCE 1000.0
+#define MAX_DISTANCE 1000.0
+// Define PI constant
+#define PI 3.14159265359
+#define PI2 6.28318530718
 
-    float uv1x = *((float *)(vboBasePtr + textureStartByteOffset[1] + 0));
-    float uv1y = *((float *)(vboBasePtr + textureStartByteOffset[1] + 4));
-    vec2 uv1  = vec2(uv1x, uv1y);
 
-    // --- Vertex 2 ---
-    float v2x = *((float *)(vboBasePtr + positionStartByteOffset[2] + 0));
-    float v2y = *((float *)(vboBasePtr + positionStartByteOffset[2] + 4));
-    float v2z = *((float *)(vboBasePtr + positionStartByteOffset[2] + 8));
-    vec3 v2_local = vec3(v2x, v2y, v2z);
-    
-    float n2x = *((float *)(vboBasePtr + normalStartByteOffset[2] + 0)); // Offset 12 is 4-byte aligned
-    float n2y = *((float *)(vboBasePtr + normalStartByteOffset[2] + 4)); // Offset 16 is 4-byte aligned
-    float n2z = *((float *)(vboBasePtr + normalStartByteOffset[2] + 8)); // Offset 20 is 4-byte aligned
-    vec3 n2_local = vec3(n2x, n2y, n2z);
-    
-    float t2x = *((float *)(vboBasePtr + tangentStartByteOffset[2] + 0)); // Offset 12 is 4-byte aligned
-    float t2y = *((float *)(vboBasePtr + tangentStartByteOffset[2] + 4)); // Offset 16 is 4-byte aligned
-    float t2z = *((float *)(vboBasePtr + tangentStartByteOffset[2] + 8)); // Offset 20 is 4-byte aligned
-    vec3 t2_local = vec3(t2x, t2y, t2z);
+#define INVALID_POINTER 0x0
+#define INVALID_POINTER_INT -1
 
-    float uv2x = *((float *)(vboBasePtr + textureStartByteOffset[2] + 0));
-    float uv2y = *((float *)(vboBasePtr + textureStartByteOffset[2] + 4));
-    vec2 uv2  = vec2(uv2x, uv2y);
 
-    
-    tri.v0 = (meshInfo.Transform * vec4(v0_local, 1.0)).xyz;
-    tri.v1 = (meshInfo.Transform * vec4(v1_local, 1.0)).xyz;
-    tri.v2 = (meshInfo.Transform * vec4(v2_local, 1.0)).xyz;
+// Shared variables for profiling
+shared uint64_t total_BVH_TRACE_time; // For BVH_TRACE_TIME
+shared uint count_BVH_TRACE;          // For BVH_TRACE_TIME & denominator for AVG_SUM_..._IN_BVHCALL
+shared uint64_t shared_sum_total_bvh_time_for_all_tlas_runs; // New shared variable
 
-    tri.n0 = (meshInfo.Transform * vec4(n0_local, 0.0)).xyz;
-    tri.n1 = (meshInfo.Transform * vec4(n1_local, 0.0)).xyz;
-    tri.n2 = (meshInfo.Transform * vec4(n2_local, 0.0)).xyz;
+// For AVG_TIME_PER_GTVERTS_CALL (these are the *original* accumulators, just renamed for clarity if needed)
+shared uint64_t total_GET_TRIANGLE_VERTS_time_global; // Aggregates all individual getTriangleVertices calls
+shared uint count_GET_TRIANGLE_VERTS_global;      // Total count of getTriangleVertices calls
 
-    tri.t0 = (meshInfo.Transform * vec4(t0_local, 0.0)).xyz;
-    tri.t1 = (meshInfo.Transform * vec4(t1_local, 0.0)).xyz;
-    tri.t2 = (meshInfo.Transform * vec4(t2_local, 0.0)).xyz;
+// For AVG_TIME_PER_ITRI_CALL
+shared uint64_t total_INTERSECT_TRIANGLE_time_global; // Aggregates all individual intersectTriangle calls
+shared uint count_INTERSECT_TRIANGLE_global;      // Total count of intersectTriangle calls
 
-    
-    tri.uv0 = uv0;
-    tri.uv1 = uv1;
-    tri.uv2 = uv2;
-    
+// For AVG_TIME_PER_RBBOX_CALL
+shared uint64_t total_INTERSECT_BOUNDING_BOX_time_global; // Aggregates all individual RayBoundingBoxDst calls
+shared uint count_INTERSECT_BOUNDING_BOX_global;      // Total count of RayBoundingBoxDst calls
 
-    return tri;
-}
+// New shared accumulators for the sums of times *within* BVH calls, aggregated across the workgroup
+shared uint64_t shared_sum_total_gtverts_time_across_all_bvh_runs;
+shared uint64_t shared_sum_total_itri_time_across_all_bvh_runs;
+shared uint64_t shared_sum_total_rbbox_time_across_all_bvh_runs;
+
+// Existing timers
+shared uint64_t total_INVOCATION_TIME_accumulator;
+shared uint count_INVOCATIONS;
+shared uint64_t total_GET_TRIANGLE_EXTRAS_time;
+shared uint count_GET_TRIANGLE_EXTRAS;
+shared uint64_t total_DIRECT_DIFFUSE_LIGHTING_time;
+shared uint count_DIRECT_DIFFUSE_LIGHTING;
+shared uint64_t total_GET_VOLUME_IRRADIANCE_time;
+shared uint count_GET_VOLUME_IRRADIANCE;
+shared uint64_t total_TRACE_TLAS_time;
+shared uint count_TRACE_TLAS;
+
 
 // Returns true if there's an intersection, and outputs the barycentric coordinates and distance
-bool intersectTriangle(Ray ray, Triangle tri, out vec2 barycentricUV, out float t) {
-    
+bool intersectTriangle(Ray ray, TriangleVertices triVertices, out vec2 barycentricUV, out float t, out bool isFrontFacing) {
+    // uint64_t start_time = clockARB(); // Timing to be done at call site
 
     // Calculate edges
-    vec3 edgeAB = tri.v1 - tri.v0;
-    vec3 edgeAC = tri.v2 - tri.v0;
+    vec3 edgeAB = triVertices.v1 - triVertices.v0;
+    vec3 edgeAC = triVertices.v2 - triVertices.v0;
     
     vec3 normalVec = cross(edgeAB, edgeAC);
 
-    // Backface culling: if the ray hits from behind, ignore intersection
-    //if (dot(ray.direction, normalVec) > 0.0) {
-    //    return false;
-    //}
+    // is used for blending, we then invert the distance and reduce it by 80%
+    isFrontFacing = dot(ray.direction, normalVec) < 0.0;
     
-    vec3 ao = ray.origin - tri.v0;
+    
+    vec3 ao = ray.origin - triVertices.v0;
     vec3 dao = cross(ao, ray.direction);
 
     float determinant = -dot(ray.direction, normalVec);
@@ -342,6 +218,9 @@ bool intersectTriangle(Ray ray, Triangle tri, out vec2 barycentricUV, out float 
                     (v >= -0.00001) && (v <= 1.00001) && // v must be approx in [0,1]
                     ((u + v) <= 1.00001);                // u + v must be approx <= 1 (ensures w approx >= 0)
     
+    // uint64_t end_time = clockARB(); // Timing to be done at call site
+    // REMOVED: atomicAdd(total_INTERSECT_TRIANGLE_time_global, end_time - start_time);
+    // REMOVED: atomicAdd(count_INTERSECT_TRIANGLE_global, 1);
     return hitValid;
 }
 
@@ -372,34 +251,13 @@ vec3 interpolateTangent(vec2 barycentricUV, Triangle tri) {
     return tri.t0 * w + tri.t1 * u + tri.t2 * v;
 }
 
-vec2 octEncode(vec3 n) {
-    n /= (abs(n.x) + abs(n.y) + abs(n.z));
-    vec2 encoded = (n.z >= 0.0) ? n.xy : vec2(
-        (1.0 - abs(n.y)) * (n.x >= 0.0 ? 1.0 : -1.0),
-        (1.0 - abs(n.x)) * (n.y >= 0.0 ? 1.0 : -1.0)
-    );
-    return encoded * 0.5 + 0.5;
-}
-
-vec3 octDecode(vec2 f) {
-    f = f * 2.0 - 1.0; // Map from [0, 1] to [-1, 1]
-    vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
-    float t = max(-n.z, 0.0); // Equivalent to saturate(-n.z)
-    // n.xy += (n.xy >= 0.0 ? -t : t); // Invalid GLSL
-    // Apply the sign-based offset component-wise
-    n.x += (n.x >= 0.0 ? -t : t);
-    n.y += (n.y >= 0.0 ? -t : t);
-    return normalize(n);
-}
-
 // Calculates the final world-space shading normal using interpolated TBN and normal map
 vec3 calculateShadingNormal(
-    uint meshIndex,
+    MeshInfo meshInfo,
     vec2 uv,
     vec3 N_geom,   // Interpolated geometric normal (world space)
     vec3 T_geom    // Interpolated tangent (world space)
 ) {
-    MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIndex];
     vec3 finalNormal = N_geom; // Default to geometric normal
 
     // Check if a normal map exists for this mesh
@@ -430,48 +288,50 @@ vec3 calculateShadingNormal(
 }
 
 bool RayBoundingBoxDst(Ray ray, vec3 aabbMin, vec3 aabbMax, out float tmin_out) {
+    // uint64_t start_time = clockARB(); // Timing to be done at call site
+
     vec3 tMin = (aabbMin - ray.origin) * ray.invDir;
 	vec3 tMax = (aabbMax - ray.origin) * ray.invDir;
 
-	//vec3 t1 = min(tMin, tMax);
-	//vec3 t2 = max(tMin, tMax);
-
-    vec3 t1 = vec3(
-        min(tMin.x, tMax.x),
-        min(tMin.y, tMax.y),
-        min(tMin.z, tMax.z)
-    );
-    vec3 t2 = vec3(
-        max(tMin.x, tMax.x),
-        max(tMin.y, tMax.y),
-        max(tMin.z, tMax.z)
-    );
+	vec3 t1 = min(tMin, tMax);
+	vec3 t2 = max(tMin, tMax);
 
 	float tNear = max(max(t1.x, t1.y), t1.z);
 	float tFar = min(min(t2.x, t2.y), t2.z);
 
 	bool hit = tFar >= tNear && tFar > 0;
-	tmin_out = hit ? tNear > 0 ? tNear : 0 : INFINITY_FLOAT;
+	tmin_out = hit ? tNear > 0 ? tNear : 0 : u_volume.probeMaxRayDistance;
 
+    // uint64_t end_time = clockARB(); // Timing to be done at call site
+    // REMOVED: atomicAdd(total_INTERSECT_BOUNDING_BOX_time_global, end_time - start_time);
+    // REMOVED: atomicAdd(count_INTERSECT_BOUNDING_BOX_global, 1);
     return hit;
 
     
 }
 
-#define INVALID_POINTER 0x0
 
 
-HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo) {
+
+HitInfo traceBVH(Ray localRay, float closestHit, uint rootIndexOffset, MeshInfo meshInfo, out BVHInternalTimings internal_timings) {
+    // Initialize the output struct for this run of traceBVH
+    internal_timings.total_gtverts_time_in_bvh = 0;
+    internal_timings.count_gtverts_in_bvh = 0;
+    internal_timings.total_itri_time_in_bvh = 0;
+    internal_timings.count_itri_in_bvh = 0;
+    internal_timings.total_rbbox_time_in_bvh = 0;
+    internal_timings.count_rbbox_in_bvh = 0;
+
     int currentNodeIndex = 0; 
 
     HitInfo result;
     result.hit = false;
-    result.t = INFINITY_FLOAT;
+    result.t = closestHit;
     result.primitiveIndex = 0;
     result.barycentricUV = vec2(0.0);
 
     // stack
-    #define MAX_STACK_SIZE 128
+    #define MAX_STACK_SIZE 32
     int nodeStack[MAX_STACK_SIZE];
     uint stackPointer = 0;
     nodeStack[stackPointer++] = int(rootIndexOffset);
@@ -482,19 +342,35 @@ HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo)
         BVHNode node = u_lbvh.lbvh[currentNodeIndex];
 
         if (node.left == INVALID_POINTER && node.right == INVALID_POINTER) {
-            Triangle tri = getTriangle(meshInfo, node.primitiveIdx);
+            uint64_t start_get_tri_v_time = clockARB();
+            TriangleVertices triVerts = getTriangleVertices(meshInfo, node.primitiveIdx, u_bufferMetadata.AllBufferMetadata[meshInfo.bufferMetadataIDX]);
+            uint64_t end_get_tri_v_time = clockARB();
+            uint64_t duration_gtverts = end_get_tri_v_time - start_get_tri_v_time;
+            internal_timings.total_gtverts_time_in_bvh += duration_gtverts;
+            internal_timings.count_gtverts_in_bvh++;
+            atomicAdd(total_GET_TRIANGLE_VERTS_time_global, duration_gtverts);
+            atomicAdd(count_GET_TRIANGLE_VERTS_global, 1);
+            
             vec2 barycentricUV;
             float t;
-            bool hit = intersectTriangle(ray, tri, barycentricUV, t);
-            vec3 hitPosition = ray.origin + ray.direction * t;
+            bool isFrontFacing;
+            uint64_t start_itri_time = clockARB();
+            bool hit = intersectTriangle(localRay, triVerts, barycentricUV, t, isFrontFacing);
+            uint64_t end_itri_time = clockARB();
+            uint64_t duration_itri = end_itri_time - start_itri_time;
+            internal_timings.total_itri_time_in_bvh += duration_itri;
+            internal_timings.count_itri_in_bvh++;
+            atomicAdd(total_INTERSECT_TRIANGLE_time_global, duration_itri);
+            atomicAdd(count_INTERSECT_TRIANGLE_global, 1);
 
             if (hit && t < result.t) {
                 result.hit = true;
                 result.t = t;
                 result.primitiveIndex = node.primitiveIdx;
                 result.barycentricUV = barycentricUV;
-                result.tri = tri;
-            } 
+                result.tri = triVerts;
+                result.isFrontFacing = isFrontFacing;
+            }
         }  else {
             int childIndexA = int(node.left+rootIndexOffset);
             int childIndexB = int(node.right+rootIndexOffset);
@@ -503,8 +379,23 @@ HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo)
 
             float dstA;
             float dstB;
+            uint64_t start_rbbox_A_time = clockARB();
             bool hitA = RayBoundingBoxDst(localRay, childA.aabbMin, childA.aabbMax, dstA);
+            uint64_t end_rbbox_A_time = clockARB();
+            uint64_t duration_rbbox_A = end_rbbox_A_time - start_rbbox_A_time;
+            internal_timings.total_rbbox_time_in_bvh += duration_rbbox_A;
+            internal_timings.count_rbbox_in_bvh++;
+            atomicAdd(total_INTERSECT_BOUNDING_BOX_time_global, duration_rbbox_A);
+            atomicAdd(count_INTERSECT_BOUNDING_BOX_global, 1);
+
+            uint64_t start_rbbox_B_time = clockARB();
             bool hitB = RayBoundingBoxDst(localRay, childB.aabbMin, childB.aabbMax, dstB);
+            uint64_t end_rbbox_B_time = clockARB();
+            uint64_t duration_rbbox_B = end_rbbox_B_time - start_rbbox_B_time;
+            internal_timings.total_rbbox_time_in_bvh += duration_rbbox_B;
+            internal_timings.count_rbbox_in_bvh++;
+            atomicAdd(total_INTERSECT_BOUNDING_BOX_time_global, duration_rbbox_B);
+            atomicAdd(count_INTERSECT_BOUNDING_BOX_global, 1);
             
             bool isNearestA = dstA <= dstB;
             float dstNear = isNearestA ? dstA : dstB;
@@ -532,10 +423,110 @@ HitInfo traceBVH(Ray ray, Ray localRay, uint rootIndexOffset, MeshInfo meshInfo)
 }
 
 
-// Placeholder: Samples albedo texture using bindless handle
-// Requires GL_ARB_bindless_texture
-vec3 sampleAlbedo(uint meshIndex, vec2 uv) {
-    MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIndex];
+
+
+// PEFORMANCE NOTE: removing the tracebvh makes fps go from 60->130
+HitInfo traceTLAS(Ray ray, uint rootIndex, out BVHInternalTimings accumulated_bvh_internal_timings_for_ray, out uint64_t total_bvh_duration_within_this_tlas) {
+    total_bvh_duration_within_this_tlas = 0; // Initialize new out parameter
+    // Initialize the output struct for accumulated timings for this ray
+    accumulated_bvh_internal_timings_for_ray.total_gtverts_time_in_bvh = 0;
+    accumulated_bvh_internal_timings_for_ray.count_gtverts_in_bvh = 0; // Counts are not summed here, only times
+    accumulated_bvh_internal_timings_for_ray.total_itri_time_in_bvh = 0;
+    accumulated_bvh_internal_timings_for_ray.count_itri_in_bvh = 0;     // Counts are not summed here
+    accumulated_bvh_internal_timings_for_ray.total_rbbox_time_in_bvh = 0;
+    accumulated_bvh_internal_timings_for_ray.count_rbbox_in_bvh = 0;    // Counts are not summed here
+
+    int currentNodeIndex = 0; 
+
+    HitInfo result;
+    result.hit = false;
+    result.t = u_volume.probeMaxRayDistance;
+
+    // stack
+    #define MAX_TLAS_STACK_SIZE 16
+    int nodeStack[MAX_TLAS_STACK_SIZE];
+    uint stackPointer = 0;
+    nodeStack[stackPointer++] = int(rootIndex);
+
+
+    while (stackPointer > 0) {
+        currentNodeIndex = nodeStack[--stackPointer];
+        BVHNode node = u_tlas.lbvh[currentNodeIndex];
+
+        if (node.left == -1 && node.right == -1) { 
+            MeshInfo meshInfo = u_sceneInfo.MeshInfos[node.primitiveIdx];
+
+            mat4 invTransform = meshInfo.InvTransform;
+            vec3 localRayOrigin = (invTransform * vec4(ray.origin, 1.0)).xyz;
+            vec3 localRayDirection = (invTransform * vec4(ray.direction, 0.0)).xyz;
+            vec3 localInvDir = 1.0 / localRayDirection;
+            Ray localRay = Ray(localRayOrigin, localRayDirection, localInvDir);
+
+            uint64_t start_bvh_time = clockARB();
+            BVHInternalTimings current_bvh_run_timings; // Changed from 'internal_timings' to avoid conflict
+            HitInfo BVHResult = traceBVH(localRay, result.t, meshInfo.RootIndex, meshInfo, current_bvh_run_timings);
+            uint64_t end_bvh_time = clockARB();
+            uint64_t bvh_duration = end_bvh_time - start_bvh_time;
+            atomicAdd(total_BVH_TRACE_time, bvh_duration);
+            atomicAdd(count_BVH_TRACE, 1);
+
+            total_bvh_duration_within_this_tlas += bvh_duration; // Accumulate BVH duration for this TLAS call
+
+            // Accumulate the sums of times from this BVH run into the ray-specific accumulator
+            accumulated_bvh_internal_timings_for_ray.total_gtverts_time_in_bvh += current_bvh_run_timings.total_gtverts_time_in_bvh;
+            accumulated_bvh_internal_timings_for_ray.total_itri_time_in_bvh += current_bvh_run_timings.total_itri_time_in_bvh;
+            accumulated_bvh_internal_timings_for_ray.total_rbbox_time_in_bvh += current_bvh_run_timings.total_rbbox_time_in_bvh;
+            // The counts within accumulated_bvh_internal_timings_for_ray are not used / summed here as this struct passes sums of times.
+
+            if (BVHResult.hit) {
+                vec3 localHitPos = localRay.origin + localRay.direction * BVHResult.t;
+                vec3 worldHitPos_candidate = (meshInfo.Transform * vec4(localHitPos, 1.0)).xyz;
+                BVHResult.t = distance(ray.origin, worldHitPos_candidate); // Calculate world_t
+                BVHResult.hitPosition = worldHitPos_candidate;
+                
+
+                if (BVHResult.t < result.t) {
+                    result = BVHResult;
+                    result.meshIndex = node.primitiveIdx;
+                }
+            }
+
+        }  else {
+            int childIndexA = int(node.left);
+            int childIndexB = int(node.right);
+            BVHNode childA = u_tlas.lbvh[childIndexA];
+            BVHNode childB = u_tlas.lbvh[childIndexB];
+
+            float dstA;
+            float dstB;
+            bool hitA = RayBoundingBoxDst(ray, childA.aabbMin, childA.aabbMax, dstA);
+            bool hitB = RayBoundingBoxDst(ray, childB.aabbMin, childB.aabbMax, dstB);
+            
+            bool isNearestA = dstA <= dstB;
+            float dstNear = isNearestA ? dstA : dstB;
+            float dstFar = isNearestA ? dstB : dstA;
+
+            int childIndexNear = isNearestA ? childIndexA : childIndexB;
+            int childIndexFar = isNearestA ? childIndexB : childIndexA;
+
+            if (dstFar < result.t) {
+                nodeStack[stackPointer++] = childIndexFar;
+            }
+
+            if (dstNear < result.t) {
+                nodeStack[stackPointer++] = childIndexNear;
+            }
+            
+        }
+
+        
+    }
+
+    return result;
+}
+
+
+vec3 sampleAlbedo(MeshInfo meshInfo, vec2 uv) {
     uint64_t albedoTextureHandle = meshInfo.AlbedoTextureHandle;
     if (albedoTextureHandle == 0) {
         return vec3(1.0, 0.0, 1.0); // Return constant grey for now
@@ -545,8 +536,7 @@ vec3 sampleAlbedo(uint meshIndex, vec2 uv) {
     return texture(albedoSampler, uv).rgb;
 }
 
-vec3 sampleNormal(uint meshIndex, vec2 uv) {
-    MeshInfo meshInfo = u_sceneInfo.MeshInfos[meshIndex];
+vec3 sampleNormal(MeshInfo meshInfo, vec2 uv) {
     uint64_t normalTextureHandle = meshInfo.NormalTextureHandle;
     if (normalTextureHandle == 0) {
         return vec3(0.0, 0.0, 0.0); // Return constant grey for now
@@ -558,230 +548,237 @@ vec3 sampleNormal(uint meshIndex, vec2 uv) {
 
 
 
-vec3 texelToProbeIndex(vec2 texelCoord, vec2 probeResolution, vec3 probeGridDimensions, uint probesPerRow) {
-    // Calculate which probe grid cell the texel belongs to (in the 2D atlas layout)
-    uint atlasProbeCoordX = uint(floor(texelCoord.x / probeResolution.x));
-    uint atlasProbeCoordY = uint(floor(texelCoord.y / probeResolution.y));
 
-    // Calculate the linear index of the probe based on its 2D position in the atlas grid
-    uint linearAtlasIndex = atlasProbeCoordY * probesPerRow + atlasProbeCoordX;
 
-    // De-linearize the index back into 3D probe grid coordinates (X, Y, Z)
-    // This assumes the 3D grid was linearized as: Z * (dimX * dimY) + Y * dimX + X
-    uint probeIndexX = linearAtlasIndex % uint(probeGridDimensions.x);
 
-    uint tempIndex = uint(floor(float(linearAtlasIndex) / probeGridDimensions.x));
-    uint probeIndexY = tempIndex % uint(probeGridDimensions.y);
-    uint probeIndexZ = uint(floor(float(tempIndex) / probeGridDimensions.y));
+/**
+ * Computes a weight value in the range [0, 1] for a world position and volume pair.
+ * All positions inside the given volume recieve a weight of 1.
+ * Positions outside the volume receive a weight in [0, 1] that
+ * decreases as the position moves away from the volume.
+ */ 
+float DDGIGetVolumeBlendWeight(vec3 worldPosition, ProbeVolume volume)
+{
+    // Get the volume's origin and extent
+    vec3 extent = (volume.spacing * (volume.gridDimensions - 1)) * 0.5;
 
-    return vec3(probeIndexX, probeIndexY, probeIndexZ);
+    // Get the delta between the (rotated volume) and the world-space position
+    vec3 position = (worldPosition - volume.origin);
+    //position = abs(RTXGIQuaternionRotate(position, RTXGIQuaternionConjugate(volume.rotation)));
+
+    vec3 delta = position - extent;
+    if(all(lessThan(delta, vec3(0.0)))) return 1.0;
+
+    // Adjust the blend weight for each axis
+    float volumeBlendWeight = 1.0;
+    volumeBlendWeight *= (1.0 - clamp(delta.x / volume.spacing.x, 0.0, 1.0));
+    volumeBlendWeight *= (1.0 - clamp(delta.y / volume.spacing.y, 0.0, 1.0));
+    volumeBlendWeight *= (1.0 - clamp(delta.z / volume.spacing.z, 0.0, 1.0));
+
+    return volumeBlendWeight;
 }
 
-vec2 normalizeTexelCoord(vec2 texelCoord, vec2 probeResolution) {
-    return vec2(texelCoord.x / probeResolution.x, texelCoord.y / probeResolution.y);
-}
 
-
-
-// Add this function to approximate indirect lighting
-vec3 samplePreviousProbes(vec3 hitPosition, vec3 worldNormal) {
-    // Simplified: Find the nearest probe and sample its irradiance
-    // In a full implementation, interpolate multiple nearby probes
-    vec3 gridCoord = (hitPosition - probeOrigin) / probeSpacing;
-    ivec3 nearestProbeIdx = ivec3(floor(gridCoord));
-    nearestProbeIdx = clamp(nearestProbeIdx, ivec3(0), ivec3(probeGridDimensions) - 1);
-
-    // Convert 3D probe index to 2D atlas position
-    uint linearIdx = nearestProbeIdx.z * probeGridDimensions.x * probeGridDimensions.y +
-                    nearestProbeIdx.y * probeGridDimensions.x + nearestProbeIdx.x;
-    ivec2 atlasBase = ivec2(
-        (linearIdx % u_probesPerRow) * probeResolution.x,
-        (linearIdx / u_probesPerRow) * probeResolution.y
-    );
-
-    // Direction from hit point to probe
-    vec3 probePos = probeOrigin + vec3(nearestProbeIdx) * probeSpacing;
-    vec3 dirToProbe = normalize(probePos - hitPosition);
-    vec2 octCoord = octEncode(dirToProbe);
-    ivec2 texelCoord = atlasBase + ivec2(octCoord * probeResolution);
-
-    // Sample previous irradiance
-    vec3 indirectRadiance = imageLoad(prevProbeAtlas, texelCoord).rgb;
-
-    // Basic visibility check using depth (optional refinement)
-    vec2 prevDepth = imageLoad(prevProbeDepthAtlas, texelCoord).rg;
-    float distToProbe = length(probePos - hitPosition);
-    float meanDist = prevDepth.x;
-    float variance = prevDepth.y - meanDist * meanDist;
-    float chebyshevWeight = variance / (variance + pow(distToProbe - meanDist, 2));
-    if (distToProbe > meanDist) indirectRadiance *= max(chebyshevWeight, 0.1);
-
-    // Return irradiance (radiance * cosine term approximated in shading)
-    return indirectRadiance * max(0.0, dot(worldNormal, dirToProbe));
-}
 
 void main() {
-    // texel in the atlas
-    ivec2 globalIndex2D = ivec2(gl_GlobalInvocationID.xy);
+    uint64_t invocation_start_time = clockARB(); // Start timing for the entire invocation
 
+    // Initialize shared profiling variables
+    if (gl_LocalInvocationIndex == 0) {
+        total_BVH_TRACE_time = 0;
+        count_BVH_TRACE = 0;
 
+        total_GET_TRIANGLE_VERTS_time_global = 0;
+        count_GET_TRIANGLE_VERTS_global = 0;
+        total_INTERSECT_TRIANGLE_time_global = 0;
+        count_INTERSECT_TRIANGLE_global = 0;
+        total_INTERSECT_BOUNDING_BOX_time_global = 0;
+        count_INTERSECT_BOUNDING_BOX_global = 0;
 
-    // get the probe related to the texel
-    // DEBUG: OK
-    vec3 probeIndex = texelToProbeIndex(globalIndex2D, probeResolution, probeGridDimensions, u_probesPerRow);
+        shared_sum_total_gtverts_time_across_all_bvh_runs = 0;
+        shared_sum_total_itri_time_across_all_bvh_runs = 0;
+        shared_sum_total_rbbox_time_across_all_bvh_runs = 0;
+        shared_sum_total_bvh_time_for_all_tlas_runs = 0; // Initialize new shared variable
 
-    // Check if the calculated probeIndex is outside the valid grid dimensions
-    if (probeIndex.x >= probeGridDimensions.x ||
-        probeIndex.y >= probeGridDimensions.y ||
-        probeIndex.z >= probeGridDimensions.z) {
-        // This texel does not correspond to a valid probe.
-        // Set output to black and return early.
-        imageStore(probeAtlas, globalIndex2D, vec4(0.0, 0.0, 0.0, 1.0));
-        // Also set a default/invalid value for the depth atlas
-        // Using (0,0) for mean distance and squared mean distance signifies no valid data
-        imageStore(probeDepthAtlas, globalIndex2D, vec4(0.0, 0.0, 0.0, 0.0)); 
-        return; // Stop processing for this invalid probe
+        total_INVOCATION_TIME_accumulator = 0;
+        count_INVOCATIONS = 0;
+        total_GET_TRIANGLE_EXTRAS_time = 0;
+        count_GET_TRIANGLE_EXTRAS = 0;
+        total_DIRECT_DIFFUSE_LIGHTING_time = 0;
+        count_DIRECT_DIFFUSE_LIGHTING = 0;
+        total_GET_VOLUME_IRRADIANCE_time = 0;
+        count_GET_VOLUME_IRRADIANCE = 0;
+        total_TRACE_TLAS_time = 0;
+        count_TRACE_TLAS = 0;
+    }
+    barrier(); // Synchronize after initialization
+
+    ivec3 probeCoords = ivec3(gl_WorkGroupID.x, gl_WorkGroupID.z, gl_WorkGroupID.y);
+    int probeIndex = DDGIGetProbeIndex(probeCoords, u_volume);
+
+    int rayIndex = int(gl_LocalInvocationID.y * gl_WorkGroupSize.x + gl_LocalInvocationID.x);
+
+    vec3 probeWorldPosition = DDGIGetProbeWorldPosition(probeCoords, u_volume);
+
+    vec3 probeRayDirection = DDGIGetProbeRayDirection(rayIndex, u_volume);
+   
+    uvec3 outputCoords = DDGIGetRayDataTexelCoords(rayIndex, probeIndex, u_volume);
+
+    Ray ray = Ray(probeWorldPosition, probeRayDirection, 1.0 / probeRayDirection);
+    
+    BVHInternalTimings accumulated_bvh_internal_timings_for_this_ray; // Renamed for clarity
+    uint64_t total_bvh_time_for_this_tlas_call; // Variable for the new out parameter
+
+    uint64_t trace_tlas_start_time = clockARB();
+    HitInfo closestHitInfo = traceTLAS(ray, 0, accumulated_bvh_internal_timings_for_this_ray, total_bvh_time_for_this_tlas_call); // Pass new out param
+    uint64_t trace_tlas_end_time = clockARB();
+    atomicAdd(total_TRACE_TLAS_time, trace_tlas_end_time - trace_tlas_start_time);
+    atomicAdd(count_TRACE_TLAS, 1);
+
+    atomicAdd(shared_sum_total_bvh_time_for_all_tlas_runs, total_bvh_time_for_this_tlas_call); // Atomic add to shared accumulator
+
+    // Add the sums of times from all BVH runs for this ray to the workgroup-shared accumulators
+    atomicAdd(shared_sum_total_gtverts_time_across_all_bvh_runs, accumulated_bvh_internal_timings_for_this_ray.total_gtverts_time_in_bvh);
+    atomicAdd(shared_sum_total_itri_time_across_all_bvh_runs, accumulated_bvh_internal_timings_for_this_ray.total_itri_time_in_bvh);
+    atomicAdd(shared_sum_total_rbbox_time_across_all_bvh_runs, accumulated_bvh_internal_timings_for_this_ray.total_rbbox_time_in_bvh);
+
+    if (!closestHitInfo.hit) {
+        // sample the skybox
+
+        vec3 sunColor = texture(u_skyboxCubemap, ray.direction).rgb;
+        sunColor *= u_SunProperties.sunIntensity * u_SunProperties.sunColor;
+        
+        DDGIStoreProbeRayMiss(ivec3(outputCoords), sunColor * u_SunProperties.sunIntensity);
+        return;
     }
 
-    //get probe position
-    // Calculate the total size of the grid and the starting offset
-    vec3 totalGridSize = vec3(probeGridDimensions) * probeSpacing;
-    vec3 startOffset = probeOrigin - (totalGridSize / 2.0f) + (probeSpacing / 2.0f); // Offset by half spacing to center probes
-    // Calculate the position based on the starting offset and index
-    vec3 probePosition = startOffset + probeIndex * probeSpacing;
+    MeshInfo meshInfo = u_sceneInfo.MeshInfos[closestHitInfo.meshIndex];
 
-    //vec3 maxProbePosition = probeOrigin + probeGridDimensions * probeSpacing;
-
-
-    // Calculate LOCAL texel coordinates within the current probe tile
-    ivec2 localTexelCoord = globalIndex2D % ivec2(probeResolution);
-    // Normalize local coordinates to [0, 1) for octDecode input
-    vec2 normLocalTexCoord = vec2(localTexelCoord) / vec2(probeResolution);
-
-    // Decode ray direction using correctly normalized local coordinates
-    // DEBUG: OK
-    vec3 rayDirection = octDecode(normLocalTexCoord); 
-    vec3 invDir = 1.0 / rayDirection;
+    if (!closestHitInfo.isFrontFacing)
+    {
+        // Store the ray backface hit
+        DDGIStoreProbeRayBackfaceHit(ivec3(outputCoords), closestHitInfo.t);
+        return;
+    }
 
 
+    uint64_t get_tri_extras_start_time = clockARB();
+    Triangle tri = getTriangleExtras(meshInfo, closestHitInfo.primitiveIndex, closestHitInfo.tri, u_bufferMetadata.AllBufferMetadata[meshInfo.bufferMetadataIDX]);
+    uint64_t get_tri_extras_end_time = clockARB();
+    atomicAdd(total_GET_TRIANGLE_EXTRAS_time, get_tri_extras_end_time - get_tri_extras_start_time);
+    atomicAdd(count_GET_TRIANGLE_EXTRAS, 1);
 
-    Ray ray = Ray(probePosition, rayDirection, invDir);
-    BVHNode hitNode; // Renamed from 'result' to avoid conflict
-    vec3 calculatedIrradiance = vec3(0.0); // Store the calculated light energy here
-
-    // Structure to store the closest hit information found across all meshes
-    HitInfo closestHitInfo;
-    closestHitInfo.hit = false;
-    closestHitInfo.t = INFINITY_FLOAT;
-
-    imageStore(probeAtlas, globalIndex2D, vec4(0.0, 0.0, 1.0, 1.0));
-
-
-    float alpha_blend = 1.0 - u_hysteresis;
-
-    for (int i = 0; i < u_meshCount; i++) {
-        
-        MeshInfo meshInfo = u_sceneInfo.MeshInfos[i];
-
-        uint rootIndex = meshInfo.RootIndex;
-
-        // --- Transform Ray to Mesh Local Space for BVH Traversal ---
-        mat4 invTransform = meshInfo.InvTransform;
-
-        vec3 localRayOrigin = (invTransform * vec4(ray.origin, 1.0)).xyz;
-        vec3 localRayDirection = (invTransform * vec4(ray.direction, 0.0)).xyz;
-        vec3 localInvDir = 1.0 / localRayDirection;
-        Ray localRay = Ray(localRayOrigin, localRayDirection, localInvDir);
-        // -----------------------------------------------------------
-
-        imageStore(probeAtlas, globalIndex2D, vec4(1.0, 0.0, 1.0, 1.0));
-
-
-        // Trace using the local space ray against the local space BVH AABBs
-        //if (traceBVH(localRay, rootIndex, hitNode)) {
-
-        HitInfo result;
-        result = traceBVH(ray, localRay, rootIndex, meshInfo);
-        result.meshIndex = i;
+    vec2 uv = interpolateUV(closestHitInfo.barycentricUV, tri);
+    vec3 worldNormal_geom = interpolateNormal(closestHitInfo.barycentricUV, tri);
+    vec3 worldTangent_geom = interpolateTangent(closestHitInfo.barycentricUV, tri);
+    vec3 worldShadingNormal = calculateShadingNormal(meshInfo, uv, worldNormal_geom, worldTangent_geom);
+    vec3 albedo = sampleAlbedo(meshInfo, uv);
     
-        if (result.hit && result.t < closestHitInfo.t && result.t < probeSpacing.x * 2.0) {
-            closestHitInfo = result;
-            
+    uint64_t direct_diffuse_start_time = clockARB();
+    vec3 diffuse = DirectDiffuseLighting(albedo, worldShadingNormal, closestHitInfo.hitPosition, u_SunProperties);
+    uint64_t direct_diffuse_end_time = clockARB();
+    atomicAdd(total_DIRECT_DIFFUSE_LIGHTING_time, direct_diffuse_end_time - direct_diffuse_start_time);
+    atomicAdd(count_DIRECT_DIFFUSE_LIGHTING, 1);
+
+    // Indirect Lighting (recursive)
+    vec3 irradiance = vec3(0.0);
+    // Use the ray's own direction for surface bias, not the main camera direction
+    vec3 surfaceBias = DDGIGetSurfaceBias(worldShadingNormal, ray.direction, u_volume);
+
+
+
+        uint64_t get_volume_irradiance_start_time = clockARB();
+        // Get irradiance from the DDGIVolume
+        irradiance = DDGIGetVolumeIrradiance(
+            closestHitInfo.hitPosition,
+            worldShadingNormal,
+            surfaceBias,
+            prevProbeAtlas,
+            prevProbeDepthAtlas,
+            u_volume);
+        uint64_t get_volume_irradiance_end_time = clockARB();
+        atomicAdd(total_GET_VOLUME_IRRADIANCE_time, get_volume_irradiance_end_time - get_volume_irradiance_start_time);
+        atomicAdd(count_GET_VOLUME_IRRADIANCE, 1);
+
+
+    // Perfectly diffuse reflectors don't exist in the real world.
+    // Limit the BRDF albedo to a maximum value to account for the energy loss at each bounce.
+    float maxAlbedo = 0.9;
+
+    // Store the final ray radiance and hit distance
+    vec3 radiance = diffuse + ((min(albedo, vec3(maxAlbedo)) / PI) * irradiance);
+    DDGIStoreProbeRayFrontfaceHit(ivec3(outputCoords), clamp(radiance, vec3(0.0), vec3(1.0)), closestHitInfo.t);
+
+    uint64_t invocation_end_time = clockARB(); // End timing for the entire invocation
+    atomicAdd(total_INVOCATION_TIME_accumulator, invocation_end_time - invocation_start_time);
+    atomicAdd(count_INVOCATIONS, 1);
+
+    // Synchronize before calculating and writing averages
+    barrier();
+
+    if (gl_LocalInvocationIndex == 0) {
+        // probeIndex is unique per workgroup and suitable for indexing mean_timings
+
+        if (count_INVOCATIONS > 0) {
+            u_profile.mean_timings[probeIndex].TOTAL_INVOCATION_TIME = total_INVOCATION_TIME_accumulator / count_INVOCATIONS;
+        } else {
+            u_profile.mean_timings[probeIndex].TOTAL_INVOCATION_TIME = 0;
         }
 
+        if (count_TRACE_TLAS > 0) {
+            u_profile.mean_timings[probeIndex].TRACE_TLAS_TIME = total_TRACE_TLAS_time / count_TRACE_TLAS;
+            u_profile.mean_timings[probeIndex].TOTAL_BVH_TIME_PER_TLAS_CALL = shared_sum_total_bvh_time_for_all_tlas_runs / count_TRACE_TLAS;
+        } else {
+            u_profile.mean_timings[probeIndex].TRACE_TLAS_TIME = 0;
+            u_profile.mean_timings[probeIndex].TOTAL_BVH_TIME_PER_TLAS_CALL = 0;
+        }
 
+        if (count_BVH_TRACE > 0) {
+            u_profile.mean_timings[probeIndex].BVH_TRACE_TIME = total_BVH_TRACE_time / count_BVH_TRACE;
+        } else {
+            u_profile.mean_timings[probeIndex].BVH_TRACE_TIME = 0;
+        }
+
+        // AVG_TIME_PER_..._CALL metrics
+        if (count_GET_TRIANGLE_VERTS_global > 0) { // Using _global count
+            u_profile.mean_timings[probeIndex].AVG_TIME_PER_GTVERTS_CALL = total_GET_TRIANGLE_VERTS_time_global / count_GET_TRIANGLE_VERTS_global;
+        } else {
+            u_profile.mean_timings[probeIndex].AVG_TIME_PER_GTVERTS_CALL = 0;
+        }
+        if (count_INTERSECT_TRIANGLE_global > 0) { // Using _global count
+            u_profile.mean_timings[probeIndex].AVG_TIME_PER_ITRI_CALL = total_INTERSECT_TRIANGLE_time_global / count_INTERSECT_TRIANGLE_global;
+        } else {
+            u_profile.mean_timings[probeIndex].AVG_TIME_PER_ITRI_CALL = 0;
+        }
+        if (count_INTERSECT_BOUNDING_BOX_global > 0) { // Using _global count
+            u_profile.mean_timings[probeIndex].AVG_TIME_PER_RBBOX_CALL = total_INTERSECT_BOUNDING_BOX_time_global / count_INTERSECT_BOUNDING_BOX_global;
+        } else {
+            u_profile.mean_timings[probeIndex].AVG_TIME_PER_RBBOX_CALL = 0;
+        }
+
+        // AVG_SUM_TIME_..._IN_BVHCALL metrics
+        // Denominator is count_BVH_TRACE (total BVH calls in workgroup)
+        if (count_BVH_TRACE > 0) {
+            u_profile.mean_timings[probeIndex].AVG_SUM_GTVERTS_TIME_IN_BVHCALL = shared_sum_total_gtverts_time_across_all_bvh_runs / count_BVH_TRACE;
+            u_profile.mean_timings[probeIndex].AVG_SUM_ITRI_TIME_IN_BVHCALL = shared_sum_total_itri_time_across_all_bvh_runs / count_BVH_TRACE;
+            u_profile.mean_timings[probeIndex].AVG_SUM_RBBOX_TIME_IN_BVHCALL = shared_sum_total_rbbox_time_across_all_bvh_runs / count_BVH_TRACE;
+        } else {
+            u_profile.mean_timings[probeIndex].AVG_SUM_GTVERTS_TIME_IN_BVHCALL = 0;
+            u_profile.mean_timings[probeIndex].AVG_SUM_ITRI_TIME_IN_BVHCALL = 0;
+            u_profile.mean_timings[probeIndex].AVG_SUM_RBBOX_TIME_IN_BVHCALL = 0;
+        }
+
+        // Existing unrelated timers
+        if (count_GET_TRIANGLE_EXTRAS > 0) {
+            u_profile.mean_timings[probeIndex].GET_TRIANGLE_EXTRAS_TIME = total_GET_TRIANGLE_EXTRAS_time / count_GET_TRIANGLE_EXTRAS;
+        } else {
+            u_profile.mean_timings[probeIndex].GET_TRIANGLE_EXTRAS_TIME = 0;
+        }
+
+        if (count_GET_VOLUME_IRRADIANCE > 0) {
+            u_profile.mean_timings[probeIndex].GET_VOLUME_IRRADIANCE_TIME = total_GET_VOLUME_IRRADIANCE_time / count_GET_VOLUME_IRRADIANCE;
+        } else {
+            u_profile.mean_timings[probeIndex].GET_VOLUME_IRRADIANCE_TIME = 0;
+        }
     }
-    
-    if (closestHitInfo.hit) {
-        
-        vec2 uv = interpolateUV(closestHitInfo.barycentricUV, closestHitInfo.tri);
-        vec3 worldNormal = interpolateNormal(closestHitInfo.barycentricUV, closestHitInfo.tri);
-        vec3 worldTangent = interpolateTangent(closestHitInfo.barycentricUV, closestHitInfo.tri);
-
-        vec3 worldShadingNormal = calculateShadingNormal(
-            closestHitInfo.meshIndex,
-            uv,
-            worldNormal,
-            worldTangent
-        );
-
-        vec3 albedo = sampleAlbedo(closestHitInfo.meshIndex, uv);
-        float NdotL = max(0.0, dot(worldShadingNormal, -normalize(u_SunLight.direction))); // Light direction points TO the light
-
-        vec3 indirectLighting = samplePreviousProbes(closestHitInfo.hitPosition, worldShadingNormal);
-        calculatedIrradiance = (albedo / PI) * (u_SunLight.intensity * NdotL + indirectLighting);
-
-
-    } else {
-        vec3 skyColor = texture(u_skyboxCubemap, ray.direction).rgb;
-
-        float luminance = dot(skyColor, vec3(0.299, 0.587, 0.114));
-        // Desaturate by blending with luminance (e.g., 50% desaturation)
-        float desaturationFactor = 0.9; // Adjust between 0 (full color) and 1 (grayscale)
-        calculatedIrradiance = mix(skyColor, vec3(luminance), desaturationFactor);
-        //calculatedIrradiance = vec3(0.9, 0.9, 0.9);
-    }
-
-    vec2 currentDepthData;
-    if (closestHitInfo.hit) {
-        float hitDistance = closestHitInfo.t;
-        // Clamp distance to avoid potential issues with huge numbers if geometry is very far
-        hitDistance = min(hitDistance, 10000.0); // Adjust max distance as needed
-        currentDepthData = vec2(hitDistance, hitDistance * hitDistance);
-    } else {
-        // Use defined infinity for miss
-        currentDepthData = vec2(INFINITY_FLOAT, INFINITY_FLOAT);
-    }
-
-    // --- Hysteresis for Depth/Visibility ---
-    vec2 oldDepthData = imageLoad(prevProbeDepthAtlas, globalIndex2D).rg;
-    vec2 finalDepthData;
-
-    // Handle potential NaN/Inf from previous frames or initial state
-    // If old data is invalid (e.g., Inf), use current data directly. Otherwise, blend.
-    if (isinf(oldDepthData.x) || isnan(oldDepthData.x)) {
-         finalDepthData = currentDepthData;
-    } else {
-         // Blend using mix: mix(newValue, oldValue, hysteresisFactor)
-         // Ensure currentDepthData is not Inf before mixing if old data was valid
-         if(isinf(currentDepthData.x)) {
-            finalDepthData = currentDepthData; // If new hit is Inf, override directly
-         } else {
-            finalDepthData = mix(currentDepthData, oldDepthData, alpha_blend);
-         }
-    }
-
-    imageStore(probeAtlas, globalIndex2D, vec4(calculatedIrradiance, 1.0));
-
-    imageStore(probeDepthAtlas, globalIndex2D, vec4(finalDepthData, 0.0, 0.0));
-
-
-
 }
-
-
-
-
-
-
-

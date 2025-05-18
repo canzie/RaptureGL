@@ -61,6 +61,9 @@ class LBVH {
         std::shared_ptr<ShaderStorageBuffer> getCompleteBVHNodesBuffer();
         std::shared_ptr<ShaderStorageBuffer> getTLASBuffer() { return m_TLASBuffer; };
 
+        const BVHCPU& getTLAS() const { return m_TLAS; }
+        const std::vector<EntityID>& getTlasEntityMap() const { return m_tlasEntityMap; }
+
     private:
         // Reads the BVH node data from the GPU buffer to the CPU if necessary
         // and returns a const reference to the cached CPU-side vector.
@@ -91,6 +94,7 @@ class LBVH {
         std::string m_AABBShaderPath = "Sorting/BVH/LBVH/LBVH_AABB.cs.glsl";
 
         BVHCPU m_TLAS;
+        std::vector<EntityID> m_tlasEntityMap;
 
         // CPU-side cache for BVH nodes
         std::unordered_map<EntityID, BVHCPU> m_cpuBVHNodes;

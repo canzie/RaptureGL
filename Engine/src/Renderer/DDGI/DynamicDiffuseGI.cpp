@@ -215,13 +215,13 @@ namespace Rapture {
         // sun light ubo
         m_SunLightBuffer = std::make_shared<UniformBuffer>(sizeof(SunProperties), BufferUsage::Stream, &m_SunShadowProps);
 
-        m_DebugBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(DebugData) * 4864 * 2, BufferUsage::Dynamic, nullptr);
+       //uint32_t numProbes = m_ProbeVolume.gridDimensions.x * m_ProbeVolume.gridDimensions.z * m_ProbeVolume.gridDimensions.y;
+       // m_DebugBuffer = std::make_shared<ShaderStorageBuffer>(sizeof(DebugData) * numProbes, BufferUsage::Dynamic, nullptr);
 
         m_isPopulated = true;
 
         populateProbesCompute(scene);
 
-        //readDebugBuffer();
 
     }
 
@@ -317,8 +317,6 @@ namespace Rapture {
             skyboxTexture->bind(3);
         }
 
-
-        m_DDGI_ProbeTraceShader->setUint("u_meshCount", m_meshCount);
 
         // dispatch the compute shader
         m_DDGI_ProbeTraceShader->dispatchCompute(m_ProbeVolume.gridDimensions.x, m_ProbeVolume.gridDimensions.z, m_ProbeVolume.gridDimensions.y);
@@ -443,72 +441,110 @@ namespace Rapture {
         }
 
         ShaderStorageBuffer::barrier(SSBOBarrierFlags{true, true}); // Add a memory barrier before reading
-            
-        uint32_t bufferSize = 4864*2;
+        
+        uint32_t numProbes = m_ProbeVolume.gridDimensions.x * m_ProbeVolume.gridDimensions.y * m_ProbeVolume.gridDimensions.z;
+        if (numProbes == 0) {
+            GE_CORE_WARN("DynamicDiffuseGI::readDebugBuffer - Number of probes is zero, cannot read debug buffer.");
+            return;
+        }
 
-        std::vector<DebugData> debugData(bufferSize);
+        std::vector<DebugData> profilingData(numProbes);
 
-        // Map the buffer to read data
-        void* mappedData = m_DebugBuffer->map(0, bufferSize * sizeof(DebugData));
+        void* mappedData = m_DebugBuffer->map(0, numProbes * sizeof(DebugData));
         if (mappedData) {
-            // Copy the data from the mapped buffer to the CPU vector
-            memcpy(debugData.data(), mappedData, bufferSize * sizeof(DebugData));
-            // Unmap the buffer now that we're done reading
+            memcpy(profilingData.data(), mappedData, numProbes * sizeof(DebugData));
             m_DebugBuffer->unmap();
         } else {
-            GE_CORE_ERROR("Failed to map DebugBuffer for reading.");
-            // Clear the vector to indicate failure, or handle error appropriately
-            debugData.clear();
+            GE_CORE_ERROR("Failed to map DebugBuffer for reading profiling data.");
+            profilingData.clear();
+            return;
         }
 
-
-
-        uint32_t sameCount = 0;
-        uint32_t diffCount = 0;
-        uint32_t totals = 0;
-
-        std::vector<uint32_t> countersBVH(4864);
-        std::vector<uint32_t> countersAll(4864);
-
-        for (int i = 0; i < bufferSize; i++) {
-            if (i < 4864) {
-                countersBVH[debugData[i].idx]++;
-            } else {
-                countersAll[debugData[i].idx]++;
-            }
+        if (profilingData.empty()) {
+            GE_CORE_ERROR("Profiling data is empty after attempting to read DebugBuffer.");
+            return;
         }
 
-        for (int i = 0; i < 4864; i++) {
-            if (countersBVH[i] == 1 && countersAll[i] != 1) {
-                GE_CORE_ERROR("DynamicDiffuseGI::readDebugBuffer - primitive {0} only present in BVH", i);
-            } else if (countersBVH[i] == 1 && countersAll[i] == 1) {
-                GE_CORE_INFO("DynamicDiffuseGI::readDebugBuffer - primitive {0} present in BVH and All", i);
-            } else if (countersBVH[i] != 1 && countersAll[i] == 1) {
-                GE_CORE_ERROR("DynamicDiffuseGI::readDebugBuffer - primitive {0} only present in All", i);
-            }
+        uint64_t sum_TOTAL_INVOCATION_TIME = 0;
+        uint64_t sum_TRACE_TLAS_TIME = 0;
+        uint64_t sum_TOTAL_BVH_TIME_PER_TLAS_CALL = 0;
+        uint64_t sum_SUM_TLAS_INTERNAL_RBBOX_TIME_PER_TLAS_CALL = 0;
+        uint64_t sum_AVG_TLAS_INTERNAL_RBBOX_CALL_TIME = 0;
+        uint64_t sum_SUM_RAY_SETUP_TRANSFORM_TIME_PER_TLAS_CALL = 0;
+        uint64_t sum_SUM_HIT_TRANSFORM_TIME_PER_TLAS_CALL = 0;
+        uint64_t sum_BVH_TRACE_TIME = 0;
+        uint64_t sum_BVH_TRAVERSAL_OVERHEAD_TIME = 0;
+        uint64_t sum_AVG_TIME_PER_GTVERTS_CALL = 0;
+        uint64_t sum_AVG_TIME_PER_ITRI_CALL = 0;
+        uint64_t sum_AVG_TIME_PER_RBBOX_CALL = 0;
+        uint64_t sum_AVG_SUM_GTVERTS_TIME_IN_BVHCALL = 0;
+        uint64_t sum_AVG_SUM_ITRI_TIME_IN_BVHCALL = 0;
+        uint64_t sum_AVG_SUM_RBBOX_TIME_IN_BVHCALL = 0;
+        uint64_t sum_GET_TRIANGLE_EXTRAS_TIME = 0;
+        uint64_t sum_DIRECT_DIFFUSE_LIGHTING_TIME = 0;
+        uint64_t sum_GET_VOLUME_IRRADIANCE_TIME = 0;
 
+        for (const auto& data : profilingData) {
+            sum_TOTAL_INVOCATION_TIME += data.TOTAL_INVOCATION_TIME;
+            sum_TRACE_TLAS_TIME += data.TRACE_TLAS_TIME;
+            sum_TOTAL_BVH_TIME_PER_TLAS_CALL += data.TOTAL_BVH_TIME_PER_TLAS_CALL;
+            sum_SUM_TLAS_INTERNAL_RBBOX_TIME_PER_TLAS_CALL += data.SUM_TLAS_INTERNAL_RBBOX_TIME_PER_TLAS_CALL;
+            sum_AVG_TLAS_INTERNAL_RBBOX_CALL_TIME += data.AVG_TLAS_INTERNAL_RBBOX_CALL_TIME;
+            sum_SUM_RAY_SETUP_TRANSFORM_TIME_PER_TLAS_CALL += data.SUM_RAY_SETUP_TRANSFORM_TIME_PER_TLAS_CALL;
+            sum_SUM_HIT_TRANSFORM_TIME_PER_TLAS_CALL += data.SUM_HIT_TRANSFORM_TIME_PER_TLAS_CALL;
+            sum_BVH_TRACE_TIME += data.BVH_TRACE_TIME;
+            sum_BVH_TRAVERSAL_OVERHEAD_TIME += data.BVH_TRAVERSAL_OVERHEAD_TIME;
+            sum_AVG_TIME_PER_GTVERTS_CALL += data.AVG_TIME_PER_GTVERTS_CALL;
+            sum_AVG_TIME_PER_ITRI_CALL += data.AVG_TIME_PER_ITRI_CALL;
+            sum_AVG_TIME_PER_RBBOX_CALL += data.AVG_TIME_PER_RBBOX_CALL;
+            sum_AVG_SUM_GTVERTS_TIME_IN_BVHCALL += data.AVG_SUM_GTVERTS_TIME_IN_BVHCALL;
+            sum_AVG_SUM_ITRI_TIME_IN_BVHCALL += data.AVG_SUM_ITRI_TIME_IN_BVHCALL;
+            sum_AVG_SUM_RBBOX_TIME_IN_BVHCALL += data.AVG_SUM_RBBOX_TIME_IN_BVHCALL;
+            sum_GET_TRIANGLE_EXTRAS_TIME += data.GET_TRIANGLE_EXTRAS_TIME;
+            sum_DIRECT_DIFFUSE_LIGHTING_TIME += data.DIRECT_DIFFUSE_LIGHTING_TIME;
+            sum_GET_VOLUME_IRRADIANCE_TIME += data.GET_VOLUME_IRRADIANCE_TIME;
         }
-
-        uint32_t totalinBVH = 0;
-        uint32_t totalinAll = 0;
-
-        for (int i = 0; i < 4864; i++) {
-            if (countersBVH[i] == 1) {
-                totalinBVH++;
-            }
-            if (countersAll[i] == 1) {
-                totalinAll++;
-            }
-        }
-
-        GE_CORE_INFO("DynamicDiffuseGI::readDebugBuffer - total in BVH: {0} | total in All: {1}", totalinBVH, totalinAll);
-
-
-
-        GE_CORE_INFO("DynamicDiffuseGI::readDebugBuffer - same: {0} | diff: {1} | total: {2}, ratio: {3}", sameCount, diffCount, totals, (float)(diffCount) / (float)totals);
-
-        debugData.clear();
         
+        double avg_TOTAL_INVOCATION_TIME = static_cast<double>(sum_TOTAL_INVOCATION_TIME) / numProbes;
+        double avg_TRACE_TLAS_TIME = static_cast<double>(sum_TRACE_TLAS_TIME) / numProbes;
+        double avg_TOTAL_BVH_TIME_PER_TLAS_CALL = static_cast<double>(sum_TOTAL_BVH_TIME_PER_TLAS_CALL) / numProbes;
+        double avg_SUM_TLAS_INTERNAL_RBBOX_TIME_PER_TLAS_CALL = static_cast<double>(sum_SUM_TLAS_INTERNAL_RBBOX_TIME_PER_TLAS_CALL) / numProbes;
+        double avg_AVG_TLAS_INTERNAL_RBBOX_CALL_TIME = static_cast<double>(sum_AVG_TLAS_INTERNAL_RBBOX_CALL_TIME) / numProbes;
+        double avg_SUM_RAY_SETUP_TRANSFORM_TIME_PER_TLAS_CALL = static_cast<double>(sum_SUM_RAY_SETUP_TRANSFORM_TIME_PER_TLAS_CALL) / numProbes;
+        double avg_SUM_HIT_TRANSFORM_TIME_PER_TLAS_CALL = static_cast<double>(sum_SUM_HIT_TRANSFORM_TIME_PER_TLAS_CALL) / numProbes;
+        double avg_BVH_TRACE_TIME = static_cast<double>(sum_BVH_TRACE_TIME) / numProbes;
+        double avg_BVH_TRAVERSAL_OVERHEAD_TIME = static_cast<double>(sum_BVH_TRAVERSAL_OVERHEAD_TIME) / numProbes;
+        double avg_AVG_TIME_PER_GTVERTS_CALL = static_cast<double>(sum_AVG_TIME_PER_GTVERTS_CALL) / numProbes;
+        double avg_AVG_TIME_PER_ITRI_CALL = static_cast<double>(sum_AVG_TIME_PER_ITRI_CALL) / numProbes;
+        double avg_AVG_TIME_PER_RBBOX_CALL = static_cast<double>(sum_AVG_TIME_PER_RBBOX_CALL) / numProbes;
+        double avg_AVG_SUM_GTVERTS_TIME_IN_BVHCALL = static_cast<double>(sum_AVG_SUM_GTVERTS_TIME_IN_BVHCALL) / numProbes;
+        double avg_AVG_SUM_ITRI_TIME_IN_BVHCALL = static_cast<double>(sum_AVG_SUM_ITRI_TIME_IN_BVHCALL) / numProbes;
+        double avg_AVG_SUM_RBBOX_TIME_IN_BVHCALL = static_cast<double>(sum_AVG_SUM_RBBOX_TIME_IN_BVHCALL) / numProbes;
+        double avg_GET_TRIANGLE_EXTRAS_TIME = static_cast<double>(sum_GET_TRIANGLE_EXTRAS_TIME) / numProbes;
+        double avg_DIRECT_DIFFUSE_LIGHTING_TIME = static_cast<double>(sum_DIRECT_DIFFUSE_LIGHTING_TIME) / numProbes;
+        double avg_GET_VOLUME_IRRADIANCE_TIME = static_cast<double>(sum_GET_VOLUME_IRRADIANCE_TIME) / numProbes;
+
+        double GPU_4070_Hz_to_ms = 1e6 / (2.820e9); 
+
+        GE_CORE_INFO("DDGI Profiling Averages (per workgroup, over {0} workgroups):", numProbes);
+        GE_CORE_INFO("  TOTAL_INVOCATION_TIME: {0} ms", avg_TOTAL_INVOCATION_TIME * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("  TRACE_TLAS_TIME: {0} ms", avg_TRACE_TLAS_TIME * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("    TOTAL_BVH_TIME_PER_TLAS_CALL: {0} ms", avg_TOTAL_BVH_TIME_PER_TLAS_CALL * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("    SUM_TLAS_INTERNAL_RBBOX_TIME_PER_TLAS_CALL: {0} ms", avg_SUM_TLAS_INTERNAL_RBBOX_TIME_PER_TLAS_CALL * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("    AVG_TLAS_INTERNAL_RBBOX_CALL_TIME: {0} ms", avg_AVG_TLAS_INTERNAL_RBBOX_CALL_TIME * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("    SUM_RAY_SETUP_TRANSFORM_TIME_PER_TLAS_CALL: {0} ms", avg_SUM_RAY_SETUP_TRANSFORM_TIME_PER_TLAS_CALL * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("    SUM_HIT_TRANSFORM_TIME_PER_TLAS_CALL: {0} ms", avg_SUM_HIT_TRANSFORM_TIME_PER_TLAS_CALL * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("  Avg. Time per single BVH_TRACE_TIME call: {0} ms", avg_BVH_TRACE_TIME * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("    BVH_TRAVERSAL_OVERHEAD_TIME: {0} ms", avg_BVH_TRAVERSAL_OVERHEAD_TIME * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("    AVG_SUM_GTVERTS_TIME_IN_BVHCALL: {0} ms", avg_AVG_SUM_GTVERTS_TIME_IN_BVHCALL * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("    AVG_SUM_ITRI_TIME_IN_BVHCALL: {0} ms", avg_AVG_SUM_ITRI_TIME_IN_BVHCALL * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("    AVG_SUM_RBBOX_TIME_IN_BVHCALL: {0} ms", avg_AVG_SUM_RBBOX_TIME_IN_BVHCALL * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("  AVG_TIME_PER_GTVERTS_CALL: {0} ms", avg_AVG_TIME_PER_GTVERTS_CALL * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("  AVG_TIME_PER_ITRI_CALL: {0} ms", avg_AVG_TIME_PER_ITRI_CALL * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("  AVG_TIME_PER_RBBOX_CALL: {0} ms", avg_AVG_TIME_PER_RBBOX_CALL * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("  GET_TRIANGLE_EXTRAS_TIME: {0} ms", avg_GET_TRIANGLE_EXTRAS_TIME * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("  DIRECT_DIFFUSE_LIGHTING_TIME: {0} ms", avg_DIRECT_DIFFUSE_LIGHTING_TIME * GPU_4070_Hz_to_ms);
+        GE_CORE_INFO("  GET_VOLUME_IRRADIANCE_TIME: {0} ms", avg_GET_VOLUME_IRRADIANCE_TIME * GPU_4070_Hz_to_ms);
     }
 
     void DynamicDiffuseGI::initTextures()
