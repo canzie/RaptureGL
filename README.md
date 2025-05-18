@@ -6,7 +6,7 @@ Created for learning 3D graphics and game engine architecures from scratch.
 
 
 ### Rendering
-- Dynamic Difffuse Global Illumination
+- Dynamic Diffuse Global Illumination
 - PBR (Physically Based Rendering) with support for:
   - Metallic-roughness workflow
   - Specular-glossiness workflow
@@ -32,7 +32,7 @@ Created for learning 3D graphics and game engine architecures from scratch.
 ## Showcase of recent features
 
 ### Dynamic Diffuse Global Illumination (DDGI)
-An implementation of dynamic diffuse global illumination. Currently only uses a diffuse pipeline, with plans to include specular glossy later. The main sources used to develop this were the [NVIDIA DDGI paper](https://www.jcgt.org/published/0008/02/01/paper-lowres.pdf) and the [GDC](https://www.gdcvault.com/play/1026182/) talk for the main DDGI algorithm, and this [VkLBVH](https://github.com/MircoWerner/VkLBVH) repository for parallel LBVH and Radix sort implementations.
+An implementation of dynamic diffuse global illumination. Currently only uses a diffuse pipeline, with plans to include specular and glossy components later. The main sources used to develop this were the [NVIDIA DDGI paper](https://www.jcgt.org/published/0008/02/01/paper-lowres.pdf) and the [GDC](https://www.gdcvault.com/play/1026182/) talk for the main DDGI algorithm, and this [VkLBVH](https://github.com/MircoWerner/VkLBVH) repository for parallel LBVH and Radix sort implementations.
 
 <table>
 <tr>
