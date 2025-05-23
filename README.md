@@ -66,7 +66,7 @@ Uses a hybrid approach for spliting the frustum range with a lambda to bias eith
 - External libraries (see below)
 
 ### Dependencies
-We use some great open-source libraries:
+open-source libraries:
 - GLFW for window management
 - GLAD for OpenGL loading
 - GLM for math
@@ -75,6 +75,8 @@ We use some great open-source libraries:
 - spdlog for logging
 - stb_image for image loading
 - YAML for serialization
+- Tracy for frame profiling
+- nlohmann/json (json for the glTF 2.0 loader)
 
 ### Building
 ```bash
